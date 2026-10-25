@@ -3,6 +3,7 @@
 {# A card of a home section: poster, release or status button, and title and progress on hover #}
 
 {% card_title media.item media as heading %}
+{% firstof media.item|release_year "" as year %}
 {% if home_status == Status.PLANNING.value %}
   {% firstof "text-sky-400" as clock_color %}
 {% else %}
@@ -40,13 +41,17 @@
     <a href="{{ media.item|media_url }}"
        class="pointer-events-auto line-clamp-2 text-[1rem] leading-snug font-semibold text-white drop-shadow-md"
        title="{{ heading.full }}">{{ heading.title }}</a>
-    {% if heading.subtitle or home_status != Status.PLANNING.value and media.item.media_type != MediaTypes.MOVIE.value %}
+    {% if heading.subtitle or year or home_status != Status.PLANNING.value and media.item.media_type != MediaTypes.MOVIE.value %}
       <div class="mt-1 truncate text-xs text-gray-300">
         {% if heading.subtitle %}
           <span class="font-semibold text-gray-100"><span class="@[10.25rem]:hidden">{{ heading.short_subtitle }}</span><span class="hidden @[10.25rem]:inline">{{ heading.subtitle }}</span></span>
         {% endif %}
-        {% if home_status != Status.PLANNING.value and media.item.media_type != MediaTypes.MOVIE.value %}
+        {% if year %}
           {% if heading.subtitle %}<span class="text-gray-500">•</span>{% endif %}
+          <span>{{ year }}</span>
+        {% endif %}
+        {% if home_status != Status.PLANNING.value and media.item.media_type != MediaTypes.MOVIE.value %}
+          {% if heading.subtitle or year %}<span class="text-gray-500">•</span>{% endif %}
           {{ media.formatted_progress }}
           {% if media.item.media_type != MediaTypes.GAME.value %}
             {% if media.max_progress %}

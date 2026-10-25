@@ -468,3 +468,28 @@ class HomeViewTests(TestCase):
         card = card.split('id="home-media-')[0]
         self.assertIn(reverse("download_event", args=[release.id]), card)
         self.assertNotIn("Mark watched", card)
+
+    def test_movie_card_shows_its_release_year(self):
+        """A movie card on the home page shows the year it came out."""
+        released_item = Item.objects.create(
+            media_id="released-card",
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.MOVIE.value,
+            title="Released Movie",
+            image="http://example.com/image.jpg",
+        )
+        movie = Movie.objects.create(
+            item=released_item,
+            user=self.user,
+            status=Status.PLANNING.value,
+        )
+        Event.objects.create(
+            item=released_item,
+            datetime=timezone.now().replace(year=1999),
+        )
+
+        response = self.client.get(reverse("home"))
+
+        card = response.content.decode().split(f'id="home-media-movie-{movie.id}"')[1]
+        card = card.split('id="home-media-')[0]
+        self.assertIn("<span>1999</span>", card)
