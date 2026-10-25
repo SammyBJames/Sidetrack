@@ -110,3 +110,47 @@ class ReleaseLabelTests(TestCase):
             app_tags.release_label(date_only(2026, 10, 6), self.user),
             "October 6",
         )
+
+
+class CardTitleTests(TestCase):
+    """Test the card_title tag that splits seasons from their show's title."""
+
+    def test_season_gets_its_own_subtitle(self):
+        """A season card shows the show's title with the season below."""
+        item = Item(
+            title="Breaking Bad",
+            media_type=MediaTypes.SEASON.value,
+            season_number=2,
+        )
+
+        heading = app_tags.card_title(item, item)
+
+        self.assertEqual(heading["title"], "Breaking Bad")
+        self.assertEqual(heading["subtitle"], "Season 2")
+        self.assertEqual(heading["full"], "Breaking Bad \u2013 Season 2")
+        self.assertEqual(heading["short_subtitle"], "S2")
+
+    def test_season_zero_is_specials(self):
+        """Season 0 is labeled as specials."""
+        item = Item(title="Lost", media_type=MediaTypes.SEASON.value, season_number=0)
+
+        self.assertEqual(app_tags.card_title(item, item)["subtitle"], "Specials")
+
+    def test_custom_titles_are_kept(self):
+        """Cards given another title, like a season's own name, keep it."""
+        item = Item(
+            title="Breaking Bad",
+            media_type=MediaTypes.SEASON.value,
+            season_number=2,
+        )
+
+        heading = app_tags.card_title(item, "Season 2")
+
+        self.assertEqual(heading["title"], "Season 2")
+        self.assertEqual(heading["subtitle"], "")
+
+    def test_other_media_is_unchanged(self):
+        """Non-season cards keep their title."""
+        item = Item(title="Inception", media_type=MediaTypes.MOVIE.value)
+
+        self.assertEqual(app_tags.card_title(item, item)["title"], item)

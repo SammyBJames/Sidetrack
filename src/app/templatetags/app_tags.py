@@ -331,6 +331,36 @@ def release_label(event, user):
     return day
 
 
+@register.simple_tag
+def card_title(item, title):
+    """Return a card's title parts as a dict.
+
+    Keys are `title`, `subtitle`, `short_subtitle` and `full`. A season titled
+    with its show's name is split into the show and a "Season N" subtitle.
+    """
+    is_season = (
+        not isinstance(item, dict)
+        and item.media_type == MediaTypes.SEASON.value
+        and item.season_number is not None
+    )
+    # Cards titled with something else, like a season's own name, keep it
+    if not is_season or str(title) != str(item):
+        return {"title": title, "subtitle": "", "short_subtitle": "", "full": title}
+
+    if item.season_number == 0:
+        subtitle = short_subtitle = "Specials"
+    else:
+        subtitle = f"Season {item.season_number}"
+        short_subtitle = f"S{item.season_number}"
+    return {
+        "title": item.title,
+        "subtitle": subtitle,
+        # For cards too narrow to fit the subtitle next to the progress
+        "short_subtitle": short_subtitle,
+        "full": f"{item.title} \u2013 {subtitle}",
+    }
+
+
 @register.filter
 def unreleased_on_home(media, home_status):
     """Return whether a home card is waiting on its next release."""

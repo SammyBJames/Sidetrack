@@ -64,12 +64,12 @@ class IntegrationTest(StaticLiveServerTestCase):
             f"Last watched: {fixed_date.strftime(datetime_format)}",
         )
         self.page.get_by_role("link", name="Home").click()
-        expect(self.page.get_by_text("Breaking Bad S1")).to_be_visible()
+        expect(self.page.get_by_title("Breaking Bad \u2013 Season 1")).to_be_visible()
         self.page.locator("#media-grid-in-progress-season").get_by_role(
             "button",
             name="+1 episode",
         ).first.click()
-        self.page.get_by_title("Breaking Bad S1").click()
+        self.page.get_by_title("Breaking Bad \u2013 Season 1").click()
 
         today = timezone.localtime().strftime(datetime_format)
         expect(self.page.get_by_role("main")).to_contain_text(f"Last watched: {today}")
@@ -164,7 +164,7 @@ class IntegrationTest(StaticLiveServerTestCase):
         expect(self.page.get_by_role("main")).to_contain_text("Friends")
         self.page.get_by_role("link", name="TV Seasons").click()
         self.page.get_by_role("link", name="Grid View").click()
-        expect(self.page.get_by_role("main")).to_contain_text("Friends S1")
+        expect(self.page.get_by_title("Friends \u2013 Season 1")).to_be_visible()
         self.page.get_by_role("link", name="TV Shows").click()
         self.page.get_by_title("Friends").click()
         expect(self.page.get_by_role("main")).to_contain_text("Friends")

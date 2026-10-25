@@ -2684,6 +2684,14 @@
       flex-direction: column;
     }
   }
+  @container (width >= 10.25rem) {
+    .\@\[10\.25rem\]\:hidden {
+      display: none;
+    }
+    .\@\[10\.25rem\]\:inline {
+      display: inline;
+    }
+  }
   @media (pointer: coarse) {
     .pointer-coarse\:pointer-events-none {
       pointer-events: none;

@@ -2,6 +2,7 @@
 
 {# A card of a home section: poster, release or status button, and title and progress on hover #}
 
+{% card_title media.item media as heading %}
 {% if home_status == Status.PLANNING.value %}
   {% firstof "text-sky-400" as clock_color %}
 {% else %}
@@ -10,7 +11,7 @@
 
 <div id="home-media-{{ media.item.media_type }}-{{ media.id }}"
      class="media-card hover-tap relative overflow-hidden rounded-xl bg-surface-800 shadow-lg shadow-black/30 ring-1 ring-white/10 transition duration-300 parent-hover-tap:shadow-black/60 parent-hover-tap:ring-white/30">
-  {% include "app/components/card_poster.html" with url=media.item|media_url image=media.item.image alt=media %}
+  {% include "app/components/card_poster.html" with url=media.item|media_url image=media.item.image alt=heading.full %}
 
   {% with unreleased=media|unreleased_on_home:home_status %}
     <div class="pointer-events-none absolute inset-x-0 top-0 z-1 flex items-start justify-between gap-1 p-2">
@@ -35,18 +36,24 @@
   {% endwith %}
 
   {# Title and progress, shown on hover where there is a mouse, unless there is no poster to go by #}
-  <div class="pointer-events-none absolute inset-x-0 bottom-0 z-1 px-3 pt-3 pb-3.5 transition duration-300 {% if media.item.image != IMG_NONE %}can-hover:translate-y-2 can-hover:opacity-0 can-hover:parent-hover-tap:translate-y-0 can-hover:parent-hover-tap:opacity-100 can-hover:focus-within:translate-y-0 can-hover:focus-within:opacity-100{% endif %}">
+  <div class="@container pointer-events-none absolute inset-x-0 bottom-0 z-1 px-3 pt-3 pb-3.5 transition duration-300 {% if media.item.image != IMG_NONE %}can-hover:translate-y-2 can-hover:opacity-0 can-hover:parent-hover-tap:translate-y-0 can-hover:parent-hover-tap:opacity-100 can-hover:focus-within:translate-y-0 can-hover:focus-within:opacity-100{% endif %}">
     <a href="{{ media.item|media_url }}"
        class="pointer-events-auto line-clamp-2 text-[1rem] leading-snug font-semibold text-white drop-shadow-md"
-       title="{{ media }}">{{ media }}</a>
-    {% if home_status != Status.PLANNING.value and media.item.media_type != MediaTypes.MOVIE.value %}
+       title="{{ heading.full }}">{{ heading.title }}</a>
+    {% if heading.subtitle or home_status != Status.PLANNING.value and media.item.media_type != MediaTypes.MOVIE.value %}
       <div class="mt-1 truncate text-xs text-gray-300">
-        {{ media.formatted_progress }}
-        {% if media.item.media_type != MediaTypes.GAME.value %}
-          {% if media.max_progress %}
-            / {{ media.max_progress }} {{ media.item.media_type|long_unit }}{{ media.max_progress|pluralize }}
-          {% else %}
-            {{ media.item.media_type|long_unit }}{{ media.progress|pluralize }}
+        {% if heading.subtitle %}
+          <span class="font-semibold text-gray-100"><span class="@[10.25rem]:hidden">{{ heading.short_subtitle }}</span><span class="hidden @[10.25rem]:inline">{{ heading.subtitle }}</span></span>
+        {% endif %}
+        {% if home_status != Status.PLANNING.value and media.item.media_type != MediaTypes.MOVIE.value %}
+          {% if heading.subtitle %}<span class="text-gray-500">•</span>{% endif %}
+          {{ media.formatted_progress }}
+          {% if media.item.media_type != MediaTypes.GAME.value %}
+            {% if media.max_progress %}
+              / {{ media.max_progress }} {{ media.item.media_type|long_unit }}{{ media.max_progress|pluralize }}
+            {% else %}
+              {{ media.item.media_type|long_unit }}{{ media.progress|pluralize }}
+            {% endif %}
           {% endif %}
         {% endif %}
       </div>
