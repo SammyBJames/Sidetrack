@@ -1,0 +1,12 @@
+{# The poster of a media card, linking to the media #}
+<a href="{{ url }}" class="block overflow-hidden" tabindex="-1">
+  <img alt="{{ alt }}"
+       class="lazyload aspect-2/3 w-full bg-surface-600 transition duration-500 ease-out parent-hover-tap:scale-105 {% if image != IMG_NONE %}object-cover{% else %}object-contain p-[30%] opacity-30{% endif %}"
+       data-src="{{ image }}"
+       src="{{ IMG_NONE }}">
+</a>
+
+{# Shade the top and bottom so the pills and the title stay readable on any poster #}
+<div class="pointer-events-none absolute inset-x-0 top-0 h-16 bg-linear-to-b from-black/60 to-transparent"></div>
+<div class="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-linear-to-t from-black/95 via-black/60 to-transparent transition-opacity duration-300 {% if image != IMG_NONE %}can-hover:opacity-0 can-hover:parent-hover-tap:opacity-100 can-hover:[.hover-tap:focus-within_&]:opacity-100{% endif %}">
+</div>

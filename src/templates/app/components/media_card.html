@@ -1,150 +1,77 @@
 {% load app_tags %}
 
-<div class="{% if secondary_color %}bg-surface-600{% else %}bg-surface-800{% endif %} rounded-lg overflow-hidden shadow-lg relative {% if active %}ring-[1.5px] ring-slate-400{% endif %}"
-     x-data="{ trackOpen: false, listsOpen: false, historyOpen: false }">
-  <div class="relative">
-    <a href="{{ item|media_url }}">
-      <img alt="{{ title }}"
-           class="lazyload w-full {% if from_grid %}aspect-2/3{% else %}h-48{% endif %} bg-surface-550 {% if item.image != IMG_NONE %}object-cover{% endif %}"
-           data-src="{{ item.image }}"
-           src="{{ IMG_NONE }}">
-    </a>
-    {% with user=target_user|default:user %}
-      {% if media.status %}
-        <div class="absolute top-2 left-2 bg-gray-900/90 text-white text-xs px-2 py-1 rounded-md flex items-center shadow-md">
-          {% if media.status|status_config %}
-            <div class="w-4 h-4 {{ media.status|status_color }} {% if media.start_date or media.end_date %}mr-1.5{% endif %}">
-              {% include media.status|status_icon %}
-            </div>
-          {% endif %}
+{# No transform or backdrop filter on this root: the episode modal below is fixed and must stay relative to the viewport #}
+<div class="media-card hover-tap relative overflow-hidden rounded-xl bg-surface-800 shadow-lg shadow-black/30 ring-1 transition duration-300 {% if active %}ring-2 ring-indigo-400{% else %}ring-white/10 parent-hover-tap:ring-white/30 parent-hover-tap:shadow-black/60{% endif %}"
+     {% if item.media_type == MediaTypes.EPISODE.value %}x-data="{ trackOpen: false }"{% endif %}>
+  {% include "app/components/card_poster.html" with url=item|media_url image=item.image alt=title %}
 
-          {% if media.end_date is not None %}
-            <span class="text-sm text-white">{{ media.end_date|date_format:user }}</span>
-          {% elif media.start_date is not None %}
-            <span class="text-sm text-white">{{ media.start_date|date_format:user }}</span>
-          {% endif %}
-
-        </div>
-      {% endif %}
-
+  {% with user=target_user|default:user %}
+    <div class="pointer-events-none absolute inset-x-0 top-0 z-1 flex items-start justify-between gap-1 p-2">
       {% if media.score|show_media_score:user %}
-        <div class="absolute {% if from_grid %}sm:top-2 sm:right-2 sm:left-auto{% endif %} top-10 left-2 bg-gray-900/90 text-white text-xs px-2 py-1 rounded-md flex items-center shadow-md">
-          {% include "app/icons/star.svg" with classes="w-4 h-4 text-yellow-400 mr-1 fill-current" %}
-          <span class="text-sm text-white">{{ media.formatted_score }}</span>
+        <div class="card-chip flex shrink-0 items-center gap-1 px-2 py-0.5 text-xs font-semibold text-white">
+          {% include "app/icons/star.svg" with classes="size-3.5 text-amber-400 fill-current" %}
+          <span>{{ media.formatted_score }}</span>
         </div>
       {% endif %}
-    {% endwith %}
 
-    {% if media.progress and media_type != MediaTypes.MOVIE.value %}
-      <div class="absolute bottom-2 left-2 bg-gray-900/90 text-white text-xs px-2 py-1 rounded-md flex items-center shadow-md">
-        <span class="text-sm text-white">
-          {{ media.formatted_progress }}
-          {% if media.max_progress %}/ {{ media.max_progress }}{% endif %}
-        </span>
-      </div>
-    {% endif %}
-
-    {% if media.repeats > 1 %}
-      <div class="absolute sm:bottom-2 sm:right-2 sm:left-auto bottom-10 left-2 bg-gray-900/90 text-white text-xs px-2 py-1 rounded-md flex items-center shadow-md">
-        {% include "app/icons/repeat.svg" with classes="w-4 h-4 text-slate-200 mr-1" %}
-        <span class="text-sm text-white">{{ media.repeats }}</span>
-      </div>
-    {% endif %}
-
-    {% with user=target_user|default:user %}
-      <div class="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 hover-tap:opacity-100{% if user.clickable_media_cards %} pointer-coarse:hidden{% endif %}">
-        <a href="{{ item|media_url }}" class="absolute inset-0"></a>
+      {# Current status, which turns into the action to the next one on hover #}
+      <div class="ml-auto">
         {% if request.user == user %}
-          <div class="relative flex items-center justify-center space-x-2.5">
-            {% if item.media_type == MediaTypes.EPISODE.value %}
-              <button @click="trackOpen = true"
-                      class="p-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full hover:scale-110 hover:shadow-[0_0_15px_rgba(99,102,241,0.5)] transition-all duration-200 cursor-pointer">
-                {% if media %}
-                  {% include "app/icons/eye.svg" with classes="w-4 h-4" %}
-                {% else %}
-                  {% include "app/icons/eye-closed.svg" with classes="w-4 h-4" %}
-                {% endif %}
-              </button>
-            {% else %}
-              {# Track Button #}
-              <button class="p-2.5 bg-indigo-600 text-white rounded-full hover:bg-indigo-500 hover:scale-110 hover:shadow-[0_0_15px_rgba(99,102,241,0.5)] transition-all duration-200 cursor-pointer"
-                      title="Add to tracker"
-                      hx-get="{% media_view_url 'track_modal' item %}"
-                      hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}", "instance_id": "{{ media.id }}"}'
-                      hx-target="#{% component_id 'track' item media.id %}"
-                      hx-trigger="click once"
-                      @click="trackOpen = true">{% include "app/icons/edit.svg" with classes="w-4 h-4" %}</button>
+          {% if item.media_type == MediaTypes.EPISODE.value %}
+            <button @click="trackOpen = true"
+                    title="Track Episode"
+                    aria-label="Track Episode"
+                    class="card-chip pointer-events-auto flex size-7 cursor-pointer items-center justify-center text-white transition hover:bg-indigo-600">
+              {% if media %}
+                {% include "app/icons/eye.svg" with classes="size-3.5" %}
+              {% else %}
+                {% include "app/icons/eye-closed.svg" with classes="size-3.5" %}
+              {% endif %}
+            </button>
+          {% else %}
+            {% include "app/components/quick_action_button.html" with card="grid" %}
+          {% endif %}
+        {% elif media.status %}
+          {# Someone else's card shows their status without an action #}
+          {% include "app/components/status_badge.html" with status=media.status %}
+        {% endif %}
+      </div>
+    </div>
+
+    {# Title and details, shown on hover where there is a mouse, unless there is no poster to go by #}
+    <div class="pointer-events-none absolute inset-x-0 bottom-0 z-1 px-3 pt-3 pb-3.5 transition duration-300 {% if item.image != IMG_NONE %}can-hover:translate-y-2 can-hover:opacity-0 can-hover:parent-hover-tap:translate-y-0 can-hover:parent-hover-tap:opacity-100 can-hover:focus-within:translate-y-0 can-hover:focus-within:opacity-100{% endif %}">
+      <div>
+        <a href="{{ item|media_url }}"
+           class="pointer-events-auto line-clamp-2 text-[1rem] leading-snug font-semibold text-white drop-shadow-md"
+           title="{{ title }}">{{ title }}</a>
+        {% if item.release_year or media.progress and item.media_type != MediaTypes.MOVIE.value or media.repeats > 1 %}
+          <div class="mt-1 flex items-center gap-1.5 text-xs text-gray-300">
+            {% if item.release_year %}
+              <span>{{ item.release_year }}</span>
             {% endif %}
-
-            {# Lists Button #}
-            <button class="p-2.5 bg-emerald-600 text-white rounded-full hover:bg-emerald-500 hover:scale-110 hover:shadow-[0_0_15px_rgba(16,185,129,0.5)] transition-all duration-200 cursor-pointer"
-                    title="Add to custom lists"
-                    hx-get="{% media_view_url 'lists_modal' item %}"
-                    hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}"}'
-                    hx-target="#{% component_id 'lists' item %}"
-                    hx-trigger="click once"
-                    @click="listsOpen = true">{% include "app/icons/list-add.svg" with classes="w-4 h-4" %}</button>
-
-            {# History Button #}
-            <button class="p-2.5 bg-amber-600 text-white rounded-full hover:bg-amber-500 hover:scale-110 hover:shadow-[0_0_15px_rgba(245,158,11,0.5)] transition-all duration-200 cursor-pointer"
-                    title="View your activity history"
-                    hx-get="{% media_view_url 'history_modal' item %}"
-                    hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}"}'
-                    hx-target="#{% component_id 'history' item %}"
-                    hx-trigger="click once"
-                    @click="historyOpen = true">{% include "app/icons/history.svg" with classes="w-4 h-4" %}</button>
+            {% if media.progress and item.media_type != MediaTypes.MOVIE.value %}
+              {% if item.release_year %}<span class="text-gray-500">•</span>{% endif %}
+              <span>
+                {{ media.formatted_progress }}
+                {% if media.max_progress %}/ {{ media.max_progress }}{% endif %}
+              </span>
+            {% endif %}
+            {% if media.repeats > 1 %}
+              <span class="flex items-center gap-0.5"
+                    title="Repeated {{ media.repeats }} times">
+                {% include "app/icons/repeat.svg" with classes="size-3.5" %}
+                {{ media.repeats }}
+              </span>
+            {% endif %}
           </div>
         {% endif %}
       </div>
-    {% endwith %}
-  </div>
+    </div>
 
-  <div class="p-3">
-    <a href="{{ item|media_url }}"
-       class="text-sm font-semibold text-white hover:text-indigo-400 transition duration-300 line-clamp-1"
-       title="{{ title }}">{{ title }}</a>
-    {% if item.release_year %}
-      <div class="text-xs text-gray-400 mt-1">{{ item.release_year }}</div>
-    {% endif %}
-  </div>
+    <div class="absolute inset-x-0 bottom-0 z-1">{% include "app/components/progress_bar.html" %}</div>
+  {% endwith %}
 
   {% if item.media_type == MediaTypes.EPISODE.value %}
     {% include "app/components/fill_track_episode.html" with request=request media=item episode=item episode_title=title csrf_token=csrf_token TRACK_TIME=TRACK_TIME only %}
-  {% else %}
-    {# Track Modal #}
-    <div x-cloak
-         x-show="trackOpen"
-         @keydown.escape.window="trackOpen = false"
-         class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div class="w-152 max-h-[90vh] px-4 md:px-0 relative z-60"
-           @click.outside="trackOpen = false">
-        <div id="{% component_id 'track' item media.id %}"></div>
-      </div>
-    </div>
   {% endif %}
-
-  {# Lists Modal #}
-  <div x-cloak
-       x-show="listsOpen"
-       @keydown.escape.window="listsOpen = false"
-       class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="w-96 max-h-[90vh] px-4 md:px-0 relative z-60"
-         @click.outside="listsOpen = false">
-      <div id="{% component_id 'lists' item %}"></div>
-    </div>
-  </div>
-
-  {# History Modal #}
-  <div x-cloak
-       x-show="historyOpen"
-       @keydown.escape.window="historyOpen = false"
-       class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="w-96 max-h-[90vh] px-4 md:px-0 relative z-60"
-         @click.outside="historyOpen = false">
-      <div id="{% component_id 'history' item %}"></div>
-    </div>
-  </div>
-  {% with user=target_user|default:user %}
-    {% include "app/components/progress_bar.html" with media=media user=user only %}
-  {% endwith %}
 </div>

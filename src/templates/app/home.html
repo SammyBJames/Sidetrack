@@ -43,7 +43,14 @@
       </div>
     </div>
 
-    <div class="space-y-15">
+    {# Refreshes after a card changes an entry, so it moves between sections and the counts update. Cards and Load all make their own requests, so they don't inherit this one's settings #}
+    <div id="home-sections"
+         class="space-y-15"
+         hx-get="{% url 'home' %}"
+         hx-trigger="mediaChanged from:body"
+         hx-select="#home-sections"
+         hx-swap="outerHTML"
+         hx-disinherit="*">
       {% for section in home_sections %}
         {% include "app/components/home_section.html" with section=section %}
       {% endfor %}

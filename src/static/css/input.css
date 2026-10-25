@@ -60,6 +60,13 @@
 /* https://tailwindcss.com/docs/upgrade-guide#hover-styles-on-mobile */
 @custom-variant hover-tap (&:hover);
 @custom-variant parent-hover-tap (.hover-tap:hover &);
+/* Devices with a mouse, where card details can wait for hover */
+@custom-variant can-hover (@media (hover: hover) and (pointer: fine));
+
+/* The dark, frosted pills and buttons over media card posters */
+@utility card-chip {
+  @apply rounded-full bg-black/60 shadow-md ring-1 ring-white/20 backdrop-blur-sm;
+}
 
 .toast-error {
   @apply bg-red-700/95 border-red-600;

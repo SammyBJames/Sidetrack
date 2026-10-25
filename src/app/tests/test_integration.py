@@ -67,7 +67,7 @@ class IntegrationTest(StaticLiveServerTestCase):
         expect(self.page.get_by_text("Breaking Bad S1")).to_be_visible()
         self.page.locator("#media-grid-in-progress-season").get_by_role(
             "button",
-            name="Increase progress",
+            name="+1 episode",
         ).first.click()
         self.page.get_by_title("Breaking Bad S1").click()
 

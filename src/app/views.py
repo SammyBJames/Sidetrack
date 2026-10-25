@@ -16,7 +16,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from app import config, helpers, history_processor
+from app import config, helpers, history_processor, quick_actions
 from app import home as home_helpers
 from app import statistics as stats
 from app.forms import EpisodeForm, ManualItemForm, get_form_class
@@ -106,7 +106,11 @@ def home(request):
 
 @require_POST
 def progress_edit(request, media_type, instance_id):
-    """Increase or decrease the progress of a media item from home page."""
+    """Increase or decrease the progress of a media item from the home page.
+
+    Returns the updated card, or removes it and refreshes the home sections when
+    the entry no longer belongs in the section named by `home_status`.
+    """
     operation = request.POST["operation"]
     hide_unreleased = request.user.home_hide_unreleased
     home_status = request.POST.get("home_status")
@@ -136,16 +140,23 @@ def progress_edit(request, media_type, instance_id):
             ),
         )
 
-    if hide_unreleased and home_status == Status.IN_PROGRESS.value:
-        if media_type == MediaTypes.SEASON.value:
-            BasicMedia.objects.annotate_max_progress([media], media_type)
-        BasicMedia.objects._annotate_next_event([media])
+    BasicMedia.objects.annotate_max_progress([media], media_type)
+    BasicMedia.objects._annotate_next_event([media])
 
-        if not home_helpers.is_active_in_progress_media(media):
-            response = HttpResponse()
-            response["HX-Retarget"] = f"#home-media-{media.item.media_type}-{media.id}"
-            response["HX-Reswap"] = "delete"
-            return response
+    # The card leaves its section when the entry is no longer in it, e.g. after
+    # reaching the last episode marks it completed
+    left_section = home_status is not None and media.status != home_status
+    if left_section or (
+        hide_unreleased
+        and home_status == Status.IN_PROGRESS.value
+        and not home_helpers.is_active_in_progress_media(media)
+    ):
+        response = render(request, "app/components/messages/messages_oob.html")
+        response["HX-Retarget"] = f"#home-media-{media.item.media_type}-{media.id}"
+        response["HX-Reswap"] = "delete"
+        # Refresh the sections, so the entry shows up where it belongs now
+        response["HX-Trigger"] = "mediaChanged"
+        return response
 
     context = {
         "media": media,
@@ -153,7 +164,7 @@ def progress_edit(request, media_type, instance_id):
     }
     return render(
         request,
-        "app/components/progress_changer.html",
+        "app/components/home_card_response.html",
         context,
     )
 
@@ -662,6 +673,121 @@ def media_save(request):
                 )
 
     return helpers.redirect_back(request)
+
+
+@require_POST
+def quick_action(request):
+    """Apply the one-click action of a media card and return the updated card.
+
+    The entry is the one given by `instance_id`, else the user's entry for the
+    media, which is created if missing. `action` is the key the card showed. If
+    it no longer matches, nothing is changed. Removes the card instead of
+    updating it when the entry left the section or status filter it was shown in.
+    """
+    media_id = request.POST["media_id"]
+    source = request.POST["source"]
+    media_type = request.POST["media_type"]
+    season_number = request.POST.get("season_number") or None
+    instance_id = request.POST.get("instance_id")
+    expected_action = request.POST["action"]
+
+    if instance_id:
+        media = helpers.get_owned_media_or_404(request, media_type, instance_id)
+    else:
+        media = BasicMedia.objects.filter_media(
+            request.user,
+            media_id,
+            media_type,
+            source,
+            season_number=season_number,
+        ).first()
+
+    action = quick_actions.get_quick_action(media_type, media)
+    # The card may be stale, e.g. after a double click, so only act on what it showed
+    if action is None or action.key != expected_action:
+        messages.info(request, "This entry has already changed. Reload to see it.")
+        response = render(request, "app/components/messages/messages_oob.html")
+        response["HX-Reswap"] = "none"
+        return response
+
+    if media is None:
+        item = _get_or_create_item(media_id, source, media_type, season_number)
+        model = apps.get_model(app_label="app", model_name=media_type)
+        media = model(item=item, user=request.user)
+    quick_actions.apply_quick_action(action, media)
+    logger.info("Applied quick action %s to %s", action.key, media)
+    messages.success(request, quick_actions.success_message(action, media))
+
+    if request.POST.get("card") == "home":
+        # Home actions change the status, so the card moves to another section
+        response = render(request, "app/components/messages/messages_oob.html")
+        response["HX-Reswap"] = "delete"
+        response["HX-Trigger"] = "mediaChanged"
+        return response
+
+    status_filter = request.POST.get("status")
+    if status_filter not in {None, "", MediaStatusChoices.ALL, media.status}:
+        # The entry no longer matches the list's status filter
+        response = render(request, "app/components/messages/messages_oob.html")
+        response["HX-Reswap"] = "delete"
+        return response
+
+    media = BasicMedia.objects.get_media(request.user, media_type, media.id)
+    BasicMedia.objects.annotate_max_progress([media], media_type)
+    media.repeats = BasicMedia.objects.filter_media(
+        request.user,
+        media.item.media_id,
+        media_type,
+        media.item.source,
+        season_number=media.item.season_number,
+    ).count()
+
+    # `title` and `active` are display state that only the posted card knows
+    return render(
+        request,
+        "app/components/media_card_response.html",
+        {
+            "item": media.item,
+            "media": media,
+            "title": request.POST.get("title") or media.item,
+            "filtered": "status" in request.POST,
+            "active": request.POST.get("active") == "true",
+        },
+    )
+
+
+def _get_or_create_item(media_id, source, media_type, season_number):
+    """Return the item of a media, fetching its metadata only if it is new.
+
+    Looks up an existing item before calling the metadata provider.
+    """
+    item = Item.objects.filter(
+        media_id=media_id,
+        source=source,
+        media_type=media_type,
+        season_number=season_number,
+        episode_number=None,
+    ).first()
+    if item:
+        return item
+
+    metadata = services.get_media_metadata(
+        media_type,
+        media_id,
+        source,
+        [season_number],
+    )
+    item, _ = Item.objects.get_or_create(
+        media_id=media_id,
+        source=source,
+        media_type=media_type,
+        season_number=season_number,
+        defaults={
+            "title": metadata["title"],
+            "image": metadata["image"],
+        },
+    )
+    return item
 
 
 @require_POST

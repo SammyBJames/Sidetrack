@@ -45,7 +45,8 @@ class IntegrationTest(StaticLiveServerTestCase):
         self.page.locator("li").filter(has_text=re.compile(r"^Anime$")).click()
         self.page.get_by_placeholder("Search anime...").fill("perfect blue")
         self.page.get_by_placeholder("Search anime...").press("Enter")
-        self.page.get_by_role("button", name="Add to custom lists").first.click()
+        self.page.get_by_title("Perfect Blue", exact=True).click()
+        self.page.get_by_role("button", name="Add to lists").click()
         expect(self.page.locator("#lists-anime-437")).to_contain_text(
             "You haven't created any lists yet.",
         )
@@ -69,7 +70,8 @@ class IntegrationTest(StaticLiveServerTestCase):
         self.page.get_by_placeholder("Search anime...").click()
         self.page.get_by_placeholder("Search anime...").fill("perfect blue")
         self.page.get_by_placeholder("Search anime...").press("Enter")
-        self.page.get_by_role("button", name="Add to custom lists").first.click()
+        self.page.get_by_title("Perfect Blue", exact=True).click()
+        self.page.get_by_role("button", name="Add to lists").click()
         expect(self.page.locator("#lists-anime-437")).to_contain_text("Lists test Add")
         self.page.get_by_role("button", name="Add", exact=True).click()
         expect(self.page.locator("#lists-anime-437")).to_contain_text("Remove")

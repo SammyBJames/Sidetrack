@@ -1,7 +1,8 @@
 {% load app_tags %}
 
 {% for media in media_list %}
-  {% include "app/components/media_card.html" with media=media item=media.item title=media.item from_grid=True %}
+  {# The page has a filter form, so the card can tell when an entry leaves the filter #}
+  {% include "app/components/media_card.html" with media=media item=media.item title=media.item filtered=True %}
 {% endfor %}
 
 {# Loads the next page when scrolled into view, kept apart from the cards so any card can be removed #}

@@ -258,7 +258,7 @@
       {% if top_rated %}
         <div class="media-grid">
           {% for media in top_rated %}
-            {% include "app/components/media_card.html" with media=media item=media.item title=media.item from_grid=True secondary_color=True %}
+            {% include "app/components/media_card.html" with media=media item=media.item title=media.item %}
           {% endfor %}
         </div>
       {% else %}
