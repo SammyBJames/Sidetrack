@@ -68,6 +68,11 @@
   @apply rounded-full bg-black/60 shadow-md ring-1 ring-white/20 backdrop-blur-sm;
 }
 
+/* Hidden until the card is hovered or focused, where there is a mouse */
+@utility hover-reveal {
+  @apply transition-opacity duration-300 can-hover:opacity-0 can-hover:parent-hover-tap:opacity-100 can-hover:[.hover-tap:focus-within_&]:opacity-100;
+}
+
 .toast-error {
   @apply bg-red-700/95 border-red-600;
 }

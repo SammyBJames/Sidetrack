@@ -1989,6 +1989,26 @@
   .scheme-dark {
     color-scheme: dark;
   }
+  .hover-reveal {
+    transition-property: opacity;
+    transition-timing-function: var(--tw-ease, var(--default-transition-timing-function));
+    transition-duration: var(--tw-duration, var(--default-transition-duration));
+    --tw-duration: 300ms;
+    transition-duration: 300ms;
+    @media (hover: hover) and (pointer: fine) {
+      opacity: 0%;
+    }
+    @media (hover: hover) and (pointer: fine) {
+      .hover-tap:hover & {
+        opacity: 100%;
+      }
+    }
+    @media (hover: hover) and (pointer: fine) {
+      .hover-tap:focus-within & {
+        opacity: 100%;
+      }
+    }
+  }
   .opacity-0 {
     opacity: 0%;
   }
@@ -2756,11 +2776,6 @@
   .\[\&\:\:-webkit-outer-spin-button\]\:appearance-none::-webkit-outer-spin-button {
     appearance: none;
   }
-  @media (hover: hover) and (pointer: fine) {
-    .hover-tap:focus-within .can-hover\:\[\.hover-tap\:focus-within_\&\]\:opacity-100 {
-      opacity: 100%;
-    }
-  }
   .htmx-request .\[\.htmx-request_\&\]\:invisible {
     visibility: hidden;
   }
@@ -3276,6 +3291,10 @@
   syntax: "*";
   inherits: false;
 }
+@property --tw-duration {
+  syntax: "*";
+  inherits: false;
+}
 @property --tw-blur {
   syntax: "*";
   inherits: false;
@@ -3326,10 +3345,6 @@
   initial-value: 100%;
 }
 @property --tw-drop-shadow-size {
-  syntax: "*";
-  inherits: false;
-}
-@property --tw-duration {
   syntax: "*";
   inherits: false;
 }
@@ -3401,6 +3416,7 @@
       --tw-leading: initial;
       --tw-font-weight: initial;
       --tw-tracking: initial;
+      --tw-duration: initial;
       --tw-blur: initial;
       --tw-brightness: initial;
       --tw-contrast: initial;
@@ -3414,7 +3430,6 @@
       --tw-drop-shadow-color: initial;
       --tw-drop-shadow-alpha: 100%;
       --tw-drop-shadow-size: initial;
-      --tw-duration: initial;
       --tw-ease: initial;
       --tw-content: "";
     }
