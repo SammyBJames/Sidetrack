@@ -8,8 +8,8 @@
     "display_override": [
         "standalone"
     ],
-    "theme_color": "#181a1b",
-    "background_color": "#212529",
+    "theme_color": "#0b101b",
+    "background_color": "#111827",
     "orientation": "portrait-primary",
     "scope": "/",
     "icons": [

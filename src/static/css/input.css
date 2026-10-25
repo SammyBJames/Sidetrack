@@ -3,22 +3,22 @@
 @theme {
   --breakpoint-xs: 30rem;
 
-  /* Neutral surfaces, darkest to lightest. */
-  --color-surface-950: #1a1d20;
-  --color-surface-900: #212529;
-  --color-surface-875: #23272b;
-  --color-surface-850: #262a2f;
-  --color-surface-825: #272c31;
-  --color-surface-800: #2a2f35;
-  --color-surface-775: #2c3136;
-  --color-surface-750: #30363d;
-  --color-surface-700: #313842;
-  --color-surface-650: #343a40;
-  --color-surface-600: #39404b;
-  --color-surface-550: #3e454d;
-  --color-surface-500: #454d5a;
+  /* Neutral surfaces, darkest to lightest: a cool blue-gray scale. */
+  --color-surface-950: #0b101b;
+  --color-surface-900: #111827;
+  --color-surface-875: #151d2d;
+  --color-surface-850: #172033;
+  --color-surface-825: #1a2436;
+  --color-surface-800: #1f2937;
+  --color-surface-775: #253042;
+  --color-surface-750: #273245;
+  --color-surface-700: #2a3548;
+  --color-surface-650: #2e394c;
+  --color-surface-600: #374151;
+  --color-surface-550: #3e4859;
+  --color-surface-500: #4b5563;
 
-  --color-focus: #4a9eff;
+  --color-focus: #6366f1;
 }
 
 [x-cloak] {

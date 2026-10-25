@@ -106,20 +106,20 @@
     --default-transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
     --default-font-family: var(--font-sans);
     --default-mono-font-family: var(--font-mono);
-    --color-surface-950: #1a1d20;
-    --color-surface-900: #212529;
-    --color-surface-875: #23272b;
-    --color-surface-850: #262a2f;
-    --color-surface-825: #272c31;
-    --color-surface-800: #2a2f35;
-    --color-surface-775: #2c3136;
-    --color-surface-750: #30363d;
-    --color-surface-700: #313842;
-    --color-surface-650: #343a40;
-    --color-surface-600: #39404b;
-    --color-surface-550: #3e454d;
-    --color-surface-500: #454d5a;
-    --color-focus: #4a9eff;
+    --color-surface-950: #0b101b;
+    --color-surface-900: #111827;
+    --color-surface-875: #151d2d;
+    --color-surface-850: #172033;
+    --color-surface-825: #1a2436;
+    --color-surface-800: #1f2937;
+    --color-surface-775: #253042;
+    --color-surface-750: #273245;
+    --color-surface-700: #2a3548;
+    --color-surface-650: #2e394c;
+    --color-surface-600: #374151;
+    --color-surface-550: #3e4859;
+    --color-surface-500: #4b5563;
+    --color-focus: #6366f1;
   }
 }
 @layer base {
