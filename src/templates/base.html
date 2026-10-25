@@ -236,11 +236,11 @@
         <div class="flex-1 min-w-0 flex flex-col min-h-screen">
           {# Top bar #}
           <div class="sticky top-0 z-10 bg-surface-950 border-b border-surface-775 shadow-md">
-            <div class="container mx-auto px-4">
+            <div class="px-4">
               <div class="flex items-center justify-between lg:justify-center h-16">
                 {# Mobile: sidebar toggle button #}
                 <button @click="isMobileMenuOpen = !isMobileMenuOpen"
-                        class="lg:hidden pe-3 text-gray-400 hover:text-white transition-colors duration-200">
+                        class="lg:hidden pe-3 text-gray-400 hover:text-white transition-colors duration-200 cursor-pointer">
                   {% include "app/icons/hamburger.svg" with classes="w-6 h-6" %}
 
                 </button>
@@ -254,7 +254,8 @@
 
                 {# Search bar #}
                 {% block search_bar %}
-                  <div class="relative w-full max-w-2xl">
+                  {# Fills the bar next to the menu button, centered at its widest on large screens #}
+                  <div class="relative w-full min-w-0 flex-1 lg:max-w-2xl">
                     <form method="get"
                           action="{% url 'search' %}"
                           x-data=" { isOpen: false, selectedType: { display: '{{ search_type|media_type_readable_plural }}', value: '{{ search_type }}' }, mediaTypes: {% get_search_media_types user as search_types %}{{ search_types }}, getPlaceholder() { return `Search ${this.selectedType.display.toLowerCase()}...` } }">
@@ -266,10 +267,10 @@
                                  name="q"
                                  value="{{ request.GET.q }}"
                                  :placeholder="getPlaceholder()"
-                                 class="w-full py-2 pl-10 pr-4 text-sm text-gray-300 bg-surface-825 rounded-l-md focus:outline-none focus:ring-2 focus:ring-focus focus:ring-inset placeholder-gray-500">
+                                 class="w-full text-ellipsis py-2 pl-11 pr-4 text-sm text-gray-300 bg-surface-825 rounded-l-full focus:outline-none focus:ring-2 focus:ring-focus focus:ring-inset placeholder-gray-500">
                           <button type="submit"
                                   aria-label="Search"
-                                  class="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors duration-200 focus:outline-none cursor-pointer">
+                                  class="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors duration-200 focus:outline-none cursor-pointer">
                             {% include "app/icons/magnifying-glass.svg" with classes="w-5 h-5" %}
 
                           </button>
@@ -281,9 +282,10 @@
                         <button type="button"
                                 @click="isOpen = !isOpen"
                                 @click.away="isOpen = false"
-                                class="flex items-center justify-between max-w-27.5 sm:max-w-none sm:w-32 px-2 sm:px-4 py-2 text-sm text-gray-300 bg-surface-825 rounded-r-md focus:outline-none focus:ring-2 focus:ring-focus focus:ring-inset hover:bg-surface-800 transition-colors duration-200 cursor-pointer">
-                          <span class="truncate sm:whitespace-normal" x-text="selectedType.display"></span>
-                          {% include "app/icons/chevron-down.svg" with classes="w-4 h-4 ml-2" %}
+                                class="flex shrink-0 items-center gap-2 ps-3 pe-4 py-2 text-sm text-gray-300 bg-surface-825 rounded-r-full focus:outline-none focus:ring-2 focus:ring-focus focus:ring-inset hover:bg-surface-800 transition-colors duration-200 cursor-pointer">
+                          {# Sized to the selected type, so the label sits next to its chevron #}
+                          <span class="whitespace-nowrap" x-text="selectedType.display"></span>
+                          {% include "app/icons/chevron-down.svg" with classes="w-4 h-4" %}
 
                         </button>
                         <ul x-cloak
@@ -295,7 +297,7 @@
                             x-transition:leave="transition ease-in duration-75"
                             x-transition:leave-start="transform opacity-100 scale-100"
                             x-transition:leave-end="transform opacity-0 scale-95"
-                            class="absolute z-20 py-1 mt-12 overflow-auto text-sm text-gray-300 bg-surface-800 rounded-xl shadow-lg right-0 w-32">
+                            class="absolute z-20 py-1 mt-12 overflow-auto text-sm text-gray-300 bg-surface-800 rounded-xl shadow-lg right-0 min-w-32 w-max">
                           <template x-for="type in mediaTypes" :key="type.value">
                             <li @click="selectedType = type; isOpen = false"
                                 class="px-4 py-2 cursor-pointer hover:bg-surface-650 transition duration-150 ease-in-out"
