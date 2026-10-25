@@ -1,0 +1,50 @@
+{% load app_tags %}
+
+{# A home row: one status and media type by recent activity, scrolling sideways, with a link to the full list in the same order #}
+<section class="space-y-3"
+         x-data="{ atStart: true, atEnd: true, update() { const track = this.$refs.track; this.atStart = track.scrollLeft <= 1; this.atEnd = track.scrollLeft + track.clientWidth >= track.scrollWidth - 1; }, scroll(direction) { const track = this.$refs.track; track.scrollBy({ left: direction * track.clientWidth * 0.9, behavior: 'smooth' }); }, }"
+         x-init="$nextTick(() => update())"
+         @resize.window.debounce.100ms="update()">
+  <div class="flex items-center justify-between gap-3">
+    <a href="{% url 'medialist' request.user.username row.media_type %}?status={{ row.status|urlencode }}&sort=recent"
+       class="group flex min-w-0 items-center gap-2 text-lg font-semibold text-white"
+       title="See all {{ row.total }}">
+      <span class="size-5 shrink-0 {{ row.status|status_color }}">
+        {% include row.status|status_icon with classes="size-5" %}
+      </span>
+      <span class="truncate">
+        {{ row.status|media_status_readable|title }}
+        <span class="text-gray-500">•</span>
+        {{ row.media_type|media_type_readable_plural }}
+      </span>
+      <span class="shrink-0 text-sm font-medium text-gray-500">{{ row.total }}</span>
+      {% include "app/icons/chevron-right.svg" with classes="size-4 shrink-0 text-gray-400 transition group-hover:translate-x-0.5 group-hover:text-white" %}
+    </a>
+
+    {# Only shown when the row is wider than the screen; small screens swipe instead #}
+    <div x-cloak
+         x-show="!(atStart && atEnd)"
+         class="hidden shrink-0 items-center gap-2 sm:flex">
+      {% with button_classes="flex size-8 cursor-pointer items-center justify-center rounded-full bg-surface-800 text-gray-300 ring-1 ring-white/10 transition hover:bg-surface-700 hover:text-white disabled:cursor-default disabled:opacity-40 disabled:hover:bg-surface-800" %}
+        <button type="button"
+                @click="scroll(-1)"
+                :disabled="atStart"
+                aria-label="Scroll left"
+                class="{{ button_classes }}">{% include "app/icons/chevron-left.svg" with classes="size-4" %}</button>
+        <button type="button"
+                @click="scroll(1)"
+                :disabled="atEnd"
+                aria-label="Scroll right"
+                class="{{ button_classes }}">{% include "app/icons/chevron-right.svg" with classes="size-4" %}</button>
+      {% endwith %}
+    </div>
+  </div>
+
+  {# Cards are direct children, sized here, so removing one leaves no gap #}
+  <div id="media-grid-{{ row.id }}"
+       x-ref="track"
+       @scroll.debounce.50ms="update()"
+       class="scrollbar-hide -my-2 flex snap-x gap-4 overflow-x-auto py-2 *:w-36 *:shrink-0 *:snap-start sm:*:w-44 xl:*:w-48">
+    {% include "app/components/home_grid.html" with media_list=row home_status=row.status %}
+  </div>
+</section>

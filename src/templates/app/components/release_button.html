@@ -10,7 +10,7 @@
        aria-label="Add to calendar: {{ label }}">
       <span class="absolute inset-0 opacity-0 transition-opacity duration-200 group-hover/qa:opacity-100 {{ home_status|status_button_color }}"></span>
       {# Without a mouse there is no hover, so the date is always shown #}
-      <span class="relative max-w-40 overflow-hidden pl-2.5 text-xs font-semibold whitespace-nowrap transition-all duration-300 can-hover:max-w-0 can-hover:pl-0 can-hover:group-hover/qa:max-w-40 can-hover:group-hover/qa:pl-2.5">{{ label }}</span>
+      <span class="relative max-w-[min(10rem,calc(100cqw-2.5rem))] overflow-hidden pl-2.5 text-xs font-semibold text-ellipsis whitespace-nowrap transition-all duration-300 can-hover:max-w-0 can-hover:pl-0 can-hover:group-hover/qa:max-w-[min(10rem,calc(100cqw-2.5rem))] can-hover:group-hover/qa:pl-2.5">{{ label }}</span>
       <span class="relative flex size-7 shrink-0 items-center justify-center">
         <span class="size-3.5 group-hover/qa:hidden {{ clock_color }}">
           {% include "app/icons/clock.svg" with classes="size-3.5" %}

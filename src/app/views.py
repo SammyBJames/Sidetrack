@@ -36,7 +36,6 @@ from app.templatetags import app_tags
 from events.models import Event
 from users.models import (
     DateFormatChoices,
-    HomeSortChoices,
     MediaSortChoices,
     MediaStatusChoices,
     User,
@@ -47,60 +46,8 @@ logger = logging.getLogger(__name__)
 
 @require_GET
 def home(request):
-    """Home page with media items in progress and planning."""
-    sort_by = request.user.update_preference("home_sort", request.GET.get("sort"))
-    media_type_to_load = request.GET.get("load_media_type")
-    section_to_load = request.GET.get("load_status", Status.IN_PROGRESS.value)
-    hide_unreleased_param = request.GET.get("hide_unreleased")
-    hide_unreleased = request.user.update_preference(
-        "home_hide_unreleased",
-        None if hide_unreleased_param is None else hide_unreleased_param == "true",
-    )
-    items_limit = 14
-
-    # If this is an HTMX request to load more items for a specific media type
-    if request.headers.get("HX-Request") and media_type_to_load:
-        list_by_type = home_helpers.get_home_media_types(
-            request,
-            sort_by,
-            section_to_load,
-            items_limit,
-            media_type_to_load,
-            hide_unreleased=hide_unreleased,
-        )
-        return render(
-            request,
-            "app/components/home_grid.html",
-            {
-                "media_list": list_by_type.get(
-                    media_type_to_load,
-                    {"items": [], "total": 0},
-                ),
-                "home_status": section_to_load,
-            },
-        )
-
-    home_sections = [
-        home_helpers.build_home_section(
-            section_key,
-            home_helpers.get_home_media_types(
-                request,
-                sort_by,
-                section_key,
-                items_limit,
-                hide_unreleased=hide_unreleased,
-            ),
-        )
-        for section_key in (Status.IN_PROGRESS.value, Status.PLANNING.value)
-    ]
-
-    context = {
-        "home_sections": home_sections,
-        "current_sort": sort_by,
-        "sort_choices": HomeSortChoices.choices,
-        "hide_unreleased": hide_unreleased,
-        "items_limit": items_limit,
-    }
+    """Home page with a row of entries per status and media type."""
+    context = {"home_rows": home_helpers.build_home_rows(request.user, items_limit=20)}
     return render(request, "app/home.html", context)
 
 
@@ -112,7 +59,6 @@ def progress_edit(request, media_type, instance_id):
     the entry no longer belongs in the section named by `home_status`.
     """
     operation = request.POST["operation"]
-    hide_unreleased = request.user.home_hide_unreleased
     home_status = request.POST.get("home_status")
 
     media = helpers.get_owned_media_or_404(
@@ -145,12 +91,7 @@ def progress_edit(request, media_type, instance_id):
 
     # The card leaves its section when the entry is no longer in it, e.g. after
     # reaching the last episode marks it completed
-    left_section = home_status is not None and media.status != home_status
-    if left_section or (
-        hide_unreleased
-        and home_status == Status.IN_PROGRESS.value
-        and not home_helpers.is_active_in_progress_media(media)
-    ):
+    if home_status is not None and media.status != home_status:
         response = render(request, "app/components/messages/messages_oob.html")
         response["HX-Retarget"] = f"#home-media-{media.item.media_type}-{media.id}"
         response["HX-Reswap"] = "delete"

@@ -1,4 +1,5 @@
 from unittest.mock import patch
+from urllib.parse import quote
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -9,6 +10,7 @@ from app.models import (
     Anime,
     Episode,
     Item,
+    Manga,
     MediaTypes,
     Movie,
     Season,
@@ -16,7 +18,6 @@ from app.models import (
     Status,
 )
 from events.models import Event
-from users.models import HomeSortChoices
 
 
 class HomeViewTests(TestCase):
@@ -173,105 +174,146 @@ class HomeViewTests(TestCase):
             datetime=timezone.now() + timezone.timedelta(days=1),
         )
 
+    def rows_by_key(self, response):
+        """Return the home rows of a response by status and media type."""
+        return {
+            (row["status"], row["media_type"]): row
+            for row in response.context["home_rows"]
+        }
+
     def test_home_view(self):
-        """Test the home view displays in-progress and planning media."""
+        """The home page has a row per status and media type with entries."""
         response = self.client.get(reverse("home"))
 
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, "app/home.html")
 
-        self.assertIn("home_sections", response.context)
+        rows = self.rows_by_key(response)
+        self.assertEqual(
+            list(rows),
+            [
+                (Status.IN_PROGRESS.value, MediaTypes.SEASON.value),
+                (Status.IN_PROGRESS.value, MediaTypes.ANIME.value),
+                (Status.PLANNING.value, MediaTypes.MOVIE.value),
+            ],
+        )
 
-        sections_by_key = {
-            section["key"]: section for section in response.context["home_sections"]
-        }
-        self.assertIn(Status.IN_PROGRESS.value, sections_by_key)
-        self.assertIn(Status.PLANNING.value, sections_by_key)
+        season_row = rows[(Status.IN_PROGRESS.value, MediaTypes.SEASON.value)]
+        self.assertEqual(season_row["total"], 1)
+        self.assertEqual(season_row["items"][0].progress, 5)
 
-        in_progress_section = sections_by_key[Status.IN_PROGRESS.value]
-        planning_section = sections_by_key[Status.PLANNING.value]
+    def test_row_headers_open_their_list_in_the_same_order(self):
+        """Each row's header opens its media list filtered and ordered like the row."""
+        response = self.client.get(reverse("home"))
 
-        self.assertIn(MediaTypes.SEASON.value, in_progress_section["media_types"])
-        self.assertIn(MediaTypes.ANIME.value, in_progress_section["media_types"])
-        self.assertIn(MediaTypes.MOVIE.value, planning_section["media_types"])
+        for row in response.context["home_rows"]:
+            link = (
+                reverse("medialist", args=[self.user.username, row["media_type"]])
+                + f"?status={quote(row['status'])}&sort=recent"
+            )
+            self.assertContains(response, f'href="{link}"')
 
-        self.assertIn("sort_choices", response.context)
-        self.assertEqual(response.context["sort_choices"], HomeSortChoices.choices)
-        self.assertEqual(in_progress_section["count"], 2)
-        self.assertEqual(planning_section["count"], 1)
+            list_response = self.client.get(link)
 
-        season = in_progress_section["media_types"][MediaTypes.SEASON.value]
-        self.assertEqual(len(season["items"]), 1)
-        self.assertEqual(season["items"][0].progress, 5)
+            self.assertEqual(list_response.status_code, 200, link)
+            listed = [media.id for media in list_response.context["media_list"]]
+            self.assertEqual(listed[: len(row["items"])], [m.id for m in row["items"]])
 
-        planning_movies = planning_section["media_types"][MediaTypes.MOVIE.value]
-        self.assertEqual(len(planning_movies["items"]), 1)
-        self.assertEqual(planning_movies["items"][0].status, Status.PLANNING.value)
-
-    def test_home_view_with_sort(self):
-        """Test the home view with sorting parameter."""
-        response = self.client.get(reverse("home") + "?sort=completion")
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context["current_sort"], "completion")
-
-        self.user.refresh_from_db()
-        self.assertEqual(self.user.home_sort, "completion")
-
-    def test_home_view_hides_unreleased_when_filter_enabled(self):
-        """Test home view can hide unreleased media in existing sections."""
-        response = self.client.get(reverse("home") + "?hide_unreleased=true")
+    def test_tv_list_can_be_sorted_by_recent(self):
+        """Shows, whose last activity comes from their episodes, sort by Recent."""
+        response = self.client.get(
+            reverse("medialist", args=[self.user.username, MediaTypes.TV.value]),
+            {"sort": "recent"},
+        )
 
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.context["hide_unreleased"])
 
-        sections_by_key = {
-            section["key"]: section for section in response.context["home_sections"]
-        }
-        self.assertIn(Status.IN_PROGRESS.value, sections_by_key)
-
-        in_progress_section = sections_by_key[Status.IN_PROGRESS.value]
-        planning_section = sections_by_key[Status.PLANNING.value]
-
-        self.assertEqual(in_progress_section["count"], 1)
-        self.assertIn(MediaTypes.ANIME.value, in_progress_section["media_types"])
-        self.assertNotIn(MediaTypes.SEASON.value, in_progress_section["media_types"])
-        self.assertEqual(planning_section["count"], 1)
-
-        self.user.refresh_from_db()
-        self.assertTrue(self.user.home_hide_unreleased)
-
-    def test_home_view_keeps_in_progress_without_upcoming_release(self):
-        """In-progress media without upcoming release stays when hiding unreleased."""
-        movie_item = Item.objects.create(
-            media_id="in-progress-no-release",
-            source=Sources.TMDB.value,
-            media_type=MediaTypes.MOVIE.value,
-            title="Caught Up Movie",
+    def test_rows_list_recent_activity_first(self):
+        """A row lists the most recently updated entries first."""
+        quiet = Item.objects.create(
+            media_id="quiet",
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.ANIME.value,
+            title="Zero Episodes Anime",
             image="http://example.com/image.jpg",
         )
-        Movie.objects.create(
-            item=movie_item,
-            user=self.user,
-            status=Status.IN_PROGRESS.value,
-            progress=0,
+        Anime.objects.create(
+            item=quiet, user=self.user, status=Status.IN_PROGRESS.value
         )
 
-        response = self.client.get(reverse("home") + "?hide_unreleased=true")
+        def first_anime():
+            response = self.client.get(reverse("home"))
+            row = self.rows_by_key(response)[
+                (Status.IN_PROGRESS.value, MediaTypes.ANIME.value)
+            ]
+            return row["items"][0].item.media_id
 
-        self.assertEqual(response.status_code, 200)
-        in_progress_section = next(
-            section
-            for section in response.context["home_sections"]
-            if section["key"] == Status.IN_PROGRESS.value
+        # The newest entry has no releases or progress, so only Recent puts it first
+        self.assertEqual(first_anime(), "quiet")
+
+        busy = Anime.objects.get(item__media_id="1", user=self.user)
+        busy.progress = 11
+        busy.save()
+
+        self.assertEqual(first_anime(), "1")
+
+    def test_paused_entries_have_no_row(self):
+        """Only in progress and planned entries get rows."""
+        paused = Item.objects.create(
+            media_id="paused",
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.MANGA.value,
+            title="Paused Manga",
+            image="http://example.com/image.jpg",
         )
-        movies = in_progress_section["media_types"][MediaTypes.MOVIE.value]["items"]
-        self.assertTrue(
-            any(media.item.media_id == "in-progress-no-release" for media in movies),
+        Manga.objects.create(item=paused, user=self.user, status=Status.PAUSED.value)
+
+        response = self.client.get(reverse("home"))
+
+        self.assertNotIn(
+            MediaTypes.MANGA.value,
+            [row["media_type"] for row in response.context["home_rows"]],
         )
 
-    def test_home_view_hides_planning_with_upcoming_release(self):
-        """Planning media with a scheduled future release is hidden when filtered."""
+    def test_empty_home_page(self):
+        """Someone tracking nothing gets an empty state instead of rows."""
+        new = {"username": "new", "password": self.credentials["password"]}
+        get_user_model().objects.create_user(**new)
+        self.client.login(**new)
+
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.context["home_rows"], [])
+        self.assertContains(response, "Nothing in progress or planned yet")
+
+    def test_rows_hold_twenty_entries(self):
+        """A row shows its first 20 entries and counts them all."""
+        for i in range(25):
+            item = Item.objects.create(
+                media_id=f"many-{i}",
+                source=Sources.MANUAL.value,
+                media_type=MediaTypes.ANIME.value,
+                title=f"Anime {i}",
+                image="http://example.com/image.jpg",
+            )
+            Anime.objects.create(
+                item=item,
+                user=self.user,
+                status=Status.IN_PROGRESS.value,
+            )
+
+        response = self.client.get(reverse("home"))
+
+        anime_row = self.rows_by_key(response)[
+            (Status.IN_PROGRESS.value, MediaTypes.ANIME.value)
+        ]
+        self.assertEqual(len(anime_row["items"]), 20)
+        self.assertEqual(anime_row["total"], 26)
+
+    def test_unreleased_media_is_shown_with_the_old_hide_setting(self):
+        """Unreleased media stays on the home page now that it can't be hidden."""
+        self.user.home_hide_unreleased = True
+        self.user.save(update_fields=["home_hide_unreleased"])
         upcoming_item = Item.objects.create(
             media_id="planning-with-release",
             source=Sources.TMDB.value,
@@ -289,159 +331,15 @@ class HomeViewTests(TestCase):
             datetime=timezone.now() + timezone.timedelta(days=1),
         )
 
-        response = self.client.get(reverse("home") + "?hide_unreleased=true")
+        response = self.client.get(reverse("home"))
 
-        self.assertEqual(response.status_code, 200)
-        planning_section = next(
-            section
-            for section in response.context["home_sections"]
-            if section["key"] == Status.PLANNING.value
+        movies = self.rows_by_key(response)[
+            (Status.PLANNING.value, MediaTypes.MOVIE.value)
+        ]
+        self.assertIn(
+            "planning-with-release",
+            [media.item.media_id for media in movies["items"]],
         )
-        movies = planning_section["media_types"][MediaTypes.MOVIE.value]["items"]
-        self.assertTrue(
-            any(media.item.media_id == "10" for media in movies),
-        )
-        self.assertFalse(
-            any(media.item.media_id == "planning-with-release" for media in movies),
-        )
-
-    def test_home_view_htmx_load_more_preserves_hide_unreleased(self):
-        """Test HTMX load more applies hide unreleased filter."""
-        self.user.home_hide_unreleased = True
-        self.user.save(update_fields=["home_hide_unreleased"])
-
-        for i in range(6, 36):
-            anime_item = Item.objects.create(
-                media_id=f"incoming-{i}",
-                source=Sources.MAL.value,
-                media_type=MediaTypes.ANIME.value,
-                title=f"Incoming Anime {i}",
-                image="http://example.com/image.jpg",
-            )
-            Anime.objects.create(
-                item=anime_item,
-                user=self.user,
-                status=Status.IN_PROGRESS.value,
-                progress=1,
-            )
-            Event.objects.create(
-                item=anime_item,
-                content_number=2,
-                datetime=timezone.now() + timezone.timedelta(days=1),
-            )
-
-        response = self.client.get(
-            reverse("home")
-            + f"?load_status={Status.IN_PROGRESS.value}"
-            + f"&load_media_type={MediaTypes.ANIME.value}",
-            headers={"hx-request": "true"},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "app/components/home_grid.html")
-        self.assertEqual(response.context["home_status"], Status.IN_PROGRESS.value)
-        self.assertEqual(len(response.context["media_list"]["items"]), 0)
-        self.assertEqual(response.context["media_list"]["total"], 1)
-
-    @patch("app.providers.services.get_media_metadata")
-    def test_home_view_htmx_load_more(self, mock_get_media_metadata):
-        """Test the HTMX load more functionality."""
-        mock_get_media_metadata.return_value = {
-            "title": "Test TV Show",
-            "image": "http://example.com/image.jpg",
-            "season/1": {
-                "episodes": [{"id": 1}, {"id": 2}, {"id": 3}],  # 3 episodes
-            },
-            "related": {
-                "seasons": [
-                    {"season_number": 1, "image": "http://example.com/image.jpg"},
-                ],  # Only one season
-            },
-        }
-
-        for i in range(6, 20):  # Create 14 more TV shows (we already have 1)
-            season_item = Item.objects.create(
-                media_id=str(i),
-                source=Sources.TMDB.value,
-                media_type=MediaTypes.SEASON.value,
-                title=f"Test TV Show {i}",
-                image="http://example.com/image.jpg",
-                season_number=1,
-            )
-            season = Season.objects.create(
-                item=season_item,
-                user=self.user,
-                status=Status.IN_PROGRESS.value,
-            )
-
-            episode_item = Item.objects.create(
-                media_id=str(i),
-                source=Sources.TMDB.value,
-                media_type=MediaTypes.EPISODE.value,
-                title=f"Test TV Show {i}",
-                image="http://example.com/image.jpg",
-                season_number=1,
-                episode_number=1,
-            )
-            Episode.objects.create(
-                item=episode_item,
-                related_season=season,
-                end_date=timezone.now(),
-            )
-
-        # Now test the load more functionality
-        response = self.client.get(
-            reverse("home") + "?load_media_type=season", headers={"hx-request": "true"}
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "app/components/home_grid.html")
-
-        self.assertIn("media_list", response.context)
-        self.assertEqual(response.context["home_status"], Status.IN_PROGRESS.value)
-
-        self.assertIn("items", response.context["media_list"])
-        self.assertIn("total", response.context["media_list"])
-
-        # Since we're loading more (items after the first 14),
-        # we should have at least 1 item in the response
-        self.assertEqual(len(response.context["media_list"]["items"]), 1)
-        self.assertEqual(
-            response.context["media_list"]["total"],
-            15,
-        )  # 15 TV shows total
-
-    def test_home_view_htmx_load_more_for_planning(self):
-        """Test the HTMX load more functionality for planning media."""
-        for i in range(1, 16):
-            movie_item = Item.objects.create(
-                media_id=f"planning-{i}",
-                source=Sources.TMDB.value,
-                media_type=MediaTypes.MOVIE.value,
-                title=f"Planned Movie {i}",
-                image="http://example.com/image.jpg",
-            )
-            Movie.objects.create(
-                item=movie_item,
-                user=self.user,
-                status=Status.PLANNING.value,
-            )
-
-        response = self.client.get(
-            reverse("home")
-            + (
-                f"?load_status={Status.PLANNING.value}"
-                f"&load_media_type={MediaTypes.MOVIE.value}"
-            ),
-            headers={"hx-request": "true"},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "app/components/home_grid.html")
-        self.assertEqual(response.context["home_status"], Status.PLANNING.value)
-        self.assertIn("media_list", response.context)
-        self.assertEqual(len(response.context["media_list"]["items"]), 2)
-        self.assertEqual(response.context["media_list"]["total"], 16)
 
     def test_unreleased_card_offers_release_instead_of_action(self):
         """An unreleased planned movie shows its release date, not a status action."""

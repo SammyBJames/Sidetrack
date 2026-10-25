@@ -107,8 +107,8 @@ class ProgressEditSeason(TestCase):
             0,
         )
 
-    def test_progress_increase_deletes_card_when_hide_unreleased_active(self):
-        """Test season progress edit removes card when only unreleased remain."""
+    def test_progress_increase_keeps_caught_up_card(self):
+        """Catching up on a season keeps its card, even with the old hide setting."""
         Event.objects.create(
             item=self.item_season,
             content_number=1,
@@ -138,11 +138,11 @@ class ProgressEditSeason(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            response.headers["HX-Retarget"],
-            f"#home-media-{MediaTypes.SEASON.value}-{self.season.id}",
+        self.assertNotIn("HX-Reswap", response.headers)
+        self.assertContains(
+            response,
+            f'id="home-media-{MediaTypes.SEASON.value}-{self.season.id}"',
         )
-        self.assertEqual(response.headers["HX-Reswap"], "delete")
 
 
 class ProgressEditAnime(TestCase):
@@ -206,8 +206,8 @@ class ProgressEditAnime(TestCase):
 
         self.assertEqual(Anime.objects.get(item__media_id="1").progress, 1)
 
-    def test_progress_increase_deletes_card_when_hide_unreleased_active(self):
-        """Test progress edit removes card when only unreleased episodes remain."""
+    def test_progress_increase_keeps_caught_up_card(self):
+        """Catching up keeps the card, which then shows its next release."""
         Event.objects.create(
             item=self.item,
             content_number=3,
@@ -237,11 +237,11 @@ class ProgressEditAnime(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            response.headers["HX-Retarget"],
-            f"#home-media-{MediaTypes.ANIME.value}-{self.anime.id}",
+        self.assertNotIn("HX-Reswap", response.headers)
+        self.assertContains(
+            response,
+            f'id="home-media-{MediaTypes.ANIME.value}-{self.anime.id}"',
         )
-        self.assertEqual(response.headers["HX-Reswap"], "delete")
 
     def test_cannot_edit_another_users_progress(self):
         """Test users cannot edit another user's media progress by instance ID."""

@@ -6,54 +6,31 @@
 {% endblock title %}
 
 {% block content %}
-  <div class="space-y-8">
-    <div class="flex flex-col gap-4 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-center">
-      <h1 class="text-3xl font-bold text-center sm:col-start-2 sm:justify-self-center">Home</h1>
-      <div class="flex flex-wrap items-center justify-center gap-3 sm:col-start-3 sm:justify-self-end">
-        <a href="{% url 'home' %}?sort={{ current_sort }}{% if hide_unreleased %}&hide_unreleased=false{% else %}&hide_unreleased=true{% endif %}"
-           class="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium transition-colors {% if hide_unreleased %}border-indigo-500 bg-indigo-600 text-white hover:bg-indigo-700{% else %}border-gray-700 bg-surface-600 text-gray-300 hover:bg-surface-500 hover:text-white{% endif %}">
-          {% include "app/icons/eye-closed.svg" with classes="w-4 h-4" %}
-          <span>Hide unreleased</span>
-        </a>
-        <div class="relative" x-data="{ open: false }">
-          <button @click="open = !open"
-                  @click.outside="open = false"
-                  class="flex items-center gap-2 rounded-md border border-gray-700 bg-surface-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-surface-500 cursor-pointer">
-            {% include "app/icons/arrows-up-down.svg" with classes="w-4 h-4" %}
-            <span>{{ current_sort|no_underscore|title }}</span>
-            {% include "app/icons/chevron-down.svg" with classes="w-4 h-4 text-gray-400" %}
-          </button>
-          <div x-cloak
-               x-show="open"
-               x-transition:enter="transition ease-out duration-100"
-               x-transition:enter-start="transform opacity-0 scale-95"
-               x-transition:enter-end="transform opacity-100 scale-100"
-               x-transition:leave="transition ease-in duration-75"
-               x-transition:leave-start="transform opacity-100 scale-100"
-               x-transition:leave-end="transform opacity-0 scale-95"
-               class="absolute right-0 z-10 mt-2 w-52 overflow-hidden rounded-xl border border-gray-700 bg-surface-600 py-1 shadow-lg">
-            {% for value, label in sort_choices %}
-              <a href="{% url 'home' %}?sort={{ value }}{% if hide_unreleased %}&hide_unreleased=true{% endif %}"
-                 class="block w-full px-4 py-2 text-left text-sm transition-colors {% if current_sort == value %}bg-indigo-600 text-white font-medium{% else %}text-gray-300 hover:bg-surface-500 hover:text-white{% endif %}">
-                {{ label }}
-              </a>
-            {% endfor %}
-          </div>
+  {# Refreshes after a card changes an entry, so it moves between rows and the counts update. Cards make their own requests, so they don't inherit this one's settings #}
+  <div id="home-sections"
+       class="space-y-10"
+       hx-get="{% url 'home' %}"
+       hx-trigger="mediaChanged from:body"
+       hx-select="#home-sections"
+       hx-swap="outerHTML"
+       hx-disinherit="*">
+    {% for row in home_rows %}
+      {% include "app/components/home_row.html" %}
+    {% empty %}
+      <div class="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-700 bg-surface-800 px-6 py-16 text-center">
+        <div class="mb-4 flex size-16 items-center justify-center rounded-full bg-surface-600 text-indigo-300">
+          {% include "app/icons/leaf.svg" with classes="size-8" %}
         </div>
+        <h2 class="text-xl font-semibold text-white">Nothing in progress or planned yet</h2>
+        <p class="mt-2 max-w-md text-sm text-gray-400">
+          Start a title or add a few to your watchlist to see them here, with quick updates and release reminders.
+        </p>
+        <a href="{{ MediaTypes.TV.value|sample_search }}"
+           class="mt-6 inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700">
+          {% include "app/icons/magnifying-glass.svg" with classes="size-4" %}
+          Browse media
+        </a>
       </div>
-    </div>
-
-    {# Refreshes after a card changes an entry, so it moves between sections and the counts update. Cards and Load all make their own requests, so they don't inherit this one's settings #}
-    <div id="home-sections"
-         class="space-y-15"
-         hx-get="{% url 'home' %}"
-         hx-trigger="mediaChanged from:body"
-         hx-select="#home-sections"
-         hx-swap="outerHTML"
-         hx-disinherit="*">
-      {% for section in home_sections %}
-        {% include "app/components/home_section.html" with section=section %}
-      {% endfor %}
-    </div>
+    {% endfor %}
   </div>
 {% endblock content %}

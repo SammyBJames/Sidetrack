@@ -15,7 +15,7 @@
             hx-disabled-elt="this">
       {# The next status's color fills in on hover #}
       <span class="absolute inset-0 opacity-0 transition-opacity duration-200 group-hover/qa:opacity-100 {{ quick.target_status|status_button_color }}"></span>
-      <span class="relative max-w-0 overflow-hidden text-xs font-semibold whitespace-nowrap transition-all duration-300 group-hover/qa:max-w-32 group-hover/qa:pl-2.5">{{ quick.label }}</span>
+      <span class="relative max-w-0 overflow-hidden text-xs font-semibold text-ellipsis whitespace-nowrap transition-all duration-300 group-hover/qa:max-w-[min(10rem,calc(100cqw-2.5rem))] group-hover/qa:pl-2.5">{{ quick.label }}</span>
       <span class="relative flex size-7 shrink-0 items-center justify-center">
         <span class="size-3.5 group-hover/qa:hidden [.htmx-request_&]:invisible {% if media.status %}{{ media.status|status_color }}{% else %}text-gray-200{% endif %}">
           {% if media.status %}

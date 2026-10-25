@@ -15,7 +15,7 @@
   {% include "app/components/card_poster.html" with url=media.item|media_url image=media.item.image alt=heading.full %}
 
   {% with unreleased=media|unreleased_on_home:home_status %}
-    <div class="pointer-events-none absolute inset-x-0 top-0 z-1 flex items-start justify-between gap-1 p-2">
+    <div class="@container pointer-events-none absolute inset-x-0 top-0 z-1 flex items-start justify-between gap-1 p-2">
       {# Released media with more on the way shows when the next part comes out #}
       {% if media.next_event and not media.next_event.is_max_datetime and not unreleased %}
         <div class="card-chip flex min-w-0 items-center gap-1.5 px-2 py-0.5 whitespace-nowrap">
