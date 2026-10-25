@@ -86,6 +86,7 @@
 
           <form class="flex items-center"
                 method="post"
+                x-cloak
                 x-show="traktImportMethod === 'public'"
                 action="{% url 'import_trakt_public' %}">
             {% csrf_token %}
@@ -108,6 +109,7 @@
 
           <form class="flex items-center"
                 method="post"
+                x-cloak
                 x-show="traktImportMethod === 'private'"
                 action="{% url 'trakt_oauth' %}">
             {% csrf_token %}
@@ -123,6 +125,7 @@
 
           <form class="flex items-center"
                 method="post"
+                x-cloak
                 x-show="traktImportMethod === 'export'"
                 action="{% url 'import_trakt_export' %}"
                 enctype="multipart/form-data">
@@ -201,6 +204,7 @@
 
           <form class="flex items-center"
                 method="post"
+                x-cloak
                 x-show="!usePrivateImport"
                 action="{% url 'import_anilist_public' %}">
             {% csrf_token %}
@@ -223,6 +227,7 @@
 
           <form class="flex items-center"
                 method="post"
+                x-cloak
                 x-show="usePrivateImport"
                 action="{% url 'import_anilist_oauth' %}">
             {% csrf_token %}
@@ -515,6 +520,7 @@
                   {% endif %}
 
                   <div class="mt-2 space-y-1 text-sm bg-[#2a2f35] p-3 rounded overflow-x-auto wrap-break-word"
+                       x-cloak
                        x-show="showDetails">
                     <div class="text-xs space-y-1 text-red-400">
                       {% for error in result.errors.splitlines %}<div>{{ error }}</div>{% endfor %}

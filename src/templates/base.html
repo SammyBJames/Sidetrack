@@ -60,7 +60,8 @@
            x-data="{ isMobileMenuOpen: false }">
 
         {# Mobile menu overlay #}
-        <div x-show="isMobileMenuOpen"
+        <div x-cloak
+             x-show="isMobileMenuOpen"
              class="fixed inset-0 bg-black/50 z-30 lg:hidden"
              @click="isMobileMenuOpen = false"></div>
 

@@ -122,7 +122,8 @@
         </div>
 
         <!-- Title field (TV, Movie, Anime, Manga, Game, Book) -->
-        <div x-show="showField('title')">
+        <div x-cloak
+             x-show="showField('title')">
           <label class="block text-sm font-medium mb-2 text-gray-300">Title</label>
           <input class="w-full p-2 bg-[#39404b] rounded-md text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-[#4a9eff] appearance-none"
                  placeholder="Enter title"
@@ -132,7 +133,8 @@
         </div>
 
         <!-- Parent TV Show field (Season) -->
-        <div x-show="showField('parentShow')">
+        <div x-cloak
+             x-show="showField('parentShow')">
           <label class="block text-sm font-medium mb-2 text-gray-300">Parent TV Show</label>
           <div class="relative">
             <div class="relative">
@@ -154,7 +156,8 @@
         </div>
 
         <!-- Season Number field (Season) -->
-        <div x-show="showField('seasonNumber')">
+        <div x-cloak
+             x-show="showField('seasonNumber')">
           <label class="block text-sm font-medium mb-2 text-gray-300">Season Number</label>
           <div class="relative">
             <input min="1"
@@ -179,7 +182,8 @@
         </div>
 
         <!-- Parent Season field (Episode) -->
-        <div x-show="showField('parentSeason')">
+        <div x-cloak
+             x-show="showField('parentSeason')">
           <label class="block text-sm font-medium mb-2 text-gray-300">Parent Season</label>
           <div class="relative">
             <div class="relative">
@@ -201,7 +205,8 @@
         </div>
 
         <!-- Episode Number field (Episode) -->
-        <div x-show="showField('episodeNumber')">
+        <div x-cloak
+             x-show="showField('episodeNumber')">
           <label class="block text-sm font-medium mb-2 text-gray-300">Episode Number</label>
           <div class="relative">
             <input min="1"
@@ -226,7 +231,8 @@
         </div>
 
         <!-- Image URL field (All types) -->
-        <div x-show="showField('image')">
+        <div x-cloak
+             x-show="showField('image')">
           <label class="block text-sm font-medium mb-2 text-gray-300">Image URL</label>
           <div class="flex gap-4">
             <div class="flex-1">
@@ -247,7 +253,8 @@
         </div>
 
         <!-- Score field (TV, Movie, Anime, Manga, Game, Book, Season) -->
-        <div x-show="showField('score')">
+        <div x-cloak
+             x-show="showField('score')">
           <label class="block text-sm font-medium mb-2 text-gray-300">Score</label>
           <div class="relative">
             <input min="0"
@@ -272,7 +279,8 @@
         </div>
 
         <!-- Progress field (Movie, Anime, Manga, Game, Book) -->
-        <div x-show="showField('progress')">
+        <div x-cloak
+             x-show="showField('progress')">
           <label class="block text-sm font-medium mb-2 text-gray-300"
                  x-text="getProgressLabel()">Progress</label>
 
@@ -286,7 +294,8 @@
                    x-bind:class="{'[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none': mediaType !== 'game'}"
                    x-bind:value="mediaType !== 'game' ? '0' : ''">
 
-            <div x-show="mediaType !== 'game'"
+            <div x-cloak
+                 x-show="mediaType !== 'game'"
                  class="absolute inset-y-0 right-0 flex flex-col border-l border-gray-600">
               <button type="button"
                       onclick="this.parentElement.previousElementSibling.stepUp()"
@@ -303,7 +312,8 @@
         </div>
 
         <!-- Status field (TV, Movie, Anime, Manga, Game, Book, Season) -->
-        <div x-show="showField('status')">
+        <div x-cloak
+             x-show="showField('status')">
           <label class="block text-sm font-medium mb-2 text-gray-300">Status</label>
           <div class="relative">
             <select class="w-full p-2 bg-[#39404b] rounded-md text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-[#4a9eff] appearance-none"
@@ -317,7 +327,8 @@
         </div>
 
         <!-- Start Date field (Movie, Anime, Manga, Game, Book) -->
-        <div x-show="showField('startDate')">
+        <div x-cloak
+             x-show="showField('startDate')">
           <label class="block text-sm font-medium mb-2 text-gray-300">Start Date</label>
           <input class="w-full p-2 bg-[#39404b] rounded-md text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-[#4a9eff] appearance-none"
                  name="start_date"
@@ -326,7 +337,8 @@
         </div>
 
         <!-- End Date field (Episode, Movie, Anime, Manga, Game, Book) -->
-        <div x-show="showField('endDate')">
+        <div x-cloak
+             x-show="showField('endDate')">
           <label class="block text-sm font-medium mb-2 text-gray-300">End Date</label>
           <input class="w-full p-2 bg-[#39404b] rounded-md text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-[#4a9eff] appearance-none"
                  name="end_date"
@@ -335,7 +347,8 @@
         </div>
 
         <!-- Notes field (TV, Movie, Anime, Manga, Game, Book, Season) -->
-        <div x-show="showField('notes')">
+        <div x-cloak
+             x-show="showField('notes')">
           <label class="block text-sm font-medium mb-2 text-gray-300">Notes</label>
           <textarea class="w-full p-2 bg-[#39404b] rounded-md text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-[#4a9eff] appearance-none"
                     rows="4"

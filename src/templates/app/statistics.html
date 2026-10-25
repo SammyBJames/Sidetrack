@@ -39,7 +39,8 @@
       </div>
 
       <!-- Predefined Ranges Tab -->
-      <div x-show="activeTab === 'predefined'"
+      <div x-cloak
+           x-show="activeTab === 'predefined'"
            class="p-2 max-h-80 overflow-y-auto">
         <div class="grid grid-cols-2 gap-2">
           <template x-for="range in predefinedRanges" :key="range.name">
@@ -47,14 +48,14 @@
                     :class="{'bg-indigo-600 text-white': selectedRange === range.name, 'hover:bg-[#39404b] text-gray-200': selectedRange !== range.name}"
                     class="flex items-center justify-between p-3 rounded-md text-left text-sm transition-all cursor-pointer">
               <span x-text="range.name"></span>
-              <div x-show="selectedRange === range.name">{% include "app/icons/checkmark.svg" with classes="w-4 h-4" %}</div>
+              <div x-cloak x-show="selectedRange === range.name">{% include "app/icons/checkmark.svg" with classes="w-4 h-4" %}</div>
             </button>
           </template>
         </div>
       </div>
 
       <!-- Custom Range Tab -->
-      <div x-show="activeTab === 'custom'" class="p-4">
+      <div x-cloak x-show="activeTab === 'custom'" class="p-4">
         <div class="space-y-4">
           <div class="grid grid-cols-2 gap-4">
             <div>

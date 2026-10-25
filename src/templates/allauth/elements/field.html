@@ -36,7 +36,8 @@
               @click="{% if attrs.name == 'password2' %}showConfirmPassword = !showConfirmPassword{% else %}showPassword = !showPassword{% endif %}"
               class="absolute inset-y-0 right-0 px-3 flex items-center text-gray-400 hover:text-white cursor-pointer">
         <!-- Show when password is hidden -->
-        <div x-show="{% if attrs.name == 'password2' %}!showConfirmPassword{% else %}!showPassword{% endif %}">
+        <div x-cloak
+             x-show="{% if attrs.name == 'password2' %}!showConfirmPassword{% else %}!showPassword{% endif %}">
           {% include "app/icons/eye.svg" with classes="w-5 h-5" %}
         </div>
         <!-- Show when password is visible -->

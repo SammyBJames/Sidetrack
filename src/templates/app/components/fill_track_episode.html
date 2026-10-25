@@ -1,7 +1,8 @@
 {% load app_tags %}
 
 {# Track Episode Modal #}
-<div x-show="trackOpen"
+<div x-cloak
+     x-show="trackOpen"
      @keydown.escape.window="trackOpen = false"
      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
   <div class="w-100 max-h-[90vh] px-4 md:px-0 relative z-60"
@@ -145,7 +146,8 @@
             </button>
 
             {# Dropdown Menu #}
-            <div x-show="dropdownOpen"
+            <div x-cloak
+                 x-show="dropdownOpen"
                  style="display: none"
                  x-transition
                  class="absolute right-0 bottom-full mb-2 w-48 bg-[#2a2f35] border border-gray-600 rounded-md shadow-2xl overflow-hidden">
