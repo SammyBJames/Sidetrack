@@ -15,7 +15,8 @@
             <p class="text-xs text-gray-400">{{ item.media_type|media_type_readable }}</p>
           </div>
         </div>
-        <button type="button"
+        <button aria-label="Stop excluding {{ item }}"
+                type="button"
                 class="me-2 text-xs text-red-400 hover:text-red-300 cursor-pointer"
                 hx-post="{% url 'include_notification_item' %}"
                 hx-target="#excluded-items-container"

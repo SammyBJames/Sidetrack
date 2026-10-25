@@ -13,7 +13,8 @@
           Create New List
         {% endif %}
       </h2>
-      <button @click="showModal = false"
+      <button aria-label="Close"
+              @click="showModal = false"
               class="text-gray-400 hover:text-white transition-colors cursor-pointer">
         {% include "app/icons/x.svg" with classes="w-6 h-6" %}
       </button>

@@ -4,6 +4,7 @@
 
 <div class="flex items-center justify-center space-x-4 pb-3">
   <button class="p-1 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors cursor-pointer disabled:opacity-50 disabled:hover:bg-gray-700 disabled:cursor-not-allowed"
+          aria-label="Decrease progress"
           {% if media.progress == 0 %}disabled{% endif %}
           hx-post="{% url 'progress_edit' media.item.media_type media.id %}"
           hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
@@ -26,6 +27,7 @@
   </div>
 
   <button class="p-1 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors cursor-pointer disabled:opacity-50 disabled:hover:bg-gray-700 disabled:cursor-not-allowed"
+          aria-label="Increase progress"
           {% if media.progress == media.max_progress %}disabled{% endif %}
           hx-post="{% url 'progress_edit' media.item.media_type media.id %}"
           hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'

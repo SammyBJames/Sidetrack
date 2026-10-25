@@ -44,10 +44,8 @@ class IntegrationTest(StaticLiveServerTestCase):
         self.page.get_by_role("button", name="TV Shows").click()
         self.page.locator("li").filter(has_text=re.compile(r"^Anime$")).click()
         self.page.get_by_placeholder("Search anime...").fill("perfect blue")
-        self.page.locator("form").filter(has_text="Anime TV").get_by_role(
-            "button",
-        ).first.click()
-        self.page.locator(".absolute > .relative > button:nth-child(2)").first.click()
+        self.page.get_by_placeholder("Search anime...").press("Enter")
+        self.page.get_by_role("button", name="Add to custom lists").first.click()
         expect(self.page.locator("#lists-anime-437")).to_contain_text(
             "You haven't created any lists yet.",
         )
@@ -70,14 +68,15 @@ class IntegrationTest(StaticLiveServerTestCase):
         self.page.locator("li").filter(has_text=re.compile(r"^Anime$")).click()
         self.page.get_by_placeholder("Search anime...").click()
         self.page.get_by_placeholder("Search anime...").fill("perfect blue")
-        self.page.locator("form").filter(has_text="Anime TV").get_by_role(
-            "button",
-        ).first.click()
-        self.page.locator(".absolute > .relative > button:nth-child(2)").first.click()
+        self.page.get_by_placeholder("Search anime...").press("Enter")
+        self.page.get_by_role("button", name="Add to custom lists").first.click()
         expect(self.page.locator("#lists-anime-437")).to_contain_text("Lists test Add")
         self.page.get_by_role("button", name="Add", exact=True).click()
         expect(self.page.locator("#lists-anime-437")).to_contain_text("Remove")
-        self.page.locator("#lists-anime-437").get_by_role("button").first.click()
+        self.page.locator("#lists-anime-437").get_by_role(
+            "button",
+            name="Close",
+        ).click()
 
         # Edit list
         self.page.get_by_role("link", name="Lists").click()

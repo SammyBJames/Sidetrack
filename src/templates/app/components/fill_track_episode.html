@@ -13,6 +13,7 @@
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-xl font-bold text-white">Track Episode</h2>
         <button class="text-gray-400 hover:text-white transition-colors cursor-pointer"
+                aria-label="Close"
                 @click="trackOpen = false">{% include "app/icons/x.svg" with classes="w-5 h-5" %}</button>
       </div>
 
@@ -133,6 +134,7 @@
 
             {# Dropdown Toggle #}
             <button type="button"
+                    aria-label="More date options"
                     @click="dropdownOpen = !dropdownOpen"
                     :style="dropdownOpen ? 'background-color: #4338ca;' : 'background-color: #4f46e5;'"
                     class="px-2 py-2 text-white rounded-r-md border-l border-indigo-500 transition duration-300 cursor-pointer flex items-center justify-center">

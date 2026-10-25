@@ -43,15 +43,15 @@ class IntegrationTest(StaticLiveServerTestCase):
     def test_season_progress_edit(self):
         """Test the progress edit of a season."""
         self.page.get_by_placeholder("Search tv shows...").fill("breaking bad")
-        self.page.get_by_role("button").nth(1).click()
+        self.page.get_by_placeholder("Search tv shows...").press("Enter")
         expect(self.page.locator("h2")).to_contain_text("Search Results")
         self.page.get_by_title("Breaking Bad", exact=True).click()
         expect(self.page.get_by_role("main")).to_contain_text("Breaking Bad")
         self.page.get_by_title("Season 1").click()
         expect(self.page.get_by_role("main")).to_contain_text("Season 1")
-        self.page.locator(".p-2").first.click()
+        self.page.get_by_role("button", name="Track Episode").first.click()
         expect(self.page.get_by_role("main")).to_contain_text("Track Episode")
-        self.page.locator(".relative > .px-2").first.click()
+        self.page.get_by_role("button", name="More date options").first.click()
         self.page.get_by_role("button", name="Fill in air date").click()
         self.page.get_by_role("button", name="Add watch").click()
 
@@ -65,9 +65,10 @@ class IntegrationTest(StaticLiveServerTestCase):
         )
         self.page.get_by_role("link", name="Home").click()
         expect(self.page.get_by_text("Breaking Bad S1")).to_be_visible()
-        self.page.locator("#media-grid-in-progress-season").get_by_role("button").nth(
-            4,
-        ).click()
+        self.page.locator("#media-grid-in-progress-season").get_by_role(
+            "button",
+            name="Increase progress",
+        ).first.click()
         self.page.get_by_title("Breaking Bad S1").click()
 
         today = timezone.localtime().strftime(datetime_format)
@@ -77,9 +78,7 @@ class IntegrationTest(StaticLiveServerTestCase):
         """Test the completed status of a TV show."""
         self.page.get_by_placeholder("Search tv shows...").click()
         self.page.get_by_placeholder("Search tv shows...").fill("breaking bad")
-        self.page.locator("form").filter(has_text="TV Shows TV").get_by_role(
-            "button",
-        ).first.click()
+        self.page.get_by_placeholder("Search tv shows...").press("Enter")
         expect(self.page.locator("h2")).to_contain_text("Search Results")
         self.page.get_by_title("Breaking Bad", exact=True).click()
         expect(self.page.get_by_role("main")).to_contain_text("Breaking Bad")
@@ -94,7 +93,7 @@ class IntegrationTest(StaticLiveServerTestCase):
     def test_season_completed(self):
         """Test the completed status of a season."""
         self.page.get_by_placeholder("Search tv shows...").fill("breaking bad")
-        self.page.get_by_role("button").nth(1).click()
+        self.page.get_by_placeholder("Search tv shows...").press("Enter")
         expect(self.page.locator("h2")).to_contain_text("Search Results")
         self.page.get_by_title("Breaking Bad", exact=True).click()
         expect(self.page.get_by_role("main")).to_contain_text("Breaking Bad")
@@ -120,7 +119,7 @@ class IntegrationTest(StaticLiveServerTestCase):
         )
         self.page.get_by_role("combobox").select_option("In progress")
         self.page.get_by_role("button", name="Create Entry").click()
-        expect(self.page.locator(".scheme-dark")).to_contain_text(
+        expect(self.page.locator("body")).to_contain_text(
             "Friends added successfully.",
         )
 
@@ -201,7 +200,7 @@ class IntegrationTest(StaticLiveServerTestCase):
         self.page.get_by_role("button", name="Save Preferences").click()
 
         # Verify success message
-        expect(self.page.locator(".scheme-dark")).to_contain_text("Settings updated")
+        expect(self.page.locator("body")).to_contain_text("Settings updated")
 
         # Verify setting persisted
         self.page.get_by_role("link", name="Preferences").click()
@@ -231,9 +230,7 @@ class IntegrationTest(StaticLiveServerTestCase):
             self.page.get_by_role("button", name="Save Preferences").click()
 
             # Verify success message
-            expect(self.page.locator(".scheme-dark")).to_contain_text(
-                "Settings updated"
-            )
+            expect(self.page.locator("body")).to_contain_text("Settings updated")
 
             # Verify setting persisted as unchecked
             self.page.get_by_role("link", name="Preferences").click()
