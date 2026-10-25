@@ -5,7 +5,7 @@ This page covers working on Yamtrack from source.
 ## Prerequisites
 
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
-- [tailwindcss CLI](https://tailwindcss.com/docs/installation/tailwind-cli) (install with `npm install -g tailwindcss @tailwindcss/cli`)
+- [Node.js](https://nodejs.org/) (for the Tailwind CSS build)
 - Docker
 - Redis
 
@@ -95,12 +95,14 @@ cd src
 uv run celery -A config worker --beat --scheduler django --loglevel DEBUG
 ```
 
-Run Tailwind in another terminal:
+Run Tailwind in another terminal from the repository root:
 
 ```bash
-cd src
-tailwindcss -i ./static/css/input.css -o ./static/css/main.css --watch
+npm ci
+npm run watch:css
 ```
+
+The compiled `src/static/css/main.css` is committed. Run `npm run build:css` and commit the result whenever templates or `input.css` change; CI fails if it is out of date.
 
 Open the development server at:
 

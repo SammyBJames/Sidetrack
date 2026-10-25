@@ -33,3 +33,26 @@ jobs:
 
       - name: Ruff format
         run: uv run ruff format --check src
+
+  tailwind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Tailwind
+        run: npm ci
+
+      - name: Check main.css is up to date
+        run: |
+          npm run build:css
+          git diff --exit-code src/static/css/main.css || {
+            echo "::error::main.css is out of date. Run 'npm run build:css' and commit the result."
+            exit 1
+          }
