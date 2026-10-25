@@ -818,6 +818,9 @@
   .max-w-27\.5 {
     max-width: calc(var(--spacing) * 27.5);
   }
+  .max-w-40 {
+    max-width: calc(var(--spacing) * 40);
+  }
   .max-w-62\.5 {
     max-width: calc(var(--spacing) * 62.5);
   }
@@ -1778,6 +1781,9 @@
   .pb-5 {
     padding-bottom: calc(var(--spacing) * 5);
   }
+  .pl-2\.5 {
+    padding-left: calc(var(--spacing) * 2.5);
+  }
   .pl-3 {
     padding-left: calc(var(--spacing) * 3);
   }
@@ -2708,12 +2714,26 @@
     }
   }
   @media (hover: hover) and (pointer: fine) {
+    .can-hover\:max-w-0 {
+      max-width: 0px;
+    }
     .can-hover\:translate-y-2 {
       --tw-translate-y: calc(var(--spacing) * 2);
       translate: var(--tw-translate-x) var(--tw-translate-y);
     }
+    .can-hover\:pl-0 {
+      padding-left: 0px;
+    }
     .can-hover\:opacity-0 {
       opacity: 0%;
+    }
+    @media (hover: hover) {
+      .can-hover\:group-hover\/qa\:max-w-40:is(:where(.group\/qa):hover *) {
+        max-width: calc(var(--spacing) * 40);
+      }
+      .can-hover\:group-hover\/qa\:pl-2\.5:is(:where(.group\/qa):hover *) {
+        padding-left: calc(var(--spacing) * 2.5);
+      }
     }
     .can-hover\:focus-within\:translate-y-0:focus-within {
       --tw-translate-y: 0px;

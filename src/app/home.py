@@ -80,6 +80,11 @@ def _paginate_home_media_types(media_types, items_limit, page_start=0):
     return paginated_media_types
 
 
+def is_unreleased_home_media(media, section_key):
+    """Return True when a home card is waiting on its next release."""
+    return not _is_released_home_media(media, section_key)
+
+
 def _is_incoming_media(media):
     """Return True when media has a real upcoming release."""
     return bool(media.next_event and not media.next_event.is_max_datetime)

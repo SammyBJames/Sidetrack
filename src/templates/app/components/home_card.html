@@ -1,6 +1,6 @@
 {% load app_tags %}
 
-{# A card of a home section: poster, status button, and title and progress on hover #}
+{# A card of a home section: poster, release or status button, and title and progress on hover #}
 
 {% if home_status == Status.PLANNING.value %}
   {% firstof "text-sky-400" as clock_color %}
@@ -12,23 +12,27 @@
      class="media-card hover-tap relative overflow-hidden rounded-xl bg-surface-800 shadow-lg shadow-black/30 ring-1 ring-white/10 transition duration-300 parent-hover-tap:shadow-black/60 parent-hover-tap:ring-white/30">
   {% include "app/components/card_poster.html" with url=media.item|media_url image=media.item.image alt=media %}
 
-  <div class="pointer-events-none absolute inset-x-0 top-0 z-1 flex items-start justify-between gap-1 p-2">
-    {# Media with more on the way shows when the next part comes out #}
-    {% if media.next_event and not media.next_event.is_max_datetime %}
-      <div class="card-chip flex min-w-0 items-center gap-1.5 px-2 py-0.5 whitespace-nowrap">
-        {% include "app/icons/clock.svg" with classes="size-3.5 shrink-0 "|add:clock_color %}
-        <span class="truncate text-xs font-medium text-white">
-          {% if media.next_event.content_number %}{{ media.next_event.readable_content_number }} ·{% endif %}
-          {{ media.next_event.datetime|natural_day:user }}
-        </span>
-      </div>
-    {% endif %}
+  {% with unreleased=media|unreleased_on_home:home_status %}
+    <div class="pointer-events-none absolute inset-x-0 top-0 z-1 flex items-start justify-between gap-1 p-2">
+      {# Released media with more on the way shows when the next part comes out #}
+      {% if media.next_event and not media.next_event.is_max_datetime and not unreleased %}
+        <div class="card-chip flex min-w-0 items-center gap-1.5 px-2 py-0.5 whitespace-nowrap">
+          {% include "app/icons/clock.svg" with classes="size-3.5 shrink-0 "|add:clock_color %}
+          <span class="truncate text-xs font-medium text-white">{{ media.next_event|release_label:user }}</span>
+        </div>
+      {% endif %}
 
-    <div class="ml-auto">
-      {# Current status, which turns into the action to the next one on hover #}
-      {% include "app/components/quick_action_button.html" with item=media.item title=media card="home" %}
+      <div class="ml-auto">
+        {% if unreleased %}
+          {# Nothing to act on until it comes out, so offer the release date instead #}
+          {% include "app/components/release_button.html" with event=media.next_event %}
+        {% else %}
+          {# Current status, which turns into the action to the next one on hover #}
+          {% include "app/components/quick_action_button.html" with item=media.item title=media card="home" %}
+        {% endif %}
+      </div>
     </div>
-  </div>
+  {% endwith %}
 
   {# Title and progress, shown on hover where there is a mouse, unless there is no poster to go by #}
   <div class="pointer-events-none absolute inset-x-0 bottom-0 z-1 px-3 pt-3 pb-3.5 transition duration-300 {% if media.item.image != IMG_NONE %}can-hover:translate-y-2 can-hover:opacity-0 can-hover:parent-hover-tap:translate-y-0 can-hover:parent-hover-tap:opacity-100 can-hover:focus-within:translate-y-0 can-hover:focus-within:opacity-100{% endif %}">

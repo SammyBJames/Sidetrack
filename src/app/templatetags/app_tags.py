@@ -9,6 +9,7 @@ from django.utils.html import format_html
 from unidecode import unidecode
 
 from app import config, helpers, quick_actions
+from app import home as home_helpers
 from app.models import MediaTypes, Sources, Status
 from users.models import WATCH_PROVIDER_REGION_UNSET
 
@@ -291,6 +292,49 @@ def natural_day(datetime, user):
         return f"Tomorrow {formatted_time}"
 
     return f"{formatted_date} {formatted_time}"
+
+
+@register.filter
+def release_day(event, user):
+    """Return when a release happens in words, e.g. Tomorrow or October 6.
+
+    Cards spell the month out on purpose, so it ignores the user's date format.
+    """
+    if not event:
+        return ""
+
+    local_dt = timezone.localtime(event.datetime)
+    today = timezone.localdate()
+    days = (local_dt.date() - today).days
+
+    if days == 0:
+        day = "Today"
+    elif days == 1:
+        day = "Tomorrow"
+    elif local_dt.year == today.year:
+        day = formats.date_format(local_dt, "F j")
+    else:
+        day = formats.date_format(local_dt, "F j, Y")
+
+    # Releases without a known time are stored at a placeholder time
+    if days in (0, 1) and not event.is_sentinel_time:
+        return f"{day} {formats.time_format(local_dt, user.time_format)}"
+    return day
+
+
+@register.filter
+def release_label(event, user):
+    """Return a release's number and day, e.g. E4 · Tomorrow 21:00."""
+    day = release_day(event, user)
+    if event and event.content_number:
+        return f"{event.readable_content_number} \u00b7 {day}"
+    return day
+
+
+@register.filter
+def unreleased_on_home(media, home_status):
+    """Return whether a home card is waiting on its next release."""
+    return home_helpers.is_unreleased_home_media(media, home_status)
 
 
 @register.filter

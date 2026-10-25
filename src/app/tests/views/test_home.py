@@ -442,3 +442,29 @@ class HomeViewTests(TestCase):
         self.assertIn("media_list", response.context)
         self.assertEqual(len(response.context["media_list"]["items"]), 2)
         self.assertEqual(response.context["media_list"]["total"], 16)
+
+    def test_unreleased_card_offers_release_instead_of_action(self):
+        """An unreleased planned movie shows its release date, not a status action."""
+        upcoming_item = Item.objects.create(
+            media_id="unreleased-card",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.MOVIE.value,
+            title="Unreleased Movie",
+            image="http://example.com/image.jpg",
+        )
+        movie = Movie.objects.create(
+            item=upcoming_item,
+            user=self.user,
+            status=Status.PLANNING.value,
+        )
+        release = Event.objects.create(
+            item=upcoming_item,
+            datetime=timezone.now() + timezone.timedelta(days=30),
+        )
+
+        response = self.client.get(reverse("home"))
+
+        card = response.content.decode().split(f'id="home-media-movie-{movie.id}"')[1]
+        card = card.split('id="home-media-')[0]
+        self.assertIn(reverse("download_event", args=[release.id]), card)
+        self.assertNotIn("Mark watched", card)
