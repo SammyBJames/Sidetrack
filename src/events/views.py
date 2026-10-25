@@ -6,12 +6,15 @@ import icalendar
 from django.contrib import messages
 from django.contrib.auth.decorators import login_not_required
 from django.core.exceptions import ObjectDoesNotExist
+from django.db.models import Q
 from django.http import HttpResponse
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.utils.text import slugify
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
+from app.models import MediaTypes
 from events import tasks
 from events.models import Event
 from users.models import User, WeekStartDayChoices
@@ -155,4 +158,45 @@ def download_calendar(_, token: str):
     # Return the iCal file
     response = HttpResponse(cal.to_ical(), content_type="text/calendar")
     response["Content-Disposition"] = 'attachment; filename="calendar.ics"'
+    return response
+
+
+@require_GET
+def download_event(request, event_id):
+    """Download one release the user tracks as an iCalendar file.
+
+    Responds with 404 for releases of media the user doesn't track.
+    """
+    tracked = Q()
+    for media_type in MediaTypes.values:
+        if media_type != MediaTypes.EPISODE.value:
+            tracked |= Q(**{f"item__{media_type}__user": request.user})
+    release = get_object_or_404(
+        Event.objects.filter(tracked).select_related("item").distinct(),
+        id=event_id,
+    )
+
+    cal = icalendar.Calendar()
+    cal.add("prodid", "-//Sidetrack//EN")
+    cal.add("version", "2.0")
+
+    cal_event = icalendar.Event()
+    # Same UID as in the calendar feed, so calendars can tell it is the same release
+    cal_event.add("uid", release.id)
+    cal_event.add("summary", str(release))
+    if release.is_sentinel_time:
+        # The release has a date but no time, so it is an all day event
+        release_date = release.datetime.astimezone(UTC).date()
+        cal_event.add("dtstart", release_date)
+        cal_event.add("dtend", release_date + timedelta(days=1))
+    else:
+        dt_tz_aware = release.datetime.replace(tzinfo=UTC)
+        cal_event.add("dtstart", dt_tz_aware)
+        cal_event.add("dtend", dt_tz_aware)
+    cal_event.add("dtstamp", timezone.now())
+    cal.add_component(cal_event)
+
+    response = HttpResponse(cal.to_ical(), content_type="text/calendar")
+    filename = slugify(str(release)) or "release"
+    response["Content-Disposition"] = f'attachment; filename="{filename}.ics"'
     return response
