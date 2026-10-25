@@ -1,7 +1,15 @@
 {% load app_tags %}
 
 {% for item in items %}
-  <div {% if forloop.last and has_next %} hx-get="{% url 'list_detail' custom_list.id %}?page={{ next_page_number }}" hx-trigger="revealed threshold:200px" hx-swap="afterend" hx-include="#filter-form" hx-indicator="#loading-indicator" {% endif %}>
-    {% include "app/components/media_card.html" with media=item.media item=item title=item from_grid=True %}
-  </div>
+  {% include "app/components/media_card.html" with media=item.media item=item title=item from_grid=True %}
 {% endfor %}
+
+{# Loads the next page when scrolled into view, kept apart from the cards so any card can be removed #}
+{% if has_next %}
+  <div class="col-span-full h-px"
+       hx-get="{% url 'list_detail' custom_list.id %}?page={{ next_page_number }}"
+       hx-trigger="revealed threshold:200px"
+       hx-swap="outerHTML"
+       hx-include="#filter-form"
+       hx-indicator="#loading-indicator"></div>
+{% endif %}
