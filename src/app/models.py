@@ -252,6 +252,8 @@ class MediaManager(models.Manager):
         queryset = queryset.select_related("item")
         queryset = self._apply_prefetch_related(queryset, media_type)
 
+        if sort_filter == users.models.MediaSortChoices.RECENT:
+            return self._sort_recent_media_list(queryset, media_type)
         if sort_filter:
             return self._sort_media_list(queryset, sort_filter, media_type)
         return queryset
@@ -288,6 +290,27 @@ class MediaManager(models.Manager):
             )
 
         return base_queryset
+
+    def _sort_recent_media_list(self, queryset, media_type):
+        """Sort by last activity first, the order of the home page's rows."""
+        # Shows and seasons have no progressed_at column, their last activity is
+        # their latest watched episode, as their progressed_at properties compute
+        if media_type == MediaTypes.SEASON.value:
+            last_activity = models.Max("episodes__end_date")
+        elif media_type == MediaTypes.TV.value:
+            last_activity = models.Max(
+                "seasons__episodes__end_date",
+                filter=models.Q(seasons__item__season_number__gt=0),
+            )
+        else:
+            last_activity = models.F("progressed_at")
+
+        return queryset.annotate(
+            last_activity=models.functions.Coalesce(last_activity, "created_at"),
+        ).order_by(
+            models.F("last_activity").desc(),
+            models.functions.Lower("item__title"),
+        )
 
     def _sort_media_list(self, queryset, sort_filter, media_type=None):
         """Sort media list using SQL sorting with annotations for calculated fields."""

@@ -41,6 +41,8 @@ class MediaSortChoices(models.TextChoices):
     PROGRESS = "progress", "Progress"
     START_DATE = "start_date", "Start Date"
     END_DATE = "end_date", "End Date"
+    # The home page's order, so its row headers open the list in the same order
+    RECENT = "recent", "Recent"
 
 
 class MediaStatusChoices(models.TextChoices):
