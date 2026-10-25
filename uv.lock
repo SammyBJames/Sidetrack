@@ -2365,7 +2365,7 @@ wheels = [
 ]
 
 [[package]]
-name = "yamtrack"
+name = "sidetrack"
 version = "0.26.3"
 source = { virtual = "." }
 dependencies = [

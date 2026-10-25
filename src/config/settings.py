@@ -1,4 +1,4 @@
-"""Django settings for Yamtrack project."""
+"""Django settings for Sidetrack project."""
 
 import json
 import sys
@@ -345,7 +345,7 @@ LOGIN_REDIRECT_URL = "home"
 
 AUTH_USER_MODEL = "users.User"
 
-# Yamtrack settings
+# Sidetrack settings
 
 # For CSV imports and the Trakt export archive
 FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50 MB

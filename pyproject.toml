@@ -1,5 +1,5 @@
 [project]
-name = "yamtrack"
+name = "sidetrack"
 version = "0.26.3"
 description = "A self hosted media tracker."
 readme = "README.md"

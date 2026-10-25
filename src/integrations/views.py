@@ -491,7 +491,7 @@ def export_csv(request):
     response = StreamingHttpResponse(
         streaming_content=exports.generate_rows(request.user),
         content_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="yamtrack_{now}.csv"'},
+        headers={"Content-Disposition": f'attachment; filename="sidetrack_{now}.csv"'},
     )
     logger.info("User %s started CSV export", request.user.username)
     return response

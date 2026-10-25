@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 base_url = "https://openlibrary.org/api"
 search_url = "https://openlibrary.org/search.json"
-headers = {"User-Agent": "Yamtrack/1.0 (github@fuzzygrim.com)"}
+headers = {"User-Agent": "Sidetrack/1.0 (+https://github.com/SammyBJames/Sidetrack)"}
 AUTHOR_FETCH_ATTEMPTS = 3
 
 

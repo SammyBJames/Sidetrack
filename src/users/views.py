@@ -198,9 +198,9 @@ def test_notification(request):
 
         # Send test notification
         result = apobj.notify(
-            title="YamTrack Test Notification",
+            title="Sidetrack Test Notification",
             body=(
-                "This is a test notification from YamTrack. "
+                "This is a test notification from Sidetrack. "
                 "If you're seeing this, your notifications are working correctly!"
             ),
         )
