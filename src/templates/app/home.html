@@ -31,7 +31,7 @@
                x-transition:leave="transition ease-in duration-75"
                x-transition:leave-start="transform opacity-100 scale-100"
                x-transition:leave-end="transform opacity-0 scale-95"
-               class="absolute right-0 z-10 mt-2 w-52 overflow-hidden rounded-md border border-gray-700 bg-surface-600 py-1 shadow-lg">
+               class="absolute right-0 z-10 mt-2 w-52 overflow-hidden rounded-xl border border-gray-700 bg-surface-600 py-1 shadow-lg">
             {% for value, label in sort_choices %}
               <a href="{% url 'home' %}?sort={{ value }}{% if hide_unreleased %}&hide_unreleased=true{% endif %}"
                  class="block w-full px-4 py-2 text-left text-sm transition-colors {% if current_sort == value %}bg-indigo-600 text-white font-medium{% else %}text-gray-300 hover:bg-surface-500 hover:text-white{% endif %}">
