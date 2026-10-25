@@ -313,7 +313,8 @@
           </div>
 
           <main class="flex-1 relative bg-surface-900">
-            <div class="container mx-auto px-8 py-12">
+            {# Fills smaller screens and stops growing at 1920px #}
+            <div class="mx-auto w-full max-w-[120rem] px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
               {% block content %}
               {% endblock content %}
             </div>
