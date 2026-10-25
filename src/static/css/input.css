@@ -2,6 +2,23 @@
 
 @theme {
   --breakpoint-xs: 30rem;
+
+  /* Neutral surfaces, darkest to lightest. */
+  --color-surface-950: #1a1d20;
+  --color-surface-900: #212529;
+  --color-surface-875: #23272b;
+  --color-surface-850: #262a2f;
+  --color-surface-825: #272c31;
+  --color-surface-800: #2a2f35;
+  --color-surface-775: #2c3136;
+  --color-surface-750: #30363d;
+  --color-surface-700: #313842;
+  --color-surface-650: #343a40;
+  --color-surface-600: #39404b;
+  --color-surface-550: #3e454d;
+  --color-surface-500: #454d5a;
+
+  --color-focus: #4a9eff;
 }
 
 [x-cloak] {
@@ -66,7 +83,7 @@
 
 /* Dropdown */
 .select2-container--tailwindcss-4.select2-container--open .select2-dropdown {
-  @apply w-full mt-1 overflow-auto rounded-md text-base bg-[#39404b] border-gray-600 border focus-within:border-indigo-500 focus-within:ring focus-within:ring-indigo-200/50;
+  @apply w-full mt-1 overflow-auto rounded-md text-base bg-surface-600 border-gray-600 border focus-within:border-indigo-500 focus-within:ring focus-within:ring-indigo-200/50;
 }
 
 .select2-container--tailwindcss-4 .select2-results__message {
@@ -75,12 +92,12 @@
 
 /* Hover state */
 .select2-container--tailwindcss-4 .select2-results__option--highlighted {
-  @apply text-white bg-[#454d5a];
+  @apply text-white bg-surface-500;
 }
 
 /* Multiple selection */
 .select2-container--tailwindcss-4 .select2-selection--multiple {
-  @apply rounded-md text-base sm:text-sm/6 bg-[#39404b] p-1.5 cursor-default text-white border border-white/10;
+  @apply rounded-md text-base sm:text-sm/6 bg-surface-600 p-1.5 cursor-default text-white border border-white/10;
 }
 
 /* Multiple selection list */
@@ -94,7 +111,7 @@
 .select2-container--tailwindcss-4
   .select2-selection--multiple
   .select2-selection__choice {
-  @apply flex flex-row-reverse items-center gap-1 bg-[#454d5a] text-gray-200 pl-2 pr-1 py-1 rounded-md text-sm border border-indigo-500/20;
+  @apply flex flex-row-reverse items-center gap-1 bg-surface-500 text-gray-200 pl-2 pr-1 py-1 rounded-md text-sm border border-indigo-500/20;
 }
 
 /* Remove button */
@@ -121,7 +138,7 @@
 /* Focus styles for keyboard navigation */
 .select2-container--tailwindcss-4.select2-container--focus
   .select2-selection--multiple {
-  @apply outline-none ring-2 ring-[#4a9eff] appearance-none;
+  @apply outline-none ring-2 ring-focus appearance-none;
 }
 
 #chartjs-tooltip {

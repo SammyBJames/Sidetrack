@@ -4,7 +4,7 @@
   <div class="space-y-4">
     <div class="flex items-center justify-between gap-4">
       <div class="flex items-center gap-3">
-        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#39404b] {% if section.key == Status.IN_PROGRESS.value %}{{ Status.IN_PROGRESS.value|status_color }}{% else %}{{ Status.PLANNING.value|status_color }}{% endif %}">
+        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-600 {% if section.key == Status.IN_PROGRESS.value %}{{ Status.IN_PROGRESS.value|status_color }}{% else %}{{ Status.PLANNING.value|status_color }}{% endif %}">
           {% if section.key == Status.IN_PROGRESS.value %}
             {% include "app/icons/states/in-progress.svg" with classes="h-5 w-5" %}
           {% else %}
@@ -15,7 +15,7 @@
           <h2 class="text-2xl font-semibold text-white">{{ section.key|media_status_readable|title }}</h2>
         </div>
       </div>
-      <span class="inline-flex items-center gap-2 rounded-full border border-gray-700 bg-[#39404b] px-3 py-1 text-sm text-gray-300">
+      <span class="inline-flex items-center gap-2 rounded-full border border-gray-700 bg-surface-600 px-3 py-1 text-sm text-gray-300">
         {% if section.key == Status.IN_PROGRESS.value %}
           {% include "app/icons/pulse.svg" with classes="h-4 w-4 text-indigo-400" %}
         {% else %}
@@ -54,7 +54,7 @@
                       hx-indicator="#loading-indicator-{{ section.id }}-{{ media_type }}"
                       hx-trigger="click"
                       type="button"
-                      class="rounded-md border border-gray-700 bg-[#2a2f35] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#313842] cursor-pointer"
+                      class="rounded-md border border-gray-700 bg-surface-800 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-surface-700 cursor-pointer"
                       hx-on:click="this.remove()">Load all ({{ media_list.total }})</button>
               <div id="loading-indicator-{{ section.id }}-{{ media_type }}"
                    class="htmx-indicator hidden text-center">
@@ -69,8 +69,8 @@
       {% endfor %}
     </div>
   {% else %}
-    <div class="flex flex-col items-center justify-center rounded-lg border border-dashed border-gray-700 bg-[#2a2f35] px-6 py-16 text-center">
-      <div class="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#39404b]">
+    <div class="flex flex-col items-center justify-center rounded-lg border border-dashed border-gray-700 bg-surface-800 px-6 py-16 text-center">
+      <div class="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-600">
         {% if section.key == Status.IN_PROGRESS.value %}
           {% include "app/icons/pulse.svg" with classes="h-8 w-8 text-indigo-300" %}
         {% else %}

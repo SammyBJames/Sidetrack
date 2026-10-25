@@ -12,10 +12,10 @@
     <article id="journal-{{ entry.media_type }}-{{ entry.id }}"
              data-journal-entry-day="{{ day.day_iso }}"
              x-data="{ confirmOpen: false }"
-             class="group relative flex gap-4 bg-[#2a2f35] rounded-xl p-3 ring-1 ring-white/5 hover:ring-indigo-500/40 hover:bg-[#30363d] transition-all duration-200">
+             class="group relative flex gap-4 bg-surface-800 rounded-xl p-3 ring-1 ring-white/5 hover:ring-indigo-500/40 hover:bg-surface-750 transition-all duration-200">
       <a href="{{ entry.item|media_url }}" class="relative shrink-0">
         <img alt="{{ entry.item.title }}"
-             class="lazyload w-30 aspect-2/3 rounded-lg object-cover bg-[#3e454d] shadow-md group-hover:opacity-90 transition-opacity"
+             class="lazyload w-30 aspect-2/3 rounded-lg object-cover bg-surface-550 shadow-md group-hover:opacity-90 transition-opacity"
              data-src="{{ entry.item.image }}"
              src="{{ IMG_NONE }}">
         {% include "app/components/journal_badge.html" with accent=entry.accent %}
@@ -45,7 +45,7 @@
            x-show="confirmOpen"
            @keydown.escape.window="confirmOpen = false"
            class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div class="w-96 max-w-full bg-[#2a2f35] rounded-xl p-6 relative z-60 ring-1 ring-white/10 shadow-xl"
+        <div class="w-96 max-w-full bg-surface-800 rounded-xl p-6 relative z-60 ring-1 ring-white/10 shadow-xl"
              @click.outside="confirmOpen = false">
           <h3 class="text-lg font-semibold text-white mb-2">Delete activity?</h3>
           <p class="text-sm text-gray-400 mb-6">

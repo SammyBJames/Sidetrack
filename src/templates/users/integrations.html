@@ -14,17 +14,17 @@
   {% url 'emby_webhook' request.user.token as emby_webhook_path %}
   {% absolute_app_url emby_webhook_path as emby_webhook_url %}
   <div class="space-y-6">
-    <div class="bg-[#2a2f35] rounded-lg p-6">
+    <div class="bg-surface-800 rounded-lg p-6">
       <div class="flex items-center mb-4">
         {% include "app/icons/padlock.svg" with classes="w-6 h-6 text-indigo-400 mr-3" %}
         <h2 class="text-xl font-semibold">Token</h2>
       </div>
       <p class="text-gray-400 mb-5 text-sm">This token is used to authenticate webhook requests from your media servers.</p>
-      <div class="bg-[#39404b] p-2 rounded-md mb-4">
+      <div class="bg-surface-600 p-2 rounded-md mb-4">
         <div class="flex items-center gap-2">
           <input readonly=""
                  id="token"
-                 class="flex-1 py-2 pr-2 pl-3 bg-[#39404b] rounded-md text-gray-300 text-sm border-0 focus:ring-0 outline-none font-mono"
+                 class="flex-1 py-2 pr-2 pl-3 bg-surface-600 rounded-md text-gray-300 text-sm border-0 focus:ring-0 outline-none font-mono"
                  type="text"
                  value="{{ user.token|default_if_none:"" }}">
           <span class="flex items-center cursor-pointer group pr-3"
@@ -51,7 +51,7 @@
         </div>
       </div>
     </div>
-    <div class="bg-[#2a2f35] rounded-lg p-6">
+    <div class="bg-surface-800 rounded-lg p-6">
       <div class="flex items-center mb-4">
         {% include "app/icons/server.svg" with classes="w-6 h-6 text-indigo-400 mr-3" %}
         <h2 class="text-xl font-semibold">Media Servers</h2>
@@ -63,7 +63,7 @@
              aria-label="Integration services">
           <button type="button"
                   class="flex items-center px-4 py-2 rounded-md transition-colors text-sm cursor-pointer"
-                  :class="activeIntegration === 'jellyfin' ? 'bg-indigo-600 text-white' : 'bg-[#39404b] text-gray-300 hover:bg-[#454d59]'"
+                  :class="activeIntegration === 'jellyfin' ? 'bg-indigo-600 text-white' : 'bg-surface-600 text-gray-300 hover:bg-surface-500'"
                   @click="activeIntegration = 'jellyfin'"
                   role="tab"
                   :aria-selected="activeIntegration === 'jellyfin'">
@@ -72,7 +72,7 @@
           </button>
           <button type="button"
                   class="flex items-center px-4 py-2 rounded-md transition-colors text-sm cursor-pointer"
-                  :class="activeIntegration === 'plex' ? 'bg-indigo-600 text-white' : 'bg-[#39404b] text-gray-300 hover:bg-[#454d59]'"
+                  :class="activeIntegration === 'plex' ? 'bg-indigo-600 text-white' : 'bg-surface-600 text-gray-300 hover:bg-surface-500'"
                   @click="activeIntegration = 'plex'"
                   role="tab"
                   :aria-selected="activeIntegration === 'plex'">
@@ -81,7 +81,7 @@
           </button>
           <button type="button"
                   class="flex items-center px-4 py-2 rounded-md transition-colors text-sm cursor-pointer"
-                  :class="activeIntegration === 'emby' ? 'bg-indigo-600 text-white' : 'bg-[#39404b] text-gray-300 hover:bg-[#454d59]'"
+                  :class="activeIntegration === 'emby' ? 'bg-indigo-600 text-white' : 'bg-surface-600 text-gray-300 hover:bg-surface-500'"
                   @click="activeIntegration = 'emby'"
                   role="tab"
                   :aria-selected="activeIntegration === 'emby'">
@@ -90,13 +90,13 @@
           </button>
         </div>
         <div x-cloak x-show="activeIntegration === 'jellyfin'" role="tabpanel">
-          <div class="bg-[#39404b] p-5 rounded-lg mb-6">
+          <div class="bg-surface-600 p-5 rounded-lg mb-6">
             <div class="flex items-center mb-3">
               {% include "app/icons/server.svg" with classes="w-5 h-5 text-indigo-400 mr-2" %}
               <h3 class="text-base font-medium">Jellyfin</h3>
             </div>
             <p class="text-gray-400 mb-4 text-sm">Connect Jellyfin to automatically track your watching progress.</p>
-            <div class="bg-[#262a2f] p-4 rounded-md mb-4">
+            <div class="bg-surface-850 p-4 rounded-md mb-4">
               <h4 class="text-sm font-medium mb-3">Webhook Events</h4>
               <p class="text-gray-400 mb-4 text-sm">
                 Play and Stop events are always processed. Enable these to sync manual watched changes from the unofficial Webhooks plugin.
@@ -105,7 +105,7 @@
                     action="{% url 'update_jellyfin_webhook_events' %}"
                     class="space-y-3">
                 {% csrf_token %}
-                <div class="flex items-center justify-between p-3 bg-[#39404b] rounded-md">
+                <div class="flex items-center justify-between p-3 bg-surface-600 rounded-md">
                   <div class="flex-1">
                     <div class="flex items-center text-gray-200 mb-1">
                       {% include "app/icons/circle-check.svg" with classes="w-5 h-5 mr-2" %}
@@ -122,7 +122,7 @@
                     </div>
                   </label>
                 </div>
-                <div class="flex items-center justify-between p-3 bg-[#39404b] rounded-md">
+                <div class="flex items-center justify-between p-3 bg-surface-600 rounded-md">
                   <div class="flex-1">
                     <div class="flex items-center text-gray-200 mb-1">
                       {% include "app/icons/error.svg" with classes="w-5 h-5 mr-2 text-amber-400" %}
@@ -150,7 +150,7 @@
                 </div>
               </form>
             </div>
-            <div class="bg-[#262a2f] p-4 rounded-md mb-4">
+            <div class="bg-surface-850 p-4 rounded-md mb-4">
               <h4 class="text-sm font-medium mb-3">Official Webhook Plugin</h4>
               <ol class="list-decimal list-inside space-y-2 text-sm text-gray-300">
                 <li>You will need to have TMDB and TVDB as metadata providers in Jellyfin.</li>
@@ -163,7 +163,7 @@
                     {# djlint:off #}
                     <li>
                       <div class="inline-flex items-center gap-2 w-[calc(100%-30px)]">URL:
-                        <input readonly id="jellyfin-webhook-url-official" class="w-full bg-[#262a2f] rounded-md text-gray-400 text-sm border-0 focus:ring-0 outline-none font-mono" type="text" value="{{ jellyfin_webhook_url }}">
+                        <input readonly id="jellyfin-webhook-url-official" class="w-full bg-surface-850 rounded-md text-gray-400 text-sm border-0 focus:ring-0 outline-none font-mono" type="text" value="{{ jellyfin_webhook_url }}">
                         <span class="flex items-center cursor-pointer group" title="Copy" data-copy-target="#jellyfin-webhook-url-official">
                           {% include "app/icons/copy.svg" with classes="w-5 h-5 text-gray-400 group-hover:text-indigo-400 transition-colors" %}
                         </span>
@@ -174,7 +174,7 @@
                     <li>User Filter: Your Jellyfin User</li>
                     <li>Finally, under the "Template" section, paste the following code.</li>
                     <div class="relative mt-2">
-                      <textarea readonly id="jellyfin-json-template" class="w-full bg-[#39404b] rounded-md text-gray-300 text-sm border-0 focus:ring-0 outline-none font-mono p-3 resize-none overflow-auto max-h-72" rows="14">
+                      <textarea readonly id="jellyfin-json-template" class="w-full bg-surface-600 rounded-md text-gray-300 text-sm border-0 focus:ring-0 outline-none font-mono p-3 resize-none overflow-auto max-h-72" rows="14">
 {% verbatim %}{
   "Event": "{{#if_equals NotificationType 'PlaybackStart'}}Play{{/if_equals}}{{#if_equals NotificationType 'PlaybackStop'}}Stop{{/if_equals}}",
   "Item": {
@@ -203,7 +203,7 @@
                 </li>
               </ol>
             </div>
-            <div class="bg-[#262a2f] p-4 rounded-md">
+            <div class="bg-surface-850 p-4 rounded-md">
               <h4 class="text-sm font-medium mb-3">Unofficial Webhooks Plugin</h4>
               <ol class="list-decimal list-inside space-y-2 text-sm text-gray-300">
                 <li>You will need to have TMDB and TVDB as metadata providers in Jellyfin.</li>
@@ -228,7 +228,7 @@
                       {# djlint:off #}
                   <li>
                     <div class="inline-flex items-center gap-2 w-[calc(100%-30px)]">URL:
-                      <input readonly id="jellyfin-webhook-url-unofficial" class="w-full bg-[#262a2f] rounded-md text-gray-400 text-sm border-0 focus:ring-0 outline-none font-mono" type="text" value="{{ jellyfin_webhook_url }}">
+                      <input readonly id="jellyfin-webhook-url-unofficial" class="w-full bg-surface-850 rounded-md text-gray-400 text-sm border-0 focus:ring-0 outline-none font-mono" type="text" value="{{ jellyfin_webhook_url }}">
                       <span class="flex items-center cursor-pointer group" title="Copy" data-copy-target="#jellyfin-webhook-url-unofficial">
                         {% include "app/icons/copy.svg" with classes="w-5 h-5 text-gray-400 group-hover:text-indigo-400 transition-colors" %}
                       </span>
@@ -245,13 +245,13 @@
             </div>
           </div>
           <div x-cloak x-show="activeIntegration === 'plex'" role="tabpanel">
-            <div class="bg-[#39404b] p-5 rounded-lg mb-6">
+            <div class="bg-surface-600 p-5 rounded-lg mb-6">
               <div class="flex items-center mb-3">
                 {% include "app/icons/server.svg" with classes="w-5 h-5 text-indigo-400 mr-2" %}
                 <h3 class="text-base font-medium">Plex</h3>
               </div>
               <p class="text-gray-400 mb-4 text-sm">Connect Plex to automatically track your watching progress.</p>
-              <div class="bg-[#262a2f] p-3 rounded-md mb-4">
+              <div class="bg-surface-850 p-3 rounded-md mb-4">
                 <h4 class="text-sm font-medium mb-3">Plex Usernames</h4>
                 <form method="post"
                       action="{% url 'update_plex_usernames' %}"
@@ -262,7 +262,7 @@
                       This username (or several, comma separated) will be used to filter which events are sent to your webhook.
                     </p>
                     <input name="plex_usernames"
-                           class="w-full py-2 px-3 bg-[#39404b] rounded-md text-white text-sm border {% if user.plex_usernames.errors %}border-red-500{% else %}border-gray-600{% endif %} focus:border-indigo-500 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+                           class="w-full py-2 px-3 bg-surface-600 rounded-md text-white text-sm border {% if user.plex_usernames.errors %}border-red-500{% else %}border-gray-600{% endif %} focus:border-indigo-500 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
                            type="text"
                            placeholder="username1, username2, username3"
                            value="{{ request.user.plex_usernames }}">
@@ -276,7 +276,7 @@
                   </div>
                 </form>
               </div>
-              <div class="bg-[#262a2f] p-4 rounded-md">
+              <div class="bg-surface-850 p-4 rounded-md">
                 <h4 class="text-sm font-medium mb-3">Setup Instructions</h4>
                 <ol class="list-decimal list-inside space-y-2 text-sm text-gray-300">
                   <li>You will need to have a PlexPass in order to have webhooks enabled</li>
@@ -295,7 +295,7 @@
                         <div class="inline-flex items-center gap-2 w-[calc(100%-30px)]">
                           <input readonly
                                  id="plex-webhook-url"
-                                 class="w-full bg-[#262a2f] rounded-md text-gray-400 text-sm border-0 focus:ring-0 outline-none font-mono"
+                                 class="w-full bg-surface-850 rounded-md text-gray-400 text-sm border-0 focus:ring-0 outline-none font-mono"
                                  type="text"
                                  value="{{ plex_webhook_url }}">
                           <span class="flex items-center cursor-pointer group"
@@ -312,13 +312,13 @@
             </div>
           </div>
           <div x-cloak x-show="activeIntegration === 'emby'" role="tabpanel">
-            <div class="bg-[#39404b] p-5 rounded-lg mb-6">
+            <div class="bg-surface-600 p-5 rounded-lg mb-6">
               <div class="flex items-center mb-3">
                 {% include "app/icons/server.svg" with classes="w-5 h-5 text-indigo-400 mr-2" %}
                 <h3 class="text-base font-medium">Emby</h3>
               </div>
               <p class="text-gray-400 mb-4 text-sm">Connect Emby to automatically track your watching progress.</p>
-              <div class="bg-[#262a2f] p-4 rounded-md">
+              <div class="bg-surface-850 p-4 rounded-md">
                 <h4 class="text-sm font-medium mb-3">Setup Instructions</h4>
                 <ol class="list-decimal list-inside space-y-2 text-sm text-gray-300">
                   <li>In Emby, go to Settings > Notifications</li>
@@ -331,7 +331,7 @@
                     <div class="inline-flex items-center gap-2 w-[calc(100%-30px)]">URL:
                       <input readonly
                              id="emby-webhook-url"
-                             class="w-full bg-[#262a2f] rounded-md text-gray-400 text-sm border-0 focus:ring-0 outline-none font-mono"
+                             class="w-full bg-surface-850 rounded-md text-gray-400 text-sm border-0 focus:ring-0 outline-none font-mono"
                              type="text"
                              value="{{ emby_webhook_url }}">
                       <span class="flex items-center cursor-pointer group"

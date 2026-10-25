@@ -15,7 +15,7 @@
       {# Poster #}
       <div class="w-full md:w-1/4 max-w-62.5 mx-auto md:mx-0">
         <img alt="{{ media.title }}"
-             class="w-full rounded-lg shadow-lg bg-[#2a2f35] object-cover"
+             class="w-full rounded-lg shadow-lg bg-surface-800 object-cover"
              src="{{ media.image }}">
 
         <div class="mt-4 relative flex items-stretch"
@@ -52,7 +52,7 @@
                  x-transition:leave="transition ease-in duration-150"
                  x-transition:leave-start="opacity-100 transform scale-100"
                  x-transition:leave-end="opacity-0 transform scale-95"
-                 class="absolute left-0 right-0 top-full mt-2 bg-[#2a2f35] rounded-md shadow-lg overflow-hidden z-20">
+                 class="absolute left-0 right-0 top-full mt-2 bg-surface-800 rounded-md shadow-lg overflow-hidden z-20">
               <button class="w-full px-4 py-3 flex items-center gap-x-3 text-sm text-gray-200 hover:bg-gray-700 transition-colors duration-200 cursor-pointer"
                       hx-get="{% media_view_url 'track_modal' media %}"
                       hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}", "is_create": true}'
@@ -118,11 +118,11 @@
                    x-transition:leave="transition ease-in duration-150"
                    x-transition:leave-start="opacity-100 transform scale-100"
                    x-transition:leave-end="opacity-0 transform scale-95"
-                   class="absolute right-1/2 md:right-0 translate-x-1/2 md:translate-x-0 mt-2 w-64 bg-[#2a2f35] rounded-md shadow-lg overflow-hidden z-10">
+                   class="absolute right-1/2 md:right-0 translate-x-1/2 md:translate-x-0 mt-2 w-64 bg-surface-800 rounded-md shadow-lg overflow-hidden z-10">
                 <div class="max-h-75 overflow-y-auto">
                   {% for tv_season in tv.related.seasons %}
                     <a href="{% url 'season_details' source=media.source media_id=media.media_id title=media.title|slug season_number=tv_season.season_number %}"
-                       class="w-full px-4 py-3 flex items-center space-x-3 hover:bg-gray-700 transition-colors duration-200 cursor-pointer {% if tv_season.season_number == media.season_number %}bg-[#343a40]{% endif %}">
+                       class="w-full px-4 py-3 flex items-center space-x-3 hover:bg-gray-700 transition-colors duration-200 cursor-pointer {% if tv_season.season_number == media.season_number %}bg-surface-650{% endif %}">
                       <div class="w-8 h-8 rounded-full flex items-center justify-center bg-indigo-600 text-white">
                         {{ tv_season.season_number }}
                       </div>
@@ -170,7 +170,7 @@
         {# Source score #}
         <div class="flex flex-wrap gap-4">
           {% if media.score_count is not None %}
-            <div class="bg-[#2a2f35] p-3 rounded-lg w-30">
+            <div class="bg-surface-800 p-3 rounded-lg w-30">
               <h3 class="text-xs font-semibold text-gray-400 mb-1 text-center">{{ media.source|upper }} SCORE</h3>
               <div class="flex items-center justify-center">
                 {% include "app/icons/star.svg" with classes="w-5 h-5 mr-1.5 text-yellow-400 fill-yellow-400" %}
@@ -192,7 +192,7 @@
                  class="relative">
               <!-- Rating display -->
               <div @click="showRatingPopup = !showRatingPopup"
-                   class="bg-[#2a2f35] p-3 rounded-lg w-30 cursor-pointer">
+                   class="bg-surface-800 p-3 rounded-lg w-30 cursor-pointer">
                 <h3 class="text-xs font-semibold text-gray-400 mb-1 text-center">YOUR SCORE</h3>
                 <div class="flex items-center justify-center">
                   {% include "app/icons/star.svg" with classes="w-5 h-5 mr-1.5 text-yellow-400 fill-yellow-400" %}
@@ -213,7 +213,7 @@
               <div x-cloak
                    x-show="showRatingPopup"
                    @click.outside="showRatingPopup = false; isHovering = false"
-                   class="absolute left-0 top-full mt-2 p-3 bg-[#2a2f35] rounded-lg shadow-lg z-10 w-62.5 border border-gray-700"
+                   class="absolute left-0 top-full mt-2 p-3 bg-surface-800 rounded-lg shadow-lg z-10 w-62.5 border border-gray-700"
                    @mouseenter="isHovering = true"
                    @mouseleave="isHovering = false; hoverRating = null">
                 <div class="flex justify-between mb-1">
@@ -254,7 +254,7 @@
         {% if current_instance.start_date or current_instance.end_date or current_instance.notes or current_instance.progress and media.media_type != MediaTypes.MOVIE.value %}
           <h2 class="text-xl font-bold mb-4">Your History</h2>
 
-          <div class="bg-[#2a2f35] p-4 rounded-lg mb-6 text-center md:text-start">
+          <div class="bg-surface-800 p-4 rounded-lg mb-6 text-center md:text-start">
             <div class="@container flex flex-col gap-y-1">
               {% if current_instance.start_date %}
                 <div class="flex @max-[210px]:flex-col justify-between text-sm">
@@ -306,10 +306,10 @@
 
         {# Actions #}
         <h2 class="text-xl font-bold mb-4">Actions</h2>
-        <div class="bg-[#2a2f35] rounded-lg overflow-hidden divide-y divide-white/5 mb-6">
+        <div class="bg-surface-800 rounded-lg overflow-hidden divide-y divide-white/5 mb-6">
           {# Custom Lists #}
           <div x-data="{ listsOpen: false }">
-            <button class="w-full flex items-center gap-x-3 px-4 py-3 text-sm text-gray-200 hover:bg-[#343a40] transition-colors duration-200 cursor-pointer"
+            <button class="w-full flex items-center gap-x-3 px-4 py-3 text-sm text-gray-200 hover:bg-surface-650 transition-colors duration-200 cursor-pointer"
                     title="Add to custom lists"
                     hx-get="{% media_view_url 'lists_modal' media %}"
                     hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}"}'
@@ -335,7 +335,7 @@
 
           {# Activity History #}
           <div x-data="{ historyOpen: false }">
-            <button class="w-full flex items-center gap-x-3 px-4 py-3 text-sm text-gray-200 hover:bg-[#343a40] transition-colors duration-200 cursor-pointer"
+            <button class="w-full flex items-center gap-x-3 px-4 py-3 text-sm text-gray-200 hover:bg-surface-650 transition-colors duration-200 cursor-pointer"
                     title="View your activity history"
                     hx-get="{% media_view_url 'history_modal' media %}"
                     hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}"}'
@@ -362,7 +362,7 @@
           {# Sync metadata #}
           <button type="button"
                   title="Sync metadata with provider"
-                  class="w-full flex items-center gap-x-3 px-4 py-3 text-sm text-gray-200 hover:bg-[#343a40] transition-colors duration-200 cursor-pointer disabled:opacity-75"
+                  class="w-full flex items-center gap-x-3 px-4 py-3 text-sm text-gray-200 hover:bg-surface-650 transition-colors duration-200 cursor-pointer disabled:opacity-75"
                   hx-post="{% media_view_url 'sync_metadata' media %}"
                   hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
                   hx-vals='{"next": "{{ request.get_full_path|urlencode }}"}'
@@ -382,7 +382,7 @@
 
         {# Media Details #}
         <h2 class="text-xl font-bold mb-4">Details</h2>
-        <div class="bg-[#2a2f35] rounded-lg divide-y divide-white/5">
+        <div class="bg-surface-800 rounded-lg divide-y divide-white/5">
           {% if media.details.items %}
             {% for key, value in media.details.items %}
               <div class="flex justify-between gap-x-4 px-4 py-2.5">
@@ -435,7 +435,7 @@
               {% if media.total_cast_count > 30 %}
                 <a href="{{ media.source_url }}/cast"
                    target="_blank"
-                   class="bg-[#2a2f35] rounded-lg shadow-lg flex flex-col items-center justify-center hover:bg-[#343a40] transition-colors duration-200 min-w-44">
+                   class="bg-surface-800 rounded-lg shadow-lg flex flex-col items-center justify-center hover:bg-surface-650 transition-colors duration-200 min-w-44">
                   <div class="p-2.5 bg-indigo-600 text-white rounded-full mb-3">
                     {% include "app/icons/external-link.svg" with classes="w-6 h-6" %}
                   </div>
@@ -482,7 +482,7 @@
             <h2 class="text-xl font-bold mb-4">Repeats ({{ user_medias|length|add:"-1" }})</h2>
             <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
               {% for user_media in user_medias|slice:"1:" %}
-                <div class="bg-[#2a2f35] rounded-lg px-4 py-3">
+                <div class="bg-surface-800 rounded-lg px-4 py-3">
                   <div class="flex items-center justify-between gap-x-2">
                     <div class="flex items-center gap-x-1.5 min-w-0 text-sm">
                       {% if user_media.score %}
@@ -572,7 +572,7 @@
             <h2 class="text-xl font-bold mb-4">Episodes</h2>
             <div class="space-y-6">
               {% for episode in media.episodes %}
-                <div class="bg-[#2a2f35] rounded-lg overflow-hidden shadow-lg">
+                <div class="bg-surface-800 rounded-lg overflow-hidden shadow-lg">
                   <div class="flex flex-col md:flex-row"
                        x-data="{ obfuscated: {% if user.obfuscate_unseen_episodes and not episode.history %} true {% else %} false {% endif %} , hasImage: {% if episode.image != IMG_NONE %} true {% else %} false {% endif %} }">
                     <img src="{{ IMG_NONE }}"
@@ -698,7 +698,7 @@
               {% else %}
                 <div class="flex flex-wrap gap-3">
                   {% for provider in watch_providers %}
-                    <div class="flex items-center gap-x-3 bg-[#2a2f35] rounded-lg p-2 pr-4">
+                    <div class="flex items-center gap-x-3 bg-surface-800 rounded-lg p-2 pr-4">
                       <img class="w-10 rounded-md"
                            src="{{ provider.image }}"
                            alt="{{ provider.provider_name }}" />
@@ -717,7 +717,7 @@
             <h2 class="text-xl font-bold mb-4">Time to Beat</h2>
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl">
               {% if media.time_to_beat.hastily %}
-                <div class="bg-[#2a2f35] rounded-lg p-4 flex items-center gap-x-4">
+                <div class="bg-surface-800 rounded-lg p-4 flex items-center gap-x-4">
                   <span class="flex items-center justify-center w-10 h-10 rounded-full bg-sky-600/15 text-sky-400 shrink-0">
                     {% include "app/icons/gamepad-directional.svg" with classes="w-5 h-5" %}
                   </span>
@@ -728,7 +728,7 @@
                 </div>
               {% endif %}
               {% if media.time_to_beat.normally %}
-                <div class="bg-[#2a2f35] rounded-lg p-4 flex items-center gap-x-4">
+                <div class="bg-surface-800 rounded-lg p-4 flex items-center gap-x-4">
                   <span class="flex items-center justify-center w-10 h-10 rounded-full bg-green-600/15 text-green-400 shrink-0">
                     {% include "app/icons/award.svg" with classes="w-5 h-5" %}
                   </span>
@@ -739,7 +739,7 @@
                 </div>
               {% endif %}
               {% if media.time_to_beat.completely %}
-                <div class="bg-[#2a2f35] rounded-lg p-4 flex items-center gap-x-4">
+                <div class="bg-surface-800 rounded-lg p-4 flex items-center gap-x-4">
                   <span class="flex items-center justify-center w-10 h-10 rounded-full bg-yellow-600/15 text-yellow-400 shrink-0">
                     {% include "app/icons/trophy.svg" with classes="w-5 h-5" %}
                   </span>

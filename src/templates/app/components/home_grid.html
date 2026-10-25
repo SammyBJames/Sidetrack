@@ -5,7 +5,7 @@
   {% component_id 'lists' media.item as lists_component_id %}
   {% component_id 'history' media.item as history_component_id %}
   <div id="home-media-{{ media.item.media_type }}-{{ media.id }}"
-       class="bg-[#2a2f35] rounded-lg overflow-hidden shadow-lg transition-all duration-300"
+       class="bg-surface-800 rounded-lg overflow-hidden shadow-lg transition-all duration-300"
        x-data="{ trackOpen: false, listsOpen: false, historyOpen: false }">
     <div class="relative">
       <a href="{{ media.item|media_url }}">

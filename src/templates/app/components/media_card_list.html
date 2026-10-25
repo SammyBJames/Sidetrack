@@ -1,12 +1,12 @@
 {% load app_tags %}
 
-<div class="bg-[#2a2f35] rounded-lg overflow-hidden hover:bg-[#39404b] transition-colors duration-200"
+<div class="bg-surface-800 rounded-lg overflow-hidden hover:bg-surface-600 transition-colors duration-200"
      x-data="{ trackOpen: false, listsOpen: false, historyOpen: false }">
   <div class="flex items-center p-4 gap-4">
     <div class="shrink-0 relative">
       <a href="{{ item|media_url }}">
         <img alt="{{ title }}"
-             class="lazyload w-16 h-24 object-cover rounded shadow-md bg-[#3e454d]"
+             class="lazyload w-16 h-24 object-cover rounded shadow-md bg-surface-550"
              data-src="{{ item.image }}"
              src="{{ IMG_NONE }}">
       </a>

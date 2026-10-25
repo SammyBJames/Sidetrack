@@ -7,7 +7,7 @@
      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
   <div class="w-100 max-h-[90vh] px-4 md:px-0 relative z-60"
        @click.outside="trackOpen = false">
-    <div class="bg-[#2a2f35] p-6 rounded-lg max-h-[70svh] overflow-y-auto">
+    <div class="bg-surface-800 p-6 rounded-lg max-h-[70svh] overflow-y-auto">
 
       {# Modal Header #}
       <div class="flex items-center justify-between mb-4">
@@ -17,7 +17,7 @@
       </div>
 
       {# Episode preview data #}
-      <div class="bg-[#343a40] rounded-lg p-4 mb-6">
+      <div class="bg-surface-650 rounded-lg p-4 mb-6">
         <div class="flex items-start gap-4">
           <img alt="{{ episode.title }}"
                class="w-20 h-20 rounded object-cover shrink-0"
@@ -44,7 +44,7 @@
           <label class="block text-sm font-medium text-gray-300 mb-3">Previous Watches</label>
           <div class="max-h-50 overflow-y-auto space-y-2">
             {% for entry in episode.history %}
-              <div class="flex items-center justify-between gap-3 bg-[#343a40] rounded-md p-3 border border-gray-600">
+              <div class="flex items-center justify-between gap-3 bg-surface-650 rounded-md p-3 border border-gray-600">
                 <div class="min-w-0 text-sm text-white">
                   <div>
                     {% if entry.end_date %}
@@ -102,7 +102,7 @@
 
         {# Watch Date Input with Inline Clear Button #}
         <div class="relative">
-          <input class="w-full p-3 bg-[#343a40] rounded-md text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-[#4a9eff] appearance-none"
+          <input class="w-full p-3 bg-surface-650 rounded-md text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-focus appearance-none"
                  x-bind:type="inputType"
                  name="end_date"
                  @pointerdown="pointerOnPickerIcon = $event.clientX >= $el.getBoundingClientRect().right - 40"
@@ -114,7 +114,7 @@
         <div class="mt-4">
           <label class="block text-sm font-medium text-gray-300 mb-2"
                  for="episode-notes-{{ episode.episode_number }}">Notes</label>
-          <textarea class="w-full p-3 bg-[#343a40] rounded-md text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-[#4a9eff]"
+          <textarea class="w-full p-3 bg-surface-650 rounded-md text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-focus"
                     id="episode-notes-{{ episode.episode_number }}"
                     rows="3"
                     name="notes"
@@ -150,7 +150,7 @@
                  x-show="dropdownOpen"
                  style="display: none"
                  x-transition
-                 class="absolute right-0 bottom-full mb-2 w-48 bg-[#2a2f35] border border-gray-600 rounded-md shadow-2xl overflow-hidden">
+                 class="absolute right-0 bottom-full mb-2 w-48 bg-surface-800 border border-gray-600 rounded-md shadow-2xl overflow-hidden">
 
               {# Option A - Current Time #}
               <button type="button"
