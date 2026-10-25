@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from django.test import TestCase, override_settings
 
-from app.models import Item, MediaTypes
+from app.models import Item, MediaTypes, Sources
 from app.templatetags import app_tags
 from events.models import Event, SentinelDatetime
 
@@ -110,6 +110,55 @@ class ReleaseLabelTests(TestCase):
             app_tags.release_label(date_only(2026, 10, 6), self.user),
             "October 6",
         )
+
+
+class ReleaseYearTests(TestCase):
+    """Test the release_year filter that gives movie cards their year."""
+
+    def movie(self):
+        """Return a saved movie item."""
+        return Item.objects.create(
+            media_id="1",
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.MOVIE.value,
+            title="Test Movie",
+            image="http://example.com/image.jpg",
+        )
+
+    def test_search_results_keep_their_year(self):
+        """Search results already carry their year."""
+        self.assertEqual(app_tags.release_year({"release_year": 1999}), 1999)
+
+    def test_tracked_movie_year_comes_from_its_release(self):
+        """A tracked movie's year comes from its release event."""
+        item = self.movie()
+        Event.objects.create(item=item, datetime=datetime(1999, 3, 31, tzinfo=UTC))
+
+        self.assertEqual(app_tags.release_year(item), 1999)
+
+    def test_prefetched_releases_are_used(self):
+        """Prefetched releases are used, skipping unknown placeholder dates."""
+        item = self.movie()
+        item.prefetched_events = [
+            Event(datetime=SentinelDatetime.min_datetime()),
+            Event(datetime=datetime(2010, 7, 16, tzinfo=UTC)),
+        ]
+
+        with self.assertNumQueries(0):
+            self.assertEqual(app_tags.release_year(item), 2010)
+
+    def test_unknown_release_date_has_no_year(self):
+        """A movie whose release date is unknown has no year."""
+        item = self.movie()
+        Event.objects.create(item=item, datetime=SentinelDatetime.max_datetime())
+
+        self.assertIsNone(app_tags.release_year(item))
+
+    def test_other_media_has_no_year(self):
+        """Only movies get a year from their releases."""
+        item = Item(media_type=MediaTypes.ANIME.value)
+
+        self.assertIsNone(app_tags.release_year(item))
 
 
 class CardTitleTests(TestCase):

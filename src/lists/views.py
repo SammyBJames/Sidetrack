@@ -2,7 +2,15 @@ import logging
 
 from django.contrib import messages
 from django.core.paginator import Paginator
-from django.db.models import Count, F, OuterRef, Q, Subquery
+from django.db.models import (
+    Count,
+    F,
+    OuterRef,
+    Prefetch,
+    Q,
+    Subquery,
+    prefetch_related_objects,
+)
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_POST
@@ -10,6 +18,7 @@ from django.views.decorators.http import require_GET, require_POST
 from app import helpers
 from app.models import Item, MediaManager, MediaTypes
 from app.providers import services
+from events.models import Event
 from lists.forms import CustomListForm
 from lists.models import CustomList, CustomListItem
 from users.models import ListDetailSortChoices, ListSortChoices, MediaStatusChoices
@@ -169,6 +178,16 @@ def list_detail(request, list_id):
     # Annotate items with media objects
     for item in items_page:
         item.media = media_by_item_id.get(item.id)
+
+    # Release events give movie cards their year
+    prefetch_related_objects(
+        list(items_page),
+        Prefetch(
+            "event_set",
+            queryset=Event.objects.filter(content_number__isnull=True),
+            to_attr="prefetched_events",
+        ),
+    )
 
     # Base context for both full and partial responses
     context = {

@@ -11,6 +11,7 @@ from unidecode import unidecode
 from app import config, helpers, quick_actions
 from app import home as home_helpers
 from app.models import MediaTypes, Sources, Status
+from events.models import SentinelDatetime
 from users.models import WATCH_PROVIDER_REGION_UNSET
 
 register = template.Library()
@@ -329,6 +330,33 @@ def release_label(event, user):
     if event and event.content_number:
         return f"{event.readable_content_number} \u00b7 {day}"
     return day
+
+
+@register.filter
+def release_year(item):
+    """Return the year a card's movie came out, or None when it isn't known.
+
+    Accepts a metadata dict or an Item. Reads `prefetched_events` when set to
+    avoid a query per card.
+    """
+    if isinstance(item, dict):
+        return item.get("release_year")
+    # Set when re-rendering a card for an item whose release isn't fetched yet
+    if getattr(item, "release_year", None):
+        return item.release_year
+    if item.media_type != MediaTypes.MOVIE.value:
+        return None
+
+    events = getattr(item, "prefetched_events", None)
+    if events is None:
+        events = item.event_set.filter(content_number__isnull=True)
+    for event in events:
+        # Releases with an unknown date are stored at the first or last year
+        if event.content_number is None and (
+            SentinelDatetime.MIN_YEAR < event.datetime.year < SentinelDatetime.MAX_YEAR
+        ):
+            return event.datetime.year
+    return None
 
 
 @register.simple_tag

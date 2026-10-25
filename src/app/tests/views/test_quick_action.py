@@ -321,7 +321,7 @@ class QuickActionViewTests(TestCase):
         self.assertEqual(end.date(), timezone.localdate())
 
     def test_card_keeps_what_the_server_cannot_look_up(self):
-        """The new card keeps the highlight of the old one."""
+        """The new card keeps the release year and highlight of the old one."""
         movie = Movie.objects.create(
             item=self.movie_item,
             user=self.user,
@@ -332,7 +332,9 @@ class QuickActionViewTests(TestCase):
             self.movie_item,
             quick_actions.COMPLETE,
             instance_id=movie.id,
+            release_year="1999",
             active="true",
         )
 
+        self.assertContains(response, "<span>1999</span>", html=True)
         self.assertContains(response, "ring-indigo-400")

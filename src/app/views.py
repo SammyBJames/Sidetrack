@@ -742,6 +742,10 @@ def quick_action(request):
         season_number=media.item.season_number,
     ).count()
 
+    # A new item's release is fetched in the background, so keep the card's year
+    if request.POST.get("release_year"):
+        media.item.release_year = request.POST["release_year"]
+
     # `title` and `active` are display state that only the posted card knows
     return render(
         request,

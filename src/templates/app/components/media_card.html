@@ -1,6 +1,7 @@
 {% load app_tags %}
 
 {% card_title item title as heading %}
+{% firstof item|release_year "" as year %}
 
 {# No transform or backdrop filter on this root: the episode modal below is fixed and must stay relative to the viewport #}
 <div class="media-card hover-tap relative overflow-hidden rounded-xl bg-surface-800 shadow-lg shadow-black/30 ring-1 transition duration-300 {% if active %}ring-2 ring-indigo-400{% else %}ring-white/10 parent-hover-tap:ring-white/30 parent-hover-tap:shadow-black/60{% endif %}"
@@ -47,17 +48,17 @@
         <a href="{{ item|media_url }}"
            class="pointer-events-auto line-clamp-2 text-[1rem] leading-snug font-semibold text-white drop-shadow-md"
            title="{{ heading.full }}">{{ heading.title }}</a>
-        {% if heading.subtitle or item.release_year or media.progress and item.media_type != MediaTypes.MOVIE.value or media.repeats > 1 %}
+        {% if heading.subtitle or year or media.progress and item.media_type != MediaTypes.MOVIE.value or media.repeats > 1 %}
           <div class="mt-1 flex items-center gap-1.5 text-xs text-gray-300">
             {% if heading.subtitle %}
               <span class="font-semibold text-gray-100"><span class="@[10.25rem]:hidden">{{ heading.short_subtitle }}</span><span class="hidden @[10.25rem]:inline">{{ heading.subtitle }}</span></span>
             {% endif %}
-            {% if item.release_year %}
+            {% if year %}
               {% if heading.subtitle %}<span class="text-gray-500">•</span>{% endif %}
-              <span>{{ item.release_year }}</span>
+              <span>{{ year }}</span>
             {% endif %}
             {% if media.progress and item.media_type != MediaTypes.MOVIE.value %}
-              {% if heading.subtitle or item.release_year %}<span class="text-gray-500">•</span>{% endif %}
+              {% if heading.subtitle or year %}<span class="text-gray-500">•</span>{% endif %}
               <span>
                 {{ media.formatted_progress }}
                 {% if media.max_progress %}/ {{ media.max_progress }}{% endif %}
