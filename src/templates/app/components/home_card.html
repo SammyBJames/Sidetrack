@@ -4,15 +4,16 @@
 
 {% card_title media.item media as heading %}
 {% firstof media.item|release_year "" as year %}
-{% if home_status == Status.PLANNING.value %}
+{# Caught up media waits like planned media, so it's in its colors #}
+{% if home_status == Status.PLANNING.value or caught_up %}
   {% firstof "text-sky-400" as clock_color %}
 {% elif home_status == Status.REPEATING.value or home_status == Status.PLANNING_REPEAT.value %}
   {% firstof "text-teal-300" as clock_color %}
 {% else %}
   {% firstof "text-indigo-300" as clock_color %}
 {% endif %}
-{# Planned media shows no progress #}
-{% if home_status == Status.PLANNING.value or home_status == Status.PLANNING_REPEAT.value %}
+{# Planned media shows no progress, like a finished show's next season waiting with caught up media #}
+{% if home_status == Status.PLANNING.value or home_status == Status.PLANNING_REPEAT.value or media.status == Status.PLANNING.value %}
   {% firstof True as planned %}
 {% endif %}
 
@@ -33,7 +34,11 @@
       <div class="ml-auto">
         {% if unreleased %}
           {# Nothing to act on until it comes out, so offer the release date instead #}
-          {% include "app/components/release_button.html" with event=media.next_event %}
+          {% if caught_up %}
+            {% include "app/components/release_button.html" with event=media.next_event home_status=Status.PLANNING.value %}
+          {% else %}
+            {% include "app/components/release_button.html" with event=media.next_event %}
+          {% endif %}
         {% else %}
           {# Current status, which turns into the action to the next one; the row header already shows the status, so it waits for hover where there is a mouse #}
           <div class="hover-reveal">
@@ -49,7 +54,7 @@
     <a href="{{ media.item|media_url }}"
        class="pointer-events-auto line-clamp-2 text-[1rem] leading-snug font-semibold text-white drop-shadow-md"
        title="{{ heading.full }}">{{ heading.title }}</a>
-    {% if heading.subtitle or year or not planned and media.item.media_type != MediaTypes.MOVIE.value %}
+    {% if heading.subtitle or year or not planned and media.item.media_type != MediaTypes.MOVIE.value or planned and media.episode_count %}
       <div class="mt-1 truncate text-xs text-gray-300">
         {% if heading.subtitle %}
           <span class="font-semibold text-gray-100"><span class="@[10.25rem]:hidden">{{ heading.short_subtitle }}</span><span class="hidden @[10.25rem]:inline">{{ heading.subtitle }}</span></span>
@@ -68,10 +73,18 @@
               {{ media.item.media_type|long_unit }}{{ media.progress|pluralize }}
             {% endif %}
           {% endif %}
+        {% elif planned and media.episode_count %}
+          {# How long a planned season is, shortened on narrow cards #}
+          {% if heading.subtitle or year %}<span class="text-gray-500">•</span>{% endif %}
+          <span class="@[10.25rem]:hidden">{{ media.episode_count }} Ep{{ media.episode_count|pluralize }}</span>
+          <span class="hidden @[10.25rem]:inline">{{ media.episode_count }} Episode{{ media.episode_count|pluralize }}</span>
         {% endif %}
       </div>
     {% endif %}
   </div>
 
-  <div class="absolute inset-x-0 bottom-0 z-1">{% include "app/components/progress_bar.html" %}</div>
+  {# Caught up media has watched all that's out, so a full bar says nothing #}
+  {% if not caught_up %}
+    <div class="absolute inset-x-0 bottom-0 z-1">{% include "app/components/progress_bar.html" %}</div>
+  {% endif %}
 </div>

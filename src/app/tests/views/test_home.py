@@ -7,6 +7,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.models import (
+    TV,
     Anime,
     Book,
     Episode,
@@ -184,7 +185,7 @@ class HomeViewTests(TestCase):
     def rows_by_key(self, response):
         """Return the home rows of a response by status and media type."""
         return {
-            (row["status"], row["media_type"]): row
+            ("caught-up" if row["caught_up"] else row["status"], row["media_type"]): row
             for row in response.context["home_rows"]
         }
 
@@ -300,6 +301,174 @@ class HomeViewTests(TestCase):
         )
         self.assertContains(response, "Rereading")
         self.assertContains(response, "Planning Reread")
+
+    def test_caught_up_media_has_its_own_row(self):
+        """Media watched up to its latest release waits in Caught Up, after Planning."""
+        Anime.objects.filter(user=self.user, item__media_id="1").update(progress=16)
+
+        response = self.client.get(reverse("home"))
+
+        rows = self.rows_by_key(response)
+        self.assertEqual(
+            list(rows),
+            [
+                (Status.IN_PROGRESS.value, MediaTypes.SEASON.value),
+                (Status.PLANNING.value, MediaTypes.MOVIE.value),
+                ("caught-up", MediaTypes.ANIME.value),
+            ],
+        )
+        self.assertContains(response, f'href="{reverse("calendar")}"')
+        self.assertRegex(
+            response.content.decode(), r"Caught Up\s*<span[^>]*>•</span>\s*Anime"
+        )
+
+    def track_show(self, media_id, seasons):
+        """Track a show by its seasons' numbers, statuses and next release days."""
+        tv_item = Item.objects.create(
+            media_id=media_id,
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title=media_id,
+            image="http://example.com/image.jpg",
+        )
+        tv = TV(item=tv_item, user=self.user, status=Status.PLANNING.value)
+        TV.save_base(tv)
+        for number, status, release_in_days in seasons:
+            item = Item.objects.create(
+                media_id=media_id,
+                source=Sources.TMDB.value,
+                media_type=MediaTypes.SEASON.value,
+                title=media_id,
+                image="http://example.com/image.jpg",
+                season_number=number,
+            )
+            Season.save_base(
+                Season(item=item, user=self.user, related_tv=tv, status=status),
+            )
+            if release_in_days is not None:
+                Event.objects.create(
+                    item=item,
+                    content_number=1,
+                    datetime=timezone.now() + timezone.timedelta(days=release_in_days),
+                )
+
+    def test_renewed_shows_wait_in_caught_up_by_next_release(self):
+        """A finished show's unaired season is caught up, soonest first."""
+        # Tracked first, so most recent first would list it last
+        self.track_show(
+            "renewed-sooner",
+            [(1, Status.COMPLETED.value, None), (2, Status.PLANNING.value, 3)],
+        )
+        self.track_show(
+            "renewed-later",
+            [(1, Status.COMPLETED.value, None), (2, Status.PLANNING.value, 30)],
+        )
+        # Never started, so it's still only planned
+        self.track_show("premiere", [(1, Status.PLANNING.value, 10)])
+
+        rows = self.rows_by_key(self.client.get(reverse("home")))
+
+        caught_up = rows[("caught-up", MediaTypes.SEASON.value)]
+        self.assertEqual(
+            [season.item.media_id for season in caught_up["items"]],
+            ["renewed-sooner", "renewed-later"],
+        )
+        # Its card counts its episodes rather than showing no progress
+        self.assertContains(self.client.get(reverse("home")), "1 Episode")
+        planned = rows[(Status.PLANNING.value, MediaTypes.SEASON.value)]
+        self.assertEqual(
+            [season.item.media_id for season in planned["items"]],
+            ["premiere"],
+        )
+
+    def test_caught_up_seasons_and_repeats_leave_their_rows(self):
+        """Seasons airing weekly and repeats caught up wait in Caught Up instead."""
+        # Every released episode of the season is watched, the next airs tomorrow
+        Event.objects.filter(
+            item__media_type=MediaTypes.SEASON.value,
+            content_number=6,
+        ).update(content_number=5)
+        Anime.objects.filter(user=self.user, item__media_id="1").update(
+            status=Status.REPEATING.value,
+            progress=16,
+        )
+
+        rows = self.rows_by_key(self.client.get(reverse("home")))
+
+        self.assertEqual(
+            list(rows),
+            [
+                (Status.PLANNING.value, MediaTypes.MOVIE.value),
+                ("caught-up", MediaTypes.SEASON.value),
+                ("caught-up", MediaTypes.ANIME.value),
+            ],
+        )
+
+    def test_planned_rewatches_list_each_shows_first_season(self):
+        """A show planned to be rewatched has one card, its first season's."""
+        self.track_show(
+            "rewatch",
+            [
+                (2, Status.PLANNING_REPEAT.value, None),
+                (1, Status.PLANNING_REPEAT.value, None),
+            ],
+        )
+
+        rows = self.rows_by_key(self.client.get(reverse("home")))
+
+        row = rows[(Status.PLANNING_REPEAT.value, MediaTypes.SEASON.value)]
+        self.assertEqual(
+            [season.item.season_number for season in row["items"]],
+            [1],
+        )
+
+    def test_planned_shows_list_their_first_season(self):
+        """A planned show's first planned season stands for it, with its episodes."""
+        tv_item = Item.objects.create(
+            media_id="planned-show",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Planned Show",
+            image="http://example.com/image.jpg",
+        )
+        tv = TV(item=tv_item, user=self.user, status=Status.PLANNING.value)
+        TV.save_base(tv)
+        for number in (3, 2):
+            item = Item.objects.create(
+                media_id="planned-show",
+                source=Sources.TMDB.value,
+                media_type=MediaTypes.SEASON.value,
+                title="Planned Show",
+                image="http://example.com/image.jpg",
+                season_number=number,
+            )
+            Season.save_base(
+                Season(
+                    item=item,
+                    user=self.user,
+                    related_tv=tv,
+                    status=Status.PLANNING.value,
+                ),
+            )
+            Event.objects.create(
+                item=item,
+                content_number=8,
+                datetime=timezone.now() - timezone.timedelta(days=10),
+            )
+
+        response = self.client.get(reverse("home"))
+
+        row = self.rows_by_key(response)[
+            (Status.PLANNING.value, MediaTypes.SEASON.value)
+        ]
+        self.assertEqual(
+            [season.item.season_number for season in row["items"]],
+            [2],
+        )
+        self.assertEqual(row["total"], 1)
+        self.assertContains(response, "8 Episodes")
+        # Seasons' rows are named for TV
+        self.assertNotContains(response, "TV Seasons")
 
     def test_paused_entries_have_no_row(self):
         """Only in progress and planned entries get rows."""

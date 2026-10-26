@@ -522,26 +522,33 @@ class MediaManager(models.Manager):
         sort_by,
         items_limit=None,
         specific_media_type=None,
+        *,
+        caught_up=False,
+        loaded_lists=None,
     ):
-        """Get a home media list for a specific status grouped by media type."""
+        """Get a home media list for a specific status grouped by media type.
+
+        With `caught_up`, it's the media in progress or repeated that's caught
+        up to its latest release instead. Planned seasons, for the first time or
+        again, are only each show's first, and seasons count their episodes as
+        `episode_count`. `loaded_lists` is a dict to keep each status's media in,
+        so the rows of one page load them once.
+        """
         list_by_type = {}
         media_types = self._get_media_types_to_process(user, specific_media_type)
+        if loaded_lists is None:
+            loaded_lists = {}
 
         for media_type in media_types:
-            # Get base media list for the requested status
-            media_list = self.get_media_list(
-                user=user,
-                media_type=media_type,
-                status_filter=status,
-                sort_filter=None,
+            media_list = self._get_home_media(
+                user,
+                media_type,
+                status,
+                caught_up,
+                loaded_lists,
             )
-
             if not media_list:
                 continue
-
-            # Annotate with max_progress and next_event
-            self.annotate_max_progress(media_list, media_type)
-            self._annotate_next_event(media_list)
 
             # Sort the media list
             sorted_list = self._sort_home_media(media_list, sort_by)
@@ -561,6 +568,85 @@ class MediaManager(models.Manager):
             }
 
         return list_by_type
+
+    def _get_home_media(self, user, media_type, status, caught_up, loaded_lists):
+        """Return a home row's media of a type, annotated for its cards.
+
+        Caught up media is all that's left of what's in progress or repeated,
+        and of finished shows, their planned next seasons still to air. Each
+        status's media is loaded into `loaded_lists` once.
+        """
+        statuses = (status,)
+        if caught_up:
+            statuses = (Status.IN_PROGRESS.value, Status.REPEATING.value)
+            if media_type == MediaTypes.SEASON.value:
+                statuses += (Status.PLANNING.value,)
+        media_list = []
+        for row_status in statuses:
+            key = (media_type, row_status)
+            if key not in loaded_lists:
+                loaded = list(
+                    self.get_media_list(
+                        user=user,
+                        media_type=media_type,
+                        status_filter=row_status,
+                        sort_filter=None,
+                        exclude_caught_up=False,
+                    ),
+                )
+                self.annotate_max_progress(loaded, media_type)
+                self._annotate_next_event(loaded)
+                loaded_lists[key] = loaded
+            media_list.extend(loaded_lists[key])
+
+        if media_type == MediaTypes.SEASON.value:
+            return self._home_seasons(media_list, status, caught_up=caught_up)
+        if caught_up:
+            return [media for media in media_list if is_caught_up(media)]
+        if status in (Status.IN_PROGRESS.value, Status.REPEATING.value):
+            return [media for media in media_list if not is_caught_up(media)]
+        return media_list
+
+    def _home_seasons(self, seasons, status, *, caught_up):
+        """Return a home row's seasons, each counting its episodes.
+
+        A finished show's planned season still to air is caught up rather than
+        planned, and the planning rows have each show's first planned season.
+        """
+        waiting = set(
+            _seasons_of_watched_shows(
+                [
+                    season
+                    for season in seasons
+                    if season.status == Status.PLANNING.value and is_caught_up(season)
+                ],
+            ),
+        )
+        if caught_up:
+            seasons = [
+                season
+                for season in seasons
+                if season in waiting
+                or (season.status != Status.PLANNING.value and is_caught_up(season))
+            ]
+        elif status == Status.PLANNING.value:
+            seasons = _first_season_of_each_show(
+                [season for season in seasons if season not in waiting],
+            )
+        elif status == Status.PLANNING_REPEAT.value:
+            seasons = _first_season_of_each_show(seasons)
+        else:
+            seasons = [season for season in seasons if not is_caught_up(season)]
+
+        for season in seasons:
+            # Announced episodes too, which release events are made for
+            episodes = [
+                event.content_number
+                for event in getattr(season.item, "prefetched_events", [])
+                if event.content_number
+            ]
+            season.episode_count = max(episodes) if episodes else None
+        return seasons
 
     def _get_media_types_to_process(self, user, specific_media_type):
         """Determine which media types to process based on user settings."""

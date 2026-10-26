@@ -1,20 +1,33 @@
 {% load app_tags %}
 
-{# A home row: one status and media type by recent activity, scrolling sideways, with a link to the full list in the same order. Seasons link to their shows' list, as they have none of their own #}
+{# A home row: one status and media type by recent activity, scrolling sideways, with a link to the full list in the same order. Seasons link to their shows' list, as they have none of their own, and are named TV. The caught up row, of what waits on its next release, links to the calendar instead #}
 <section class="space-y-3"
          x-data="scrollRow"
          @resize.window.debounce.100ms="update()">
   <div class="flex items-center justify-between gap-3">
-    <a href="{% if row.media_type == MediaTypes.SEASON.value %}{% url 'medialist' request.user.username MediaTypes.TV.value %}{% else %}{% url 'medialist' request.user.username row.media_type %}{% endif %}?status={{ row.status|urlencode }}&sort=recent"
+    <a href="{% if row.caught_up %}{% url 'calendar' %}{% elif row.media_type == MediaTypes.SEASON.value %}{% url 'medialist' request.user.username MediaTypes.TV.value %}?status={{ row.status|urlencode }}&sort=recent{% else %}{% url 'medialist' request.user.username row.media_type %}?status={{ row.status|urlencode }}&sort=recent{% endif %}"
        class="group flex min-w-0 items-center gap-2 text-lg font-semibold text-white"
-       title="See all {{ row.total }}">
-      <span class="size-5 shrink-0 {{ row.status|status_color }}">
-        {% include row.status|status_icon with classes="size-5" %}
+       title="{% if row.caught_up %}See what's coming up{% else %}See all {{ row.total }}{% endif %}">
+      {# Caught up media waits like planned media, so it's in its color #}
+      <span class="size-5 shrink-0 {% if row.caught_up %}{{ Status.PLANNING.value|status_color }}{% else %}{{ row.status|status_color }}{% endif %}">
+        {% if row.caught_up %}
+          {% include "app/icons/clock.svg" with classes="size-5" %}
+        {% else %}
+          {% include row.status|status_icon with classes="size-5" %}
+        {% endif %}
       </span>
       <span class="truncate">
-        {{ row.status|media_status_readable:row.media_type|title }}
+        {% if row.caught_up %}
+          Caught Up
+        {% else %}
+          {{ row.status|media_status_readable:row.media_type|title }}
+        {% endif %}
         <span class="text-gray-500">•</span>
-        {{ row.media_type|media_type_readable_plural }}
+        {% if row.media_type == MediaTypes.SEASON.value %}
+          TV
+        {% else %}
+          {{ row.media_type|media_type_readable_plural }}
+        {% endif %}
       </span>
       <span class="shrink-0 text-sm font-medium text-gray-500">{{ row.total }}</span>
       {% include "app/icons/chevron-right.svg" with classes="size-4 shrink-0 text-gray-400 transition group-hover:translate-x-0.5 group-hover:text-white" %}
@@ -28,6 +41,6 @@
        x-ref="track"
        @scroll.debounce.50ms="update()"
        class="scrollbar-hide -mx-3 -mt-2 -mb-6 flex snap-x scroll-px-3 gap-4 overflow-x-auto px-3 pt-2 pb-6 *:w-36 *:shrink-0 *:snap-start sm:*:w-44 xl:*:w-48">
-    {% include "app/components/home_grid.html" with media_list=row home_status=row.status %}
+    {% include "app/components/home_grid.html" with media_list=row home_status=row.status caught_up=row.caught_up %}
   </div>
 </section>
