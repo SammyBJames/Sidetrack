@@ -5,6 +5,7 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from app import config
 from app.models import Episode, Item, MediaTypes, Season, Sources, Status
@@ -325,10 +326,11 @@ class EpisodeDetailsViewTests(TestCase):
 
         self.assertContains(response, f'href="{self.episode_url(1)}"')
         self.assertContains(response, f'href="{self.episode_url(2)}"')
-        # The watched episode shows it, and the unwatched one offers to mark it
-        self.assertContains(response, 'aria-label="Watched"', 1)
+        # The watched episode offers to plan a rewatch, and the unwatched one to
+        # mark it
+        self.assertContains(response, 'aria-label="Plan to rewatch"', 1)
+        self.assertContains(response, 'title="Watched 1 time"', 1)
         self.assertContains(response, 'aria-label="Mark watched"', 1)
-        self.assertContains(response, '"quick": "1"', 1)
         # The unaired episode shows when it airs instead
         self.assertContains(
             response, 'aria-label="Not released yet: E3 · January 1, 2099"', 1
@@ -354,6 +356,79 @@ class EpisodeDetailsViewTests(TestCase):
             response.content.decode(),
             rf'(?s)aria-label="Mark watched"(?:(?!</button>).)*{planned_color}',
         )
+
+    def test_rewatched_season_shows_what_is_left(self, _):
+        """While a season is rewatched, episodes not seen again are offered again."""
+        first = self.watch(1)
+        self.watch(2)
+        season = first.related_season
+        season.status = Status.PLANNING_REPEAT.value
+        season.repeat_started_at = timezone.now()
+        Season.save_base(season)
+        Episode.objects.bulk_create(
+            [Episode(related_season=season, item=first.item)],
+        )
+
+        content = self.client.get(self.season_url()).content.decode()
+
+        self.assertIn('aria-label="Rewatched"', content)
+        repeat_color = config.get_status_text_color(Status.PLANNING_REPEAT.value)
+        self.assertRegex(
+            content,
+            rf'(?s)aria-label="Mark watched"(?:(?!</button>).)*{repeat_color}',
+        )
+        self.assertContains(self.client.get(self.episode_url(2)), "Mark rewatched")
+
+        data = {
+            "media_id": "1396",
+            "source": Sources.TMDB.value,
+            "season_number": 1,
+            "episode_number": 2,
+            "quick": "1",
+        }
+        self.client.post(reverse("episode_save"), data)
+        self.client.post(reverse("episode_save"), data)
+
+        self.assertEqual(season.episodes.filter(item__episode_number=2).count(), 2)
+        season.refresh_from_db()
+        self.assertEqual(season.status, Status.COMPLETED.value)
+
+    def test_single_episode_rewatch(self, _):
+        """A watched episode can be planned again alone, leaving its season as it is."""
+        first = self.watch(1)
+        season = first.related_season
+        season.status = Status.COMPLETED.value
+        Season.save_base(season)
+        page = self.client.get(self.episode_url(1))
+        self.assertContains(page, "Plan to rewatch")
+        self.assertContains(page, reverse("episode_plan_repeat"))
+        data = {
+            "media_id": "1396",
+            "source": Sources.TMDB.value,
+            "season_number": 1,
+            "episode_number": 1,
+        }
+
+        self.client.post(reverse("episode_plan_repeat"), data)
+        # An unwatched episode isn't planned
+        self.client.post(reverse("episode_plan_repeat"), {**data, "episode_number": 2})
+
+        season.refresh_from_db()
+        self.assertEqual(season.planned_repeat_episodes, [1])
+        repeat_color = config.get_status_text_color(Status.PLANNING_REPEAT.value)
+        self.assertRegex(
+            self.client.get(self.season_url()).content.decode(),
+            rf'(?s)aria-label="Mark watched"(?:(?!</button>).)*{repeat_color}',
+        )
+        self.assertContains(self.client.get(self.episode_url(1)), "Mark rewatched")
+
+        self.client.post(reverse("episode_save"), {**data, "quick": "1"})
+        self.client.post(reverse("episode_save"), {**data, "quick": "1"})
+
+        season.refresh_from_db()
+        self.assertEqual(season.episodes.count(), 2)
+        self.assertEqual(season.planned_repeat_episodes, [])
+        self.assertEqual(season.status, Status.COMPLETED.value)
 
     def test_breadcrumb_ends_at_the_current_page(self, _):
         """The breadcrumb links up to the show and season, and names the page."""

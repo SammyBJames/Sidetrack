@@ -118,6 +118,45 @@ class MediaListViewTests(TestCase):
         self.assertEqual(self.user.movie_sort, "score")
         self.assertEqual(self.user.movie_layout, "table")
 
+    def test_status_filter_goes_by_the_latest_entry(self):
+        """A planned rewatch is listed as one, not as completed by its earlier play."""
+        first = Movie.objects.get(user=self.user, item__title="Test Movie 1")
+        Movie.objects.create(
+            item=first.item,
+            user=self.user,
+            status=Status.PLANNING_REPEAT.value,
+        )
+        url = reverse("medialist", args=[self.user.username, MediaTypes.MOVIE.value])
+
+        completed = self.client.get(url, {"status": Status.COMPLETED.value})
+        rewatch = self.client.get(url, {"status": Status.PLANNING_REPEAT.value})
+
+        self.assertEqual(
+            [movie.item.title for movie in completed.context["media_list"]],
+            ["Test Movie 2"],
+        )
+        planned = list(rewatch.context["media_list"])
+        self.assertEqual([movie.item.title for movie in planned], ["Test Movie 1"])
+        self.assertEqual(planned[0].repeats, 2)
+
+    def test_status_filter_uses_the_media_types_words(self):
+        """The book list's filter offers rereading, the movie list's rewatching."""
+        books = self.client.get(
+            reverse("medialist", args=[self.user.username, MediaTypes.BOOK.value]),
+        )
+        movies = self.client.get(
+            reverse("medialist", args=[self.user.username, MediaTypes.MOVIE.value]),
+        )
+
+        self.assertIn(
+            (Status.PLANNING_REPEAT.value, "Planning Reread"),
+            books.context["status_choices"],
+        )
+        self.assertIn(
+            (Status.REPEATING.value, "Rewatching"),
+            movies.context["status_choices"],
+        )
+
     def test_media_list_htmx_request(self):
         """Test the media list view with HTMX request."""
         response = self.client.get(

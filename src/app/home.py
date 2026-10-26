@@ -4,7 +4,12 @@ from app.models import BasicMedia, Status
 from users.models import HomeSortChoices
 
 # The statuses of the home page's rows, in the order they are shown
-HOME_STATUSES = (Status.IN_PROGRESS.value, Status.PLANNING.value)
+HOME_STATUSES = (
+    Status.IN_PROGRESS.value,
+    Status.REPEATING.value,
+    Status.PLANNING.value,
+    Status.PLANNING_REPEAT.value,
+)
 
 
 def build_home_rows(user, items_limit):
@@ -52,7 +57,7 @@ def _is_incoming_media(media):
 
 def _is_released_home_media(media, section_key):
     """Return True when media in a home section has something out to act on."""
-    if section_key == Status.IN_PROGRESS.value:
+    if section_key in (Status.IN_PROGRESS.value, Status.REPEATING.value):
         return is_active_in_progress_media(media)
 
     return not _is_incoming_media(media)

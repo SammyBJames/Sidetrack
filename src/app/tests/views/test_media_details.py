@@ -255,32 +255,57 @@ class MediaDetailsViewTests(TestCase):
         """The track button is filled with the status color of the tracked media."""
         response = self._get_tracked_movie_details(
             mock_get_metadata,
-            Status.COMPLETED.value,
+            Status.DROPPED.value,
         )
 
         self.assertContains(
             response,
-            config.get_status_button_color(Status.COMPLETED.value),
+            config.get_status_button_color(Status.DROPPED.value),
             count=1,
         )
-        # Nothing follows completed, so the status opens the form instead
+        # Nothing follows dropped, so the status opens the form instead
         self.assertNotContains(response, '"card": "details"')
 
     @patch("app.providers.services.get_media_metadata")
-    def test_watched_movie_logs_another_watch(self, mock_get_metadata):
-        """A watched movie's button opens a new entry, not the last watch's."""
+    def test_watched_movie_plans_a_rewatch(self, mock_get_metadata):
+        """A watched movie's button plans a rewatch, in the rewatch color."""
         response = self._get_tracked_movie_details(
             mock_get_metadata,
             Status.COMPLETED.value,
         )
 
-        movie = Movie.objects.get(user=self.user)
+        self.assertContains(response, '"action": "plan_repeat", "card": "details"')
+        self.assertContains(
+            response,
+            config.get_status_button_color(Status.PLANNING_REPEAT.value),
+        )
         self.assertRegex(
             response.content.decode(),
-            r'hx-vals=\'\{"return_url": "[^"]*", "is_create": true\}\'\s*'
-            rf'hx-target="#track-movie-238-{movie.id}"',
+            r"</svg>\s*Plan to rewatch\s*</span>",
         )
-        self.assertRegex(response.content.decode(), r"</svg>\s*Watched\s*</button>")
+        # Until hovered, it shows the movie is watched
+        self.assertRegex(response.content.decode(), r"</svg>\s*Watched\s*</span>")
+
+    @patch("app.providers.services.get_media_metadata")
+    def test_watched_movie_counts_its_plays(self, mock_get_metadata):
+        """A movie watched more than once says how often."""
+        response = self._get_tracked_movie_details(
+            mock_get_metadata,
+            Status.COMPLETED.value,
+        )
+        first = Movie.objects.get(user=self.user)
+        Movie.objects.create(
+            item=first.item,
+            user=self.user,
+            status=Status.COMPLETED.value,
+        )
+
+        response = self.client.get(response.wsgi_request.path)
+
+        self.assertRegex(
+            response.content.decode(),
+            r"</svg>\s*Watched 2 times\s*</span>",
+        )
 
     @patch("app.providers.services.get_media_metadata")
     def test_movie_lists_all_its_watches(self, mock_get_metadata):

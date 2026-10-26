@@ -66,6 +66,11 @@ urlpatterns = [
     ),
     path("episode_save", views.episode_save, name="episode_save"),
     path(
+        "episode_plan_repeat",
+        views.episode_plan_repeat,
+        name="episode_plan_repeat",
+    ),
+    path(
         "history_modal/<source:source>/<media_type:media_type>/<str:media_id>",
         views.history_modal,
         name="history_modal",

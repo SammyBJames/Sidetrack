@@ -244,6 +244,73 @@ class SyncExistingMediaTest(TestCase):
         # Unfinished media doesn't get an end date
         self.assertIsNone(self.anime.end_date)
 
+    def test_rewatch_moves_forward_like_a_first_watch(self):
+        """A rewatch is finished by an import, but never turned into a first watch."""
+        self.anime.status = Status.REPEATING.value
+
+        self.assertFalse(helpers.advance_status(self.anime, Status.IN_PROGRESS.value))
+        self.assertTrue(helpers.advance_status(self.anime, Status.COMPLETED.value))
+        self.assertEqual(self.anime.status, Status.COMPLETED.value)
+
+    def test_planned_rewatch_goes_on_as_a_rewatch(self):
+        """A planned rewatch an import finds started is rewatched, not a first watch."""
+        self.anime.status = Status.PLANNING_REPEAT.value
+
+        self.assertTrue(helpers.advance_status(self.anime, Status.IN_PROGRESS.value))
+        self.assertEqual(self.anime.status, Status.REPEATING.value)
+
+    def test_seasons_imported_in_a_rewatch_start_it_over(self):
+        """A season imported mid-rewatch rewatches all its imported episodes again."""
+        tv_item = Item.objects.create(
+            media_id="1668",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Friends",
+        )
+        season_item = Item.objects.create(
+            media_id="1668",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.SEASON.value,
+            title="Friends",
+            season_number=1,
+        )
+        tv = TV(item=tv_item, user=self.user, status=Status.REPEATING.value)
+        season = Season(
+            item=season_item,
+            user=self.user,
+            related_tv=tv,
+            status=Status.REPEATING.value,
+        )
+        episodes = [
+            Episode(
+                related_season=season,
+                item=Item.objects.create(
+                    media_id="1668",
+                    source=Sources.TMDB.value,
+                    media_type=MediaTypes.EPISODE.value,
+                    title="Friends",
+                    season_number=1,
+                    episode_number=number,
+                ),
+                end_date=datetime(2023, 1, number, tzinfo=UTC),
+            )
+            for number in (1, 2)
+        ]
+
+        helpers.bulk_create_media(
+            {
+                MediaTypes.TV.value: [tv],
+                MediaTypes.SEASON.value: [season],
+                MediaTypes.EPISODE.value: episodes,
+            },
+            self.user,
+        )
+
+        season = Season.objects.get(user=self.user)
+        self.assertIsNotNone(season.repeat_started_at)
+        self.assertEqual(season.progress, 0)
+        self.assertEqual(season.next_repeat_episode_number, 1)
+
     def test_show_sync_does_not_query_dates(self):
         """Syncing a show doesn't query its episodes for dates it isn't given."""
         item = Item.objects.create(

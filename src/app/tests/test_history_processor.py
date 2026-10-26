@@ -1,8 +1,9 @@
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 
 from app import config
-from app.history_processor import format_description
-from app.models import MediaTypes, Status
+from app.history_processor import format_description, process_history_entries
+from app.models import TV, Item, MediaTypes, Movie, Season, Sources, Status
 
 
 class HistoryProcessorTests(TestCase):
@@ -197,4 +198,85 @@ class HistoryProcessorTests(TestCase):
         self.assertEqual(
             format_description("custom_field", "old", "new"),
             "Updated custom field from old to new",
+        )
+
+    def test_repeats_read_in_their_media_types_words(self):
+        """A rewatch's history names its statuses as the UI does."""
+        user = get_user_model().objects.create_user(username="test")
+        item = Item.objects.create(
+            media_id="1",
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.MOVIE.value,
+            title="Movie",
+        )
+        movie = Movie.objects.create(
+            item=item,
+            user=user,
+            status=Status.PLANNING_REPEAT.value,
+        )
+        movie.status = Status.REPEATING.value
+        movie.save()
+
+        descriptions = [
+            change["description"]
+            for entry in process_history_entries(
+                movie.history.all(),
+                MediaTypes.MOVIE.value,
+                1,
+                user,
+            )
+            for change in entry["changes"]
+        ]
+
+        self.assertEqual(
+            descriptions,
+            [
+                "Changed status from Planning Rewatch to Rewatching",
+                "Marked as planning rewatch",
+            ],
+        )
+
+    def test_repeat_bookkeeping_is_left_out(self):
+        """A season's rewatch start and planned episodes aren't in its history."""
+        user = get_user_model().objects.create_user(username="test")
+        tv_item = Item.objects.create(
+            media_id="1",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Show",
+        )
+        tv = TV(item=tv_item, user=user, status=Status.COMPLETED.value)
+        TV.save_base(tv)
+        season_item = Item.objects.create(
+            media_id="1",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.SEASON.value,
+            title="Show",
+            season_number=1,
+        )
+        season = Season.objects.create(
+            item=season_item,
+            user=user,
+            related_tv=tv,
+            status=Status.PLANNING_REPEAT.value,
+        )
+        season.planned_repeat_episodes = [1]
+        season.status = Status.REPEATING.value
+        season.save()
+
+        descriptions = [
+            change["description"]
+            for entry in process_history_entries(
+                season.history.all(),
+                MediaTypes.SEASON.value,
+                1,
+                user,
+            )
+            for change in entry["changes"]
+        ]
+
+        self.assertTrue(descriptions)
+        self.assertFalse(
+            [text for text in descriptions if "repeat" in text.lower()],
+            descriptions,
         )

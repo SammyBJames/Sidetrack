@@ -48,6 +48,21 @@ class ImportHowLongToBeat(TestCase):
         )
 
 
+class HowLongToBeatStatusTests(TestCase):
+    """Test the statuses HowLongToBeat lists map to."""
+
+    def test_replay_is_repeating(self):
+        """A game on the Replay list is being played again."""
+        importer = hltb.HowLongToBeatImporter.__new__(hltb.HowLongToBeatImporter)
+        row = dict.fromkeys(
+            ("Completed", "Playing", "Backlog", "Replay", "Retired"),
+            "",
+        )
+        row["Replay"] = "X"
+
+        self.assertEqual(importer._determine_status(row), Status.REPEATING.value)
+
+
 class ImportHowLongToBeatMultilineNotes(TestCase):
     """Test importing HowLongToBeat rows whose quoted fields span several lines."""
 

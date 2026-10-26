@@ -297,8 +297,10 @@ class AniListImporter:
         ):
             return
 
-        if content["status"] in ("CURRENT", "REPEATING"):
+        if content["status"] == "CURRENT":
             status = Status.IN_PROGRESS.value
+        elif content["status"] == "REPEATING":
+            status = Status.REPEATING.value
         else:
             status = content["status"].capitalize()
 

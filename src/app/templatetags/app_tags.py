@@ -12,7 +12,7 @@ from unidecode import unidecode
 
 from app import config, helpers, quick_actions
 from app import home as home_helpers
-from app.models import MediaTypes, Sources, Status
+from app.models import REPEAT_STATUSES, MediaTypes, Sources, Status
 from events.models import SentinelDatetime
 
 register = template.Library()
@@ -166,9 +166,9 @@ def media_type_readable_plural(media_type):
 
 
 @register.filter
-def media_status_readable(media_status):
-    """Return the readable media status."""
-    return Status(media_status).label
+def media_status_readable(media_status, media_type=None):
+    """Return the readable media status, in a media type's words if given."""
+    return config.get_status_label(media_status, media_type)
 
 
 @register.filter
@@ -381,6 +381,38 @@ def air_date_label(air_date, episode_number=None):
 def unreleased(air_date):
     """Return whether something with this air date, or none, isn't out yet."""
     return not helpers.is_released_date(air_date)
+
+
+@register.filter
+def repeat_state(episode, season):
+    """Return where a rewatch of one of a season's episodes is.
+
+    While the season is rewatched, that's "done" once the episode is watched
+    again and "left" while it's still to be. Otherwise, it's "planned" for a
+    watched episode planned to be watched again on its own. It's "" for the
+    rest, like episodes not watched before.
+    """
+    if season is None or not episode["history"]:
+        return ""
+    if season.status in REPEAT_STATUSES:
+        if episode["episode_number"] in season.repeated_episode_numbers:
+            return "done"
+        return "left"
+    if episode["episode_number"] in season.planned_repeat_episodes:
+        return "planned"
+    return ""
+
+
+@register.simple_tag
+def play_count(entry, entries):
+    """Return how many times media was finished, by its entry and all of them.
+
+    Shows and seasons count their plays through their episodes, and other media
+    by its finished entries.
+    """
+    if hasattr(entry, "plays"):
+        return entry.plays
+    return sum(1 for other in entries if other.status == Status.COMPLETED.value)
 
 
 @register.filter

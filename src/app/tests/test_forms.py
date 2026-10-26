@@ -9,6 +9,7 @@ from app.forms import (
     ManualItemForm,
     SeasonForm,
     TvForm,
+    get_form_class,
 )
 from app.models import TV, Item, MediaTypes, Season, Sources, Status
 
@@ -480,3 +481,17 @@ class ManualItemFormTest(TestCase):
         self.assertNotEqual(item1.media_id, item2.media_id)
         self.assertTrue(item1.media_id)
         self.assertTrue(item2.media_id)
+
+
+class StatusChoicesTests(TestCase):
+    """Test how the tracking forms name the statuses."""
+
+    def test_repeat_statuses_use_the_media_types_words(self):
+        """Books are reread and movies rewatched, in the same status field."""
+        book = dict(get_form_class(MediaTypes.BOOK.value)().fields["status"].choices)
+        movie = dict(get_form_class(MediaTypes.MOVIE.value)().fields["status"].choices)
+
+        self.assertEqual(book[Status.REPEATING.value], "Rereading")
+        self.assertEqual(book[Status.PLANNING_REPEAT.value], "Planning Reread")
+        self.assertEqual(movie[Status.REPEATING.value], "Rewatching")
+        self.assertEqual(movie[Status.COMPLETED.value], "Completed")

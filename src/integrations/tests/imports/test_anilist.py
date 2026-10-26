@@ -172,7 +172,7 @@ class ImportAniListNewMode(TestCase):
         entries = Anime.objects.filter(user=self.user).order_by("created_at")
         self.assertEqual(
             [(anime.status, anime.progress) for anime in entries],
-            [(Status.COMPLETED.value, 26), (Status.IN_PROGRESS.value, 3)],
+            [(Status.COMPLETED.value, 26), (Status.REPEATING.value, 3)],
         )
         # The score tracked in Yamtrack is kept
         self.assertEqual(entries[0].score, 8)

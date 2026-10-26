@@ -206,6 +206,15 @@ class MediaForm(forms.ModelForm):
     source = forms.CharField(widget=forms.HiddenInput(), required=True)
     media_id = forms.CharField(widget=forms.HiddenInput(), required=True)
 
+    def __init__(self, *args, **kwargs):
+        """Name the statuses in the words of the form's media type."""
+        super().__init__(*args, **kwargs)
+        media_type = self._meta.model._meta.model_name
+        self.fields["status"].choices = [
+            (value, config.get_status_label(value, media_type))
+            for value, _ in self.fields["status"].choices
+        ]
+
     class Meta:
         """Define fields and input types."""
 

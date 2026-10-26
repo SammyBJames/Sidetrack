@@ -1,7 +1,7 @@
 from django.urls import reverse
 from django.utils.http import urlencode
 
-from app.models import MediaTypes, Sources, Status
+from app.models import REPEAT_STATUSES, MediaTypes, Sources, Status
 
 # --- Color Constants ---
 COLORS = {
@@ -70,6 +70,13 @@ COLORS = {
         "background_strong": "bg-sky-500",
         "button": "bg-sky-600 hover:bg-sky-700",
         "hex": "#87ceeb",
+    },
+    "teal": {
+        "text": "text-teal-400",
+        "background": "bg-teal-400",
+        "background_strong": "bg-teal-500",
+        "button": "bg-teal-600 hover:bg-teal-700",
+        "hex": "#14b8a6",
     },
 }
 
@@ -248,6 +255,24 @@ STATUS_CONFIG = {
         "background_color_strong": COLORS["indigo"]["background_strong"],
         "button_color": COLORS["indigo"]["button"],
         "icon": "app/icons/states/in-progress.svg",
+    },
+    # Both repeat statuses share a color, told apart by their icons
+    Status.REPEATING.value: {
+        "text_color": COLORS["teal"]["text"],
+        "stats_color": COLORS["teal"]["hex"],
+        "background_color": COLORS["teal"]["background"],
+        "background_color_strong": COLORS["teal"]["background_strong"],
+        "button_color": COLORS["teal"]["button"],
+        "icon": "app/icons/states/repeating.svg",
+    },
+    Status.PLANNING_REPEAT.value: {
+        "text_color": COLORS["teal"]["text"],
+        # Lighter in charts, where only the color tells it apart
+        "stats_color": "#5eead4",
+        "background_color": COLORS["teal"]["background"],
+        "background_color_strong": COLORS["teal"]["background_strong"],
+        "button_color": COLORS["teal"]["button"],
+        "icon": "app/icons/states/planning-repeat.svg",
     },
     Status.PAUSED.value: {
         "text_color": COLORS["orange"]["text"],
@@ -477,6 +502,22 @@ def get_status_button_color(status):
 def get_status_icon(status):
     """Get the icon template for a status."""
     return get_status_property(status, "icon")
+
+
+def get_status_label(status, media_type=None):
+    """Get the readable name of a status, in a media type's words if given.
+
+    Repeating reads e.g. Rewatching for movies, Rereading for books and
+    Replaying for games.
+    """
+    label = Status(status).label
+    if media_type and status in REPEAT_STATUSES:
+        verb = get_verb(media_type, past_tense=False)
+        return {
+            Status.REPEATING.value: f"Re{verb}ing",
+            Status.PLANNING_REPEAT.value: f"Planning Re{verb}",
+        }[status]
+    return label
 
 
 def get_journal_accent(accent):

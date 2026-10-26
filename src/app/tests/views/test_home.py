@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from app.models import (
     Anime,
+    Book,
     Episode,
     Item,
     Manga,
@@ -263,6 +264,36 @@ class HomeViewTests(TestCase):
         busy.save()
 
         self.assertEqual(first_anime(), "1")
+
+    def test_rewatches_have_their_own_rows(self):
+        """Rewatches get rows after their first watch counterparts, in their words."""
+        for media_id, status in (
+            ("rewatching", Status.REPEATING.value),
+            ("reread", Status.PLANNING_REPEAT.value),
+        ):
+            item = Item.objects.create(
+                media_id=media_id,
+                source=Sources.MANUAL.value,
+                media_type=MediaTypes.BOOK.value,
+                title=media_id,
+                image="http://example.com/image.jpg",
+            )
+            Book.objects.create(item=item, user=self.user, status=status)
+
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(
+            list(self.rows_by_key(response)),
+            [
+                (Status.IN_PROGRESS.value, MediaTypes.SEASON.value),
+                (Status.IN_PROGRESS.value, MediaTypes.ANIME.value),
+                (Status.REPEATING.value, MediaTypes.BOOK.value),
+                (Status.PLANNING.value, MediaTypes.MOVIE.value),
+                (Status.PLANNING_REPEAT.value, MediaTypes.BOOK.value),
+            ],
+        )
+        self.assertContains(response, "Rereading")
+        self.assertContains(response, "Planning Reread")
 
     def test_paused_entries_have_no_row(self):
         """Only in progress and planned entries get rows."""

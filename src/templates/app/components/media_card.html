@@ -63,7 +63,7 @@
             {% if episode_count %}
               {# A season's episodes, and how many are watched while it's in progress #}
               <span>
-                {% if media.status == Status.IN_PROGRESS.value %}{{ media.progress }} /{% endif %}
+                {% if media.status == Status.IN_PROGRESS.value or media.status == Status.REPEATING.value %}{{ media.progress }} /{% endif %}
                 {{ episode_count }} Episode{{ episode_count|pluralize }}
               </span>
             {% elif media.progress and item.media_type != MediaTypes.MOVIE.value %}

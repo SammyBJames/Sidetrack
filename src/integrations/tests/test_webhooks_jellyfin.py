@@ -821,6 +821,142 @@ class JellyfinWebhookTests(TestCase):
         self.assertEqual(movie[0].status, Status.COMPLETED.value)
         self.assertEqual(movie[1].status, Status.COMPLETED.value)
 
+    def test_started_movie_rewatch_is_dated(self):
+        """Starting a planned rewatch dates it and keeps it a rewatch."""
+        payload = {
+            "Event": "Stop",
+            "Item": {
+                "Type": "Movie",
+                "ProductionYear": 1999,
+                "Name": "The Matrix",
+                "ProviderIds": {"Tmdb": "603"},
+                "UserData": {"Played": True},
+            },
+        }
+        self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        rewatch = Movie.objects.create(
+            item=Movie.objects.get().item,
+            user=self.user,
+            status=Status.PLANNING_REPEAT.value,
+        )
+        payload["Item"]["UserData"]["Played"] = False
+
+        self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        rewatch.refresh_from_db()
+        self.assertEqual(rewatch.status, Status.REPEATING.value)
+        self.assertIsNotNone(rewatch.start_date)
+
+    def test_rewatched_show_stays_rewatched(self):
+        """A play of a planned rewatch moves it on instead of starting it over."""
+        tv_item = Item.objects.create(
+            media_id="1668",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Friends",
+        )
+        tv = TV(item=tv_item, user=self.user, status=Status.PLANNING_REPEAT.value)
+        TV.save_base(tv)
+        season_item = Item.objects.create(
+            media_id="1668",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.SEASON.value,
+            title="Friends",
+            season_number=1,
+        )
+        season = Season(
+            item=season_item,
+            user=self.user,
+            related_tv=tv,
+            status=Status.PLANNING_REPEAT.value,
+            repeat_started_at=timezone.now(),
+        )
+        Season.save_base(season)
+        payload = {
+            "Event": "Stop",
+            "Item": {
+                "Type": "Episode",
+                "Name": "The One Where Monica Gets a Roommate",
+                "ProviderIds": {"Tvdb": "303821", "Imdb": "tt0583459"},
+                "SeriesName": "Friends",
+                "ParentIndexNumber": 1,
+                "IndexNumber": 1,
+                "UserData": {"Played": True},
+            },
+        }
+        # Both episodes were watched before the rewatch
+        Episode.objects.bulk_create(
+            [
+                Episode(related_season=season, item=season.get_episode_item(number))
+                for number in (1, 2)
+            ],
+        )
+        Episode.objects.update(created_at=timezone.now() - timezone.timedelta(days=1))
+
+        self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        tv.refresh_from_db()
+        season.refresh_from_db()
+        self.assertEqual(tv.status, Status.REPEATING.value)
+        self.assertEqual(season.status, Status.REPEATING.value)
+        self.assertEqual(season.episodes.count(), 3)
+
+    @patch("app.models.providers.services.get_media_metadata")
+    @patch("app.providers.mal.anime")
+    def test_rewatched_anime_stays_rewatched(self, mock_anime, mock_metadata):
+        """A play of a planned rewatch starts it, and unplaying leaves it a rewatch."""
+        mock_anime.return_value = {
+            "title": "Perfect Blue",
+            "image": "",
+            "max_progress": 12,
+        }
+        mock_metadata.return_value = {"max_progress": 12}
+        item = Item.objects.create(
+            media_id="437",
+            source=Sources.MAL.value,
+            media_type=MediaTypes.ANIME.value,
+            title="Perfect Blue",
+        )
+        anime = Anime.objects.create(
+            item=item,
+            user=self.user,
+            status=Status.PLANNING_REPEAT.value,
+        )
+        processor = JellyfinWebhookProcessor()
+
+        processor._handle_anime(
+            "437",
+            3,
+            {"Event": "Stop", "Item": {"UserData": {"Played": True}}},
+            self.user,
+        )
+        anime.refresh_from_db()
+        self.assertEqual(anime.status, Status.REPEATING.value)
+        self.assertEqual(anime.progress, 3)
+        self.assertIsNotNone(anime.start_date)
+
+        processor._handle_anime(
+            "437",
+            3,
+            {"Event": "MarkUnplayed", "Item": {"UserData": {"Played": False}}},
+            self.user,
+        )
+        anime.refresh_from_db()
+        self.assertEqual(anime.status, Status.REPEATING.value)
+        self.assertEqual(anime.progress, 2)
+
     def test_extract_external_ids(self):
         """Test extracting external IDs from provider payload."""
         payload = {

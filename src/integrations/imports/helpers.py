@@ -14,16 +14,19 @@ from django_celery_beat.models import CrontabSchedule, PeriodicTask
 from simple_history.utils import bulk_create_with_history, bulk_update_with_history
 
 import app
-from app.models import MediaTypes, Status
+from app.models import REPEAT_STATUSES, MediaTypes, Status
 
 logger = logging.getLogger(__name__)
 
-# Order in which an import can move the status of existing media forward.
-STATUS_PROGRESSION = (
-    Status.PLANNING.value,
-    Status.IN_PROGRESS.value,
-    Status.COMPLETED.value,
-)
+# How far along each status an import can move existing media forward from is.
+# A repeat goes the same way as the first time through.
+STATUS_PROGRESSION = {
+    Status.PLANNING.value: 0,
+    Status.PLANNING_REPEAT.value: 0,
+    Status.IN_PROGRESS.value: 1,
+    Status.REPEATING.value: 1,
+    Status.COMPLETED.value: 2,
+}
 
 # Watches of the same movie or episode this close together are the same watch,
 # as other sources like media server webhooks record it at a slightly different time.
@@ -195,12 +198,15 @@ def advance_status(media, status):
     """Move the status of existing media forward, return whether it changed.
 
     Statuses outside of the progression, like paused or dropped, were set by the
-    user and are left untouched.
+    user and are left untouched. A repeat goes on as a repeat.
     """
+    if media.status in REPEAT_STATUSES and status == Status.IN_PROGRESS.value:
+        status = Status.REPEATING.value
+
     if media.status not in STATUS_PROGRESSION or status not in STATUS_PROGRESSION:
         return False
 
-    if STATUS_PROGRESSION.index(status) <= STATUS_PROGRESSION.index(media.status):
+    if STATUS_PROGRESSION[status] <= STATUS_PROGRESSION[media.status]:
         return False
 
     media.status = status
@@ -440,6 +446,14 @@ def bulk_create_media(bulk_media_list, user):
             batch_size=500,
             default_user=user,
         )
+
+    # Seasons imported in a repeat status start it over now, as every episode
+    # imported with them is older
+    app.models.Season.objects.filter(
+        user=user,
+        status__in=REPEAT_STATUSES,
+        repeat_started_at__isnull=True,
+    ).update(repeat_started_at=timezone.now())
 
 
 def bulk_update_media(bulk_media_list, fields_by_media_type, user):

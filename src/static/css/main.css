@@ -36,6 +36,11 @@
     --color-emerald-500: oklch(69.6% 0.17 162.48);
     --color-emerald-600: oklch(59.6% 0.145 163.225);
     --color-emerald-700: oklch(50.8% 0.118 165.612);
+    --color-teal-300: oklch(85.5% 0.138 181.071);
+    --color-teal-400: oklch(77.7% 0.152 181.912);
+    --color-teal-500: oklch(70.4% 0.14 182.503);
+    --color-teal-600: oklch(60% 0.118 184.704);
+    --color-teal-700: oklch(51.1% 0.096 186.391);
     --color-cyan-400: oklch(78.9% 0.154 211.53);
     --color-sky-400: oklch(74.6% 0.16 232.661);
     --color-sky-500: oklch(68.5% 0.169 237.323);
@@ -468,6 +473,13 @@
   }
   .top-full {
     top: 100%;
+  }
+  .tooltip-end::after {
+    right: 0px;
+    left: auto;
+    content: var(--tw-content);
+    --tw-translate-x: 0px;
+    translate: var(--tw-translate-x) var(--tw-translate-y);
   }
   .-right-1\.5 {
     right: calc(var(--spacing) * -1.5);
@@ -1168,9 +1180,6 @@
   .flex-wrap {
     flex-wrap: wrap;
   }
-  .items-baseline {
-    align-items: baseline;
-  }
   .items-center {
     align-items: center;
   }
@@ -1713,6 +1722,15 @@
   .bg-surface-950 {
     background-color: var(--color-surface-950);
   }
+  .bg-teal-400 {
+    background-color: var(--color-teal-400);
+  }
+  .bg-teal-500 {
+    background-color: var(--color-teal-500);
+  }
+  .bg-teal-600 {
+    background-color: var(--color-teal-600);
+  }
   .bg-white {
     background-color: var(--color-white);
   }
@@ -2224,6 +2242,12 @@
   .text-surface-500 {
     color: var(--color-surface-500);
   }
+  .text-teal-300 {
+    color: var(--color-teal-300);
+  }
+  .text-teal-400 {
+    color: var(--color-teal-400);
+  }
   .text-white {
     color: var(--color-white);
   }
@@ -2523,6 +2547,24 @@
     .group-hover\/qa\:opacity-100:is(:where(.group\/qa):hover *) {
       opacity: 100%;
     }
+    .group-hover\/track\:block:is(:where(.group\/track):hover *) {
+      display: block;
+    }
+    .group-hover\/track\:flex:is(:where(.group\/track):hover *) {
+      display: flex;
+    }
+    .group-hover\/track\:hidden:is(:where(.group\/track):hover *) {
+      display: none;
+    }
+  }
+  .group-focus-visible\/track\:block:is(:where(.group\/track):focus-visible *) {
+    display: block;
+  }
+  .group-focus-visible\/track\:flex:is(:where(.group\/track):focus-visible *) {
+    display: flex;
+  }
+  .group-focus-visible\/track\:hidden:is(:where(.group\/track):focus-visible *) {
+    display: none;
   }
   .peer-checked\:bg-indigo-600:is(:where(.peer):checked ~ *) {
     background-color: var(--color-indigo-600);
@@ -2712,6 +2754,9 @@
     }
     .hover\:bg-surface-875:hover {
       background-color: var(--color-surface-875);
+    }
+    .hover\:bg-teal-700:hover {
+      background-color: var(--color-teal-700);
     }
     .hover\:bg-white\/5:hover {
       background-color: color-mix(in srgb, #fff 5%, transparent);
@@ -3185,9 +3230,6 @@
     }
   }
   @media (width >= 96rem) {
-    .\32 xl\:grid-cols-3 {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
     .\32 xl\:grid-cols-4 {
       grid-template-columns: repeat(4, minmax(0, 1fr));
     }

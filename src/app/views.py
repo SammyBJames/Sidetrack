@@ -21,6 +21,7 @@ from app import home as home_helpers
 from app import statistics as stats
 from app.forms import EpisodeForm, ManualItemForm, get_form_class
 from app.models import (
+    REPEAT_STATUSES,
     TV,
     BasicMedia,
     Episode,
@@ -208,7 +209,16 @@ def media_list(request, username, media_type):
         "current_sort": sort_filter,
         "current_status": status_filter,
         "sort_choices": MediaSortChoices.choices,
-        "status_choices": MediaStatusChoices.choices,
+        # Named in the media type's words, e.g. Rereading for books
+        "status_choices": [
+            (
+                value,
+                label
+                if value == MediaStatusChoices.ALL
+                else config.get_status_label(value, media_type),
+            )
+            for value, label in MediaStatusChoices.choices
+        ],
         "target_user": target_user,
     }
 
@@ -299,12 +309,13 @@ def media_details(request, source, media_type, media_id, title):  # noqa: ARG001
                     )
                 )
 
-    # A show in progress offers its next episode, which is watched in its season
+    # A show in progress or rewatched offers its next episode, which is watched
+    # in its season
     next_season = None
     if (
         media_type == MediaTypes.TV.value
         and current_instance is not None
-        and current_instance.status == Status.IN_PROGRESS.value
+        and current_instance.status in (Status.IN_PROGRESS.value, *REPEAT_STATUSES)
     ):
         next_season = quick_actions.get_show_next_season(current_instance)
 
@@ -805,6 +816,20 @@ def quick_action(request):
         ).first()
 
     action = quick_actions.get_quick_action(media_type, media)
+    # Planning a repeat adds a newer entry, which leaves the older one's cards stale
+    if (
+        action is not None
+        and action.key == quick_actions.PLAN_REPEAT
+        and media_type not in quick_actions.EPISODIC_TYPES
+        and BasicMedia.objects.filter_media(
+            request.user,
+            media.item.media_id,
+            media_type,
+            media.item.source,
+        ).first()
+        != media
+    ):
+        action = None
     # The card may be stale, e.g. after a double click, so only act on what it showed
     if action is None or action.key != expected_action:
         messages.info(request, "This entry has already changed. Reload to see it.")
@@ -816,7 +841,7 @@ def quick_action(request):
         item = _get_or_create_item(media_id, source, media_type, season_number)
         model = apps.get_model(app_label="app", model_name=media_type)
         media = model(item=item, user=request.user)
-    quick_actions.apply_quick_action(action, media)
+    media = quick_actions.apply_quick_action(action, media)
     logger.info("Applied quick action %s to %s", action.key, media)
     messages.success(request, quick_actions.success_message(action, media))
 
@@ -992,13 +1017,41 @@ def episode_save(request):
 
     # One click is only offered for an unwatched episode, so a second one, e.g.
     # while the page reloads, doesn't add another watch
+    # While the season is rewatched, that's an episode not watched again yet
     already_watched = Episode.objects.filter(
         related_season=related_season,
         item__episode_number=episode_number,
-    ).exists()
-    if not (request.POST.get("quick") and already_watched):
+    )
+    if episode_number in related_season.planned_repeat_episodes:
+        already_watched = already_watched.none()
+    elif related_season.status in REPEAT_STATUSES and related_season.repeat_started_at:
+        already_watched = already_watched.filter(
+            created_at__gte=related_season.repeat_started_at,
+        )
+    if not (request.POST.get("quick") and already_watched.exists()):
         related_season.watch(episode_number, end_date, notes)
 
+    return helpers.redirect_back(request)
+
+
+@require_POST
+def episode_plan_repeat(request):
+    """Plan to watch a watched episode of the user's season again on its own."""
+    season = get_object_or_404(
+        Season,
+        item__media_id=request.POST["media_id"],
+        item__source=request.POST["source"],
+        item__season_number=int(request.POST["season_number"]),
+        user=request.user,
+    )
+    episode_number = int(request.POST["episode_number"])
+    watched = season.episodes.filter(item__episode_number=episode_number).exists()
+    if watched and episode_number not in season.planned_repeat_episodes:
+        season.planned_repeat_episodes.append(episode_number)
+        Season.objects.filter(pk=season.pk).update(
+            planned_repeat_episodes=season.planned_repeat_episodes,
+        )
+        logger.info("Planned to rewatch %s E%s", season, episode_number)
     return helpers.redirect_back(request)
 
 

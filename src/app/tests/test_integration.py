@@ -65,7 +65,10 @@ class IntegrationTest(StaticLiveServerTestCase):
         self.page.get_by_label("Breadcrumb").get_by_role(
             "link", name="Season 1"
         ).click()
-        expect(self.page.get_by_label("Watched", exact=True)).to_have_count(1)
+        # The watched episode offers to plan watching it again
+        expect(
+            self.page.locator("article").get_by_label("Plan to rewatch", exact=True),
+        ).to_have_count(1)
 
         # The home card watches the next episode, which it names
         self.page.get_by_role("link", name="Home").click()
@@ -75,7 +78,9 @@ class IntegrationTest(StaticLiveServerTestCase):
             name="Mark S1E2 watched",
         ).first.click()
         self.page.get_by_title("Breaking Bad \u2013 Season 1").click()
-        expect(self.page.get_by_label("Watched", exact=True)).to_have_count(2)
+        expect(
+            self.page.locator("article").get_by_label("Plan to rewatch", exact=True),
+        ).to_have_count(2)
 
     def test_tv_completed(self):
         """Test the completed status of a TV show."""
@@ -107,7 +112,10 @@ class IntegrationTest(StaticLiveServerTestCase):
         self.page.get_by_role("button", name="Add", exact=True).click()
         # Seasons have no list of their own, so their page shows the entry
         expect(self.page.get_by_role("main")).to_contain_text("Your History")
-        expect(self.page.get_by_role("button", name="Completed")).to_be_visible()
+        # A finished season shows it, and offers to plan a rewatch on hover
+        track_button = self.page.locator("""[hx-vals*='"card": "details"']""")
+        expect(track_button).to_contain_text("Watched")
+        expect(track_button).to_contain_text("Plan to rewatch")
         expect(self.page.get_by_role("main")).to_contain_text("Progress\n7")
 
     def test_tv_manual(self):

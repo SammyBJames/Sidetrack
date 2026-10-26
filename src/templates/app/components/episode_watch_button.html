@@ -1,29 +1,54 @@
 {% load app_tags %}
 
-{# An episode page's tracking button: marks it watched now in one click, or once it is, opens the form to watch it again #}
-<div class="flex h-10 w-full overflow-hidden rounded-xl shadow-lg ring-1 shadow-black/30 ring-white/10 md:w-auto md:min-w-56">
-  {% if media.history %}
-    <button type="button"
-            class="flex flex-1 cursor-pointer items-center justify-center gap-2 px-5 text-sm font-semibold text-white transition-colors {{ Status.COMPLETED.value|status_button_color }}"
-            @click="trackOpen = true">
-      {% include "app/icons/states/completed.svg" with classes="size-4 shrink-0" %}
-      Watched{% if media.history|length > 1 %} {{ media.history|length }} times{% endif %}
-    </button>
-  {% else %}
-    <button type="button"
-            class="relative flex flex-1 cursor-pointer items-center justify-center gap-2 px-5 text-sm font-semibold text-white transition-colors disabled:cursor-wait {{ Status.COMPLETED.value|status_button_color }}"
-            hx-post="{% url 'episode_save' %}?next={{ request.get_full_path|urlencode }}"
-            hx-vals='{"media_id": "{{ media.media_id|escapejs }}", "source": "{{ media.source }}", "season_number": "{{ media.season_number }}", "episode_number": "{{ media.episode_number }}", "quick": "1"}'
-            hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-            hx-swap="none"
-            hx-disabled-elt="this">
-      <span class="flex items-center gap-2 [.htmx-request_&]:invisible">
+{# An episode page's tracking button: marks it watched now in one click. Once it is, it shows how often until hover offers to plan watching it again, which one click then does in the same way. While its season is rewatched, one click watches it again until it is, and after that it opens the form #}
+{% with repeat=media|repeat_state:season_instance watches=media.history|length %}
+  <div class="flex h-10 w-full overflow-hidden rounded-xl shadow-lg ring-1 shadow-black/30 ring-white/10 md:w-auto md:min-w-56">
+    {% if repeat == "done" %}
+      <button type="button"
+              class="flex flex-1 cursor-pointer items-center justify-center gap-2 px-5 text-sm font-semibold text-white transition-colors {{ Status.COMPLETED.value|status_button_color }}"
+              @click="trackOpen = true">
         {% include "app/icons/states/completed.svg" with classes="size-4 shrink-0" %}
-        Mark watched
-      </span>
-      <span class="htmx-indicator absolute top-1/2 left-1/2 size-4 -translate-1/2 animate-spin">
-        {% include "app/icons/circle-spinning-clockwise.svg" with classes="size-4" %}
-      </span>
-    </button>
-  {% endif %}
-</div>
+        Watched{% if watches > 1 %} {{ watches }} times{% endif %}
+      </button>
+    {% elif media.history and not repeat %}
+      <button type="button"
+              aria-label="Plan to rewatch"
+              class="group/track relative flex flex-1 cursor-pointer items-center justify-center gap-2 px-5 text-sm font-semibold text-white transition-colors disabled:cursor-wait {{ Status.COMPLETED.value|status_button_color }}"
+              hx-post="{% url 'episode_plan_repeat' %}?next={{ request.get_full_path|urlencode }}"
+              hx-vals='{"media_id": "{{ media.media_id|escapejs }}", "source": "{{ media.source }}", "season_number": "{{ media.season_number }}", "episode_number": "{{ media.episode_number }}"}'
+              hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+              hx-swap="none"
+              hx-disabled-elt="this">
+        {# How often it was watched, which hover swaps for planning a rewatch in its color #}
+        <span class="absolute inset-0 hidden group-hover/track:block group-focus-visible/track:block {{ Status.PLANNING_REPEAT.value|status_button_color }}"></span>
+        <span class="relative flex items-center gap-2 group-hover/track:hidden group-focus-visible/track:hidden [.htmx-request_&]:invisible">
+          {% include "app/icons/states/completed.svg" with classes="size-4 shrink-0" %}
+          Watched{% if watches > 1 %} {{ watches }} times{% endif %}
+        </span>
+        <span class="relative hidden items-center gap-2 group-hover/track:flex group-focus-visible/track:flex [.htmx-request_&]:invisible">
+          {% include Status.PLANNING_REPEAT.value|status_icon with classes="size-4 shrink-0" %}
+          Plan to rewatch
+        </span>
+        <span class="htmx-indicator absolute top-1/2 left-1/2 size-4 -translate-1/2 animate-spin">
+          {% include "app/icons/circle-spinning-clockwise.svg" with classes="size-4" %}
+        </span>
+      </button>
+    {% else %}
+      <button type="button"
+              class="relative flex flex-1 cursor-pointer items-center justify-center gap-2 px-5 text-sm font-semibold text-white transition-colors disabled:cursor-wait {{ Status.COMPLETED.value|status_button_color }}"
+              hx-post="{% url 'episode_save' %}?next={{ request.get_full_path|urlencode }}"
+              hx-vals='{"media_id": "{{ media.media_id|escapejs }}", "source": "{{ media.source }}", "season_number": "{{ media.season_number }}", "episode_number": "{{ media.episode_number }}", "quick": "1"}'
+              hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+              hx-swap="none"
+              hx-disabled-elt="this">
+        <span class="flex items-center gap-2 [.htmx-request_&]:invisible">
+          {% include "app/icons/states/completed.svg" with classes="size-4 shrink-0" %}
+          {% if repeat %}Mark rewatched{% else %}Mark watched{% endif %}
+        </span>
+        <span class="htmx-indicator absolute top-1/2 left-1/2 size-4 -translate-1/2 animate-spin">
+          {% include "app/icons/circle-spinning-clockwise.svg" with classes="size-4" %}
+        </span>
+      </button>
+    {% endif %}
+  </div>
+{% endwith %}

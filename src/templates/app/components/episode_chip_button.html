@@ -1,0 +1,26 @@
+{% load app_tags %}
+
+{# A one-click action on an episode in a season's list: its `icon` in `icon_color` turns on hover into its `label` and `action_icon`, filled with `fill`. It posts the episode to `url`, and says how many times it was watched when given a `watch_count` #}
+<button type="button"
+        class="card-chip group/qa relative flex h-8 shrink-0 cursor-pointer items-center overflow-hidden text-white transition-all duration-200 hover:ring-white/40 disabled:cursor-wait"
+        aria-label="{{ label }}"
+        {% if watch_count %}title="Watched {{ watch_count }} time{{ watch_count|pluralize }}"{% endif %}
+        hx-post="{{ url }}?next={{ request.get_full_path|urlencode }}"
+        hx-vals='{"media_id": "{{ episode.media_id|escapejs }}", "source": "{{ episode.source }}", "season_number": "{{ episode.season_number }}", "episode_number": "{{ episode.episode_number }}", "quick": "1"}'
+        hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+        hx-swap="none"
+        hx-disabled-elt="this">
+  <span class="absolute inset-0 opacity-0 transition-opacity duration-200 group-hover/qa:opacity-100 {{ fill }}"></span>
+  <span class="relative max-w-0 overflow-hidden text-xs font-semibold whitespace-nowrap transition-all duration-300 group-hover/qa:max-w-32 group-hover/qa:pl-3">{{ label }}</span>
+  <span class="relative flex size-8 shrink-0 items-center justify-center">
+    <span class="size-4 group-hover/qa:hidden [.htmx-request_&]:invisible {{ icon_color }}">
+      {% include icon with classes="size-4" %}
+    </span>
+    <span class="hidden size-4 group-hover/qa:block [.htmx-request_&]:invisible">
+      {% include action_icon with classes="size-4" %}
+    </span>
+    <span class="htmx-indicator absolute size-4 animate-spin">
+      {% include "app/icons/circle-spinning-clockwise.svg" with classes="size-4" %}
+    </span>
+  </span>
+</button>

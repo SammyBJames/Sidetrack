@@ -3,12 +3,16 @@ import logging
 from django.utils import timezone
 
 import app
-from app.models import MediaTypes, Sources, Status
+from app.models import REPEAT_STATUSES, MediaTypes, Sources, Status
 from app.providers import tvdb as tvdb_provider
 
 from . import anime_mappings
 
 logger = logging.getLogger(__name__)
+
+# Statuses a play leaves for the episode's watch to move on: finished shows and
+# seasons only start again for an episode not seen before, and rewatches go on
+SETTLED_STATUSES = (Status.IN_PROGRESS.value, Status.COMPLETED.value, *REPEAT_STATUSES)
 
 
 class TVWebhookMixin:
@@ -231,7 +235,7 @@ class TVWebhookMixin:
 
         if tv_created:
             logger.info("Created new TV instance: %s", tv_metadata["title"])
-        elif tv_instance.status != Status.IN_PROGRESS.value:
+        elif tv_instance.status not in SETTLED_STATUSES:
             tv_instance.status = Status.IN_PROGRESS.value
             tv_instance.save()
             logger.info(
@@ -264,7 +268,7 @@ class TVWebhookMixin:
                 tv_metadata["title"],
                 season_number,
             )
-        elif season_instance.status != Status.IN_PROGRESS.value:
+        elif season_instance.status not in SETTLED_STATUSES:
             season_instance.status = Status.IN_PROGRESS.value
             season_instance.save()
             logger.info(

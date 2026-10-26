@@ -132,12 +132,55 @@ class GetQuickActionTests(TestCase):
         self.assertEqual(action.key, quick_actions.RESUME)
         self.assertEqual(action.target_status, Status.IN_PROGRESS.value)
 
-    def test_finished_media_has_no_action(self):
-        """Completed and dropped media offer nothing."""
-        for status in (Status.COMPLETED.value, Status.DROPPED.value):
-            self.assertIsNone(
-                quick_actions.get_quick_action(MediaTypes.MOVIE.value, entry(status)),
+    def test_dropped_media_has_no_action(self):
+        """Dropped media offers nothing."""
+        self.assertIsNone(
+            quick_actions.get_quick_action(
+                MediaTypes.MOVIE.value,
+                entry(Status.DROPPED.value),
+            ),
+        )
+
+    def test_finished_media_is_planned_to_be_rewatched(self):
+        """Finished media of any type offers a rewatch, in its own words."""
+        labels = {
+            MediaTypes.MOVIE.value: ("Plan to rewatch", "Mark rewatched"),
+            MediaTypes.BOOK.value: ("Plan to reread", "Mark reread"),
+            MediaTypes.GAME.value: ("Plan to replay", "Mark replayed"),
+        }
+        for media_type, (plan, mark) in labels.items():
+            action = quick_actions.get_quick_action(
+                media_type,
+                entry(Status.COMPLETED.value),
             )
+            self.assertEqual(
+                (action.key, action.label, action.target_status),
+                (quick_actions.PLAN_REPEAT, plan, Status.PLANNING_REPEAT.value),
+            )
+            action = quick_actions.get_quick_action(
+                media_type,
+                entry(Status.PLANNING_REPEAT.value),
+            )
+            self.assertEqual(
+                (action.key, action.label, action.target_status),
+                (quick_actions.REPEAT, mark, Status.COMPLETED.value),
+            )
+
+    def test_rewatch_in_progress_goes_on_as_one(self):
+        """A rewatch in progress is finished, or counted on, without restarting."""
+        movie = quick_actions.get_quick_action(
+            MediaTypes.MOVIE.value,
+            entry(Status.REPEATING.value),
+        )
+        self.assertEqual(movie.key, quick_actions.REPEAT)
+
+        anime = SimpleNamespace(status=Status.REPEATING.value, progress=3)
+        anime.max_progress = 12
+        action = quick_actions.get_quick_action(MediaTypes.ANIME.value, anime)
+        self.assertEqual(action.key, quick_actions.NEXT)
+        self.assertEqual(action.target_status, Status.REPEATING.value)
+        self.assertEqual(action.label, "Mark E4 watched")
+        self.assertIn("repeating", action.icon)
 
     def test_episodes_have_no_action(self):
         """Episode cards keep their own tracking button."""

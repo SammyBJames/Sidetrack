@@ -2,6 +2,6 @@
 
 {# The status of an entry on a media card, without an action #}
 <div class="card-chip flex size-7 items-center justify-center"
-     title="{{ status }}">
+     title="{{ status|media_status_readable:item.media_type }}">
   <span class="size-3.5 {{ status|status_color }}">{% include status|status_icon with classes="size-3.5" %}</span>
 </div>

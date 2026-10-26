@@ -553,3 +553,76 @@ class QuickActionViewTests(TestCase):
 
         self.assertContains(response, "<span>1999</span>", html=True)
         self.assertContains(response, "ring-indigo-400")
+
+    def test_planning_a_rewatch_keeps_the_finished_watch(self):
+        """A finished movie's rewatch is a new entry, and marking it is a new play."""
+        first = Movie.objects.create(
+            item=self.movie_item,
+            user=self.user,
+            status=Status.COMPLETED.value,
+            end_date=datetime(2020, 1, 1, tzinfo=UTC),
+        )
+
+        response = self.post(
+            self.movie_item,
+            quick_actions.PLAN_REPEAT,
+            instance_id=first.id,
+        )
+
+        first.refresh_from_db()
+        self.assertEqual(first.status, Status.COMPLETED.value)
+        rewatch = Movie.objects.exclude(pk=first.pk).get(item=self.movie_item)
+        self.assertEqual(rewatch.status, Status.PLANNING_REPEAT.value)
+        self.assertIsNone(rewatch.end_date)
+        self.assertContains(response, "Mark rewatched")
+        self.assertContains(response, "Planning to rewatch Test Movie.")
+
+        self.post(self.movie_item, quick_actions.REPEAT, instance_id=rewatch.id)
+
+        rewatch.refresh_from_db()
+        self.assertEqual(rewatch.status, Status.COMPLETED.value)
+        self.assertEqual(timezone.localdate(rewatch.end_date), timezone.localdate())
+        self.assertEqual(Movie.objects.filter(item=self.movie_item).count(), 2)
+
+    def test_stale_card_plans_one_rewatch(self):
+        """A finished movie's card left open plans its rewatch only once."""
+        movie = Movie.objects.create(
+            item=self.movie_item,
+            user=self.user,
+            status=Status.COMPLETED.value,
+        )
+
+        self.post(self.movie_item, quick_actions.PLAN_REPEAT, instance_id=movie.id)
+        response = self.post(
+            self.movie_item,
+            quick_actions.PLAN_REPEAT,
+            instance_id=movie.id,
+        )
+
+        self.assertEqual(
+            sorted(
+                Movie.objects.filter(item=self.movie_item).values_list(
+                    "status",
+                    flat=True,
+                ),
+            ),
+            [Status.COMPLETED.value, Status.PLANNING_REPEAT.value],
+        )
+        self.assertContains(response, "This entry has already changed")
+
+    def test_planned_rewatch_leaves_the_completed_list(self):
+        """A rewatch planned from the completed list moves its card out of it."""
+        movie = Movie.objects.create(
+            item=self.movie_item,
+            user=self.user,
+            status=Status.COMPLETED.value,
+        )
+
+        response = self.post(
+            self.movie_item,
+            quick_actions.PLAN_REPEAT,
+            instance_id=movie.id,
+            status=Status.COMPLETED.value,
+        )
+
+        self.assertEqual(response["HX-Reswap"], "delete")

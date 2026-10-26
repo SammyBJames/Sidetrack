@@ -1,8 +1,10 @@
 {% load app_tags %}
 
 {# Only shown for partial progress, the status itself is shown by the card's status button #}
-{% if user.progress_bar and media.status == Status.IN_PROGRESS.value and media.max_progress and media.progress %}
-  {% widthratio media.progress media.max_progress 100 as progress_width %}
-  <div class="h-1 {{ media.status|status_background_color }}"
-       style="width: {{ progress_width }}%"></div>
+{% if user.progress_bar and media.max_progress and media.progress %}
+  {% if media.status == Status.IN_PROGRESS.value or media.status == Status.REPEATING.value %}
+    {% widthratio media.progress media.max_progress 100 as progress_width %}
+    <div class="h-1 {{ media.status|status_background_color }}"
+         style="width: {{ progress_width }}%"></div>
+  {% endif %}
 {% endif %}

@@ -1,46 +1,28 @@
 {% load app_tags %}
 
-{# Whether an episode in a season's list is watched, or when it airs. An unwatched one shows it's planned with its tracked season, like cards do, and turns on hover into its one-click action, marking it watched now #}
-{% if episode.history %}
-  <span class="card-chip tooltip flex size-8 shrink-0 items-center justify-center"
-        tabindex="0"
-        data-tooltip="Watched{% if episode.history|length > 1 %} {{ episode.history|length }} times{% endif %}"
-        aria-label="Watched">
-    <span class="size-4 {{ Status.COMPLETED.value|status_color }}">
-      {% include "app/icons/states/completed.svg" with classes="size-4" %}
-    </span>
-  </span>
-{% elif episode.air_date and episode.air_date|unreleased %}
-  {# Nothing to watch until it airs, so it shows when that is #}
-  {% include "app/components/release_button.html" with event=None label=episode.air_date|air_date_label:episode.episode_number home_status=Status.PLANNING.value clock_color="text-sky-400" %}
-{% else %}
-  <button type="button"
-          class="card-chip group/qa relative flex h-8 shrink-0 cursor-pointer items-center overflow-hidden text-white transition-all duration-200 hover:ring-white/40 disabled:cursor-wait"
-          aria-label="Mark watched"
-          hx-post="{% url 'episode_save' %}?next={{ request.get_full_path|urlencode }}"
-          hx-vals='{"media_id": "{{ episode.media_id|escapejs }}", "source": "{{ episode.source }}", "season_number": "{{ episode.season_number }}", "episode_number": "{{ episode.episode_number }}", "quick": "1"}'
-          hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-          hx-swap="none"
-          hx-disabled-elt="this">
-    {# The watched color fills in on hover #}
-    <span class="absolute inset-0 opacity-0 transition-opacity duration-200 group-hover/qa:opacity-100 {{ Status.COMPLETED.value|status_button_color }}"></span>
-    <span class="relative max-w-0 overflow-hidden text-xs font-semibold whitespace-nowrap transition-all duration-300 group-hover/qa:max-w-32 group-hover/qa:pl-3">Mark watched</span>
-    <span class="relative flex size-8 shrink-0 items-center justify-center">
-      {% if current_instance %}
-        <span class="size-4 group-hover/qa:hidden [.htmx-request_&]:invisible {{ Status.PLANNING.value|status_color }}">
-          {% include Status.PLANNING.value|status_icon with classes="size-4" %}
-        </span>
-      {% else %}
-        <span class="size-4 text-gray-200 group-hover/qa:hidden [.htmx-request_&]:invisible">
-          {% include "app/icons/plus.svg" with classes="size-4" %}
-        </span>
-      {% endif %}
-      <span class="hidden size-4 group-hover/qa:block [.htmx-request_&]:invisible">
-        {% include "app/icons/states/completed.svg" with classes="size-4" %}
-      </span>
-      <span class="htmx-indicator absolute size-4 animate-spin">
-        {% include "app/icons/circle-spinning-clockwise.svg" with classes="size-4" %}
+{# Whether an episode in a season's list is watched, or when it airs, as a chip that turns on hover into its one-click action. An unwatched one shows it's planned with its tracked season, like cards do, and marks it watched now. A watched one plans to watch it again, which then marks it watched in the same way, as do episodes still to watch in a season's rewatch #}
+{% url 'episode_save' as watch_url %}
+{% with repeat=episode|repeat_state:current_instance completed_icon="app/icons/states/completed.svg" %}
+  {% if repeat == "done" %}
+    <span class="card-chip tooltip tooltip-end flex size-8 shrink-0 items-center justify-center"
+          tabindex="0"
+          data-tooltip="Rewatched"
+          aria-label="Rewatched">
+      <span class="size-4 {{ Status.COMPLETED.value|status_color }}">
+        {% include completed_icon with classes="size-4" %}
       </span>
     </span>
-  </button>
-{% endif %}
+  {% elif episode.history and not repeat %}
+    {% url 'episode_plan_repeat' as plan_url %}
+    {% include "app/components/episode_chip_button.html" with url=plan_url label="Plan to rewatch" watch_count=episode.history|length icon=completed_icon icon_color=Status.COMPLETED.value|status_color action_icon=Status.PLANNING_REPEAT.value|status_icon fill=Status.PLANNING_REPEAT.value|status_button_color %}
+  {% elif episode.air_date and episode.air_date|unreleased %}
+    {# Nothing to watch until it airs, so it shows when that is #}
+    {% include "app/components/release_button.html" with event=None label=episode.air_date|air_date_label:episode.episode_number home_status=Status.PLANNING.value clock_color="text-sky-400" %}
+  {% elif repeat %}
+    {% include "app/components/episode_chip_button.html" with url=watch_url label="Mark watched" icon=Status.PLANNING_REPEAT.value|status_icon icon_color=Status.PLANNING_REPEAT.value|status_color action_icon=completed_icon fill=Status.COMPLETED.value|status_button_color %}
+  {% elif current_instance %}
+    {% include "app/components/episode_chip_button.html" with url=watch_url label="Mark watched" icon=Status.PLANNING.value|status_icon icon_color=Status.PLANNING.value|status_color action_icon=completed_icon fill=Status.COMPLETED.value|status_button_color %}
+  {% else %}
+    {% include "app/components/episode_chip_button.html" with url=watch_url label="Mark watched" icon="app/icons/plus.svg" icon_color="text-gray-200" action_icon=completed_icon fill=Status.COMPLETED.value|status_button_color %}
+  {% endif %}
+{% endwith %}

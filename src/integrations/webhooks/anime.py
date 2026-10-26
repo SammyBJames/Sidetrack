@@ -3,7 +3,7 @@ import logging
 from django.utils import timezone
 
 import app
-from app.models import MediaTypes, Sources, Status
+from app.models import REPEAT_STATUSES, MediaTypes, Sources, Status
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +57,12 @@ class AnimeWebhookMixin:
                 current_instance.end_date = now
                 current_instance.status = status
 
+            elif current_instance.status in REPEAT_STATUSES:
+                # A rewatch goes on as one, keeping the earlier plays finished
+                if current_instance.status == Status.PLANNING_REPEAT.value:
+                    current_instance.start_date = now
+                current_instance.status = Status.REPEATING.value
+
             elif current_instance.status != Status.IN_PROGRESS.value:
                 current_instance.start_date = now
                 current_instance.status = status
@@ -95,7 +101,8 @@ class AnimeWebhookMixin:
             return
 
         current_instance.progress = episode_number
-        current_instance.status = Status.IN_PROGRESS.value
+        if current_instance.status not in REPEAT_STATUSES:
+            current_instance.status = Status.IN_PROGRESS.value
         current_instance.end_date = None
 
         if current_instance.tracker.changed():

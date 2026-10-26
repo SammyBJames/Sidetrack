@@ -1,11 +1,12 @@
 from datetime import UTC
 from unittest.mock import MagicMock, patch
 
+from django.template.loader import render_to_string
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from app.models import Item, MediaTypes, Sources
+from app.models import Item, MediaTypes, Sources, Status
 from app.templatetags import app_tags
 
 
@@ -530,3 +531,54 @@ class AppTagsTests(TestCase):
             split["lists"],
             [("genres", ["Action"]), ("studios", ["A", "B"])],
         )
+
+
+class RepeatStatusLabelTests(TestCase):
+    """Test the names of the repeat statuses."""
+
+    def test_repeat_statuses_use_the_media_types_words(self):
+        """Repeating reads as rewatching movies, rereading books and replaying games.
+
+        Without a media type, it's neutral.
+        """
+        cases = {
+            (Status.REPEATING.value, MediaTypes.MOVIE.value): "Rewatching",
+            (Status.REPEATING.value, MediaTypes.BOOK.value): "Rereading",
+            (Status.PLANNING_REPEAT.value, MediaTypes.GAME.value): "Planning Replay",
+            (Status.PLANNING_REPEAT.value, None): "Planning Repeat",
+            (Status.IN_PROGRESS.value, MediaTypes.BOOK.value): "In Progress",
+        }
+        for (status, media_type), label in cases.items():
+            self.assertEqual(app_tags.media_status_readable(status, media_type), label)
+
+
+class UnreleasedOnHomeTests(TestCase):
+    """Test which home cards wait on their next release."""
+
+    def test_repeat_with_released_episodes_left_is_not_waiting(self):
+        """A weekly show being rewatched offers its next episode, not its release.
+
+        Once its released episodes are watched, it waits on the next one.
+        """
+        next_event = MagicMock(is_max_datetime=False)
+        behind = MagicMock(next_event=next_event, max_progress=5, progress=3)
+        caught_up = MagicMock(next_event=next_event, max_progress=5, progress=5)
+        for status in (Status.IN_PROGRESS.value, Status.REPEATING.value):
+            with self.subTest(status=status):
+                self.assertFalse(app_tags.unreleased_on_home(behind, status))
+                self.assertTrue(app_tags.unreleased_on_home(caught_up, status))
+
+
+class StatusBadgeTests(TestCase):
+    """Test the status shown on cards without an action."""
+
+    def test_badge_names_a_repeat_in_its_media_types_words(self):
+        """A rereading book's badge reads Rereading."""
+        item = Item(media_type=MediaTypes.BOOK.value)
+
+        html = render_to_string(
+            "app/components/status_badge.html",
+            {"status": Status.REPEATING.value, "item": item},
+        )
+
+        self.assertIn('title="Rereading"', html)

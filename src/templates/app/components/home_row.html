@@ -12,7 +12,7 @@
         {% include row.status|status_icon with classes="size-5" %}
       </span>
       <span class="truncate">
-        {{ row.status|media_status_readable|title }}
+        {{ row.status|media_status_readable:row.media_type|title }}
         <span class="text-gray-500">•</span>
         {{ row.media_type|media_type_readable_plural }}
       </span>

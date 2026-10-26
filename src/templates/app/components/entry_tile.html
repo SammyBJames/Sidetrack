@@ -7,9 +7,11 @@
     <div class="min-w-0">
       <div class="flex items-center gap-1.5 text-sm font-semibold text-white">
         <span class="shrink-0 {{ status|status_color }}"
-              title="{{ status|media_status_readable }}">{% include status|status_icon with classes="size-4" %}</span>
+              title="{{ status|media_status_readable:media_type }}">
+          {% include status|status_icon with classes="size-4" %}
+        </span>
         <span class="truncate">
-          {% if status != Status.COMPLETED.value %}{{ status|media_status_readable }}{% if entry.end_date %} ·{% endif %}{% endif %}
+          {% if status != Status.COMPLETED.value %}{{ status|media_status_readable:media_type }}{% if entry.end_date %} ·{% endif %}{% endif %}
           {% if entry.end_date %}
             {{ entry.end_date|human_date }}
           {% elif status == Status.COMPLETED.value %}

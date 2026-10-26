@@ -246,7 +246,7 @@ class HowLongToBeatImporter:
             "Completed": Status.COMPLETED,
             "Playing": Status.IN_PROGRESS,
             "Backlog": Status.PLANNING,
-            "Replay": Status.IN_PROGRESS,
+            "Replay": Status.REPEATING,
             "Retired": Status.DROPPED,
         }
 

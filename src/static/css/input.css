@@ -83,6 +83,11 @@
   @apply relative after:pointer-events-none after:absolute after:top-full after:left-1/2 after:z-20 after:mt-2 after:-translate-x-1/2 after:rounded-lg after:bg-surface-950 after:px-2.5 after:py-1 after:text-xs after:font-medium after:whitespace-nowrap after:text-gray-100 after:opacity-0 after:shadow-lg after:ring-1 after:ring-white/10 after:transition-opacity after:content-[attr(data-tooltip)] can-hover:hover:after:opacity-100 focus-visible:after:opacity-100;
 }
 
+/* A tooltip lined up with the right edge of its button, for buttons at the edge of a card */
+@utility tooltip-end {
+  @apply after:right-0 after:left-auto after:translate-x-0;
+}
+
 .toast-error {
   @apply bg-red-700/95 border-red-600;
 }

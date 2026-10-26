@@ -8,8 +8,11 @@ from django.utils import formats, timezone
 from django.utils.dateparse import parse_datetime
 
 from app import config, helpers
-from app.models import MediaTypes, Status
+from app.models import REPEAT_STATUSES, MediaTypes, Status
 from app.templatetags import app_tags
+
+# Fields kept for the app's own use, which aren't shown in the history
+INTERNAL_FIELDS = {"repeat_started_at", "planned_repeat_episodes"}
 
 
 def _journal_queryset(model, user, start_date, end_date):
@@ -364,7 +367,9 @@ def organize_changes(changes, media_type, user):
     end_date_change = None
 
     for change in changes:
-        if change.field == "progress" and media_type == MediaTypes.MOVIE.value:
+        if change.field in INTERNAL_FIELDS or (
+            change.field == "progress" and media_type == MediaTypes.MOVIE.value
+        ):
             continue
 
         change_data = {
@@ -407,6 +412,7 @@ def collect_creation_changes(new_record, history_model, media_type, user):
         if (
             field.name.startswith("history_")
             or field.name == "id"
+            or field.name in INTERNAL_FIELDS
             or not hasattr(new_record, field.attname)
             or (field.name == "progress" and media_type == MediaTypes.MOVIE.value)
         ):
@@ -511,6 +517,8 @@ def format_description(field_name, old_value, new_value, media_type=None, user=N
                 return f"{action} dropped"
             if new_value == Status.PAUSED.value:
                 return f"{action} paused {verb}ing"
+            if new_value in REPEAT_STATUSES:
+                return f"{action} {_status_label(new_value, media_type).lower()}"
 
         if field_name == "score":
             return f"Rated {new_value}/10"
@@ -561,7 +569,8 @@ def format_description(field_name, old_value, new_value, media_type=None, user=N
         }
         return transitions.get(
             (old_value, new_value),
-            f"Changed status from {old_value} to {new_value}",
+            f"Changed status from {_status_label(old_value, media_type)} "
+            f"to {_status_label(new_value, media_type)}",
         )
 
     if field_name == "score":
@@ -601,3 +610,10 @@ def format_description(field_name, old_value, new_value, media_type=None, user=N
 
     field_label = field_name.replace("_", " ").lower()
     return f"Updated {field_label} from {old_value} to {new_value}"
+
+
+def _status_label(status, media_type):
+    """Return a status's label in a media type's words, or an unknown one as is."""
+    if status in Status.values:
+        return config.get_status_label(status, media_type)
+    return status
