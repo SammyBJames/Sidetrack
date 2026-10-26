@@ -68,9 +68,11 @@
         {# Sidebar #}
         <aside class="fixed top-0 left-0 z-40 h-screen w-64 bg-surface-950 transform transition-transform duration-300 ease-in-out border-r border-white/5 -translate-x-full lg:translate-x-0 lg:sticky flex flex-col"
                :class="isMobileMenuOpen ? 'translate-x-0' : ''">
-          <div class="h-16 shrink-0 flex items-center px-6">
-            <h1 class="text-2xl font-semibold text-gray-100">Sidetrack</h1>
-          </div>
+          <a href="{% url 'home' %}"
+             class="h-16 shrink-0 flex items-center gap-2.5 px-5">
+            {% include "app/components/logo.svg" with classes="size-8 shrink-0" %}
+            <span class="text-xl font-bold tracking-tight text-white"><span class="text-indigo-400">Side</span>track</span>
+          </a>
           <nav class="flex-1 overflow-y-auto px-3 pt-3 pb-4">
             {% block sidebar_own_media %}
               {% url 'home' as home_url %}
