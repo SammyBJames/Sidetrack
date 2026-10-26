@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
@@ -179,6 +180,47 @@ class ImportYamtrackEpisodeHistoryDate(TestCase):
             episode_instance._history_date,
             datetime(2025, 11, 19, 19, 0, 0, tzinfo=UTC),
         )
+
+
+class ImportYamtrackEpisodeScore(TestCase):
+    """Test that episode watches keep their ratings through an import."""
+
+    def setUp(self):
+        """Create a user with no existing media."""
+        self.credentials = {"username": "test", "password": "12345"}
+        self.user = get_user_model().objects.create_user(**self.credentials)
+
+    def import_episode(self, score):
+        """Import one watch of an episode with the given score, and return it."""
+        importer = yamtrack.YamtrackImporter(None, self.user, "new")
+        importer._process_row(
+            {
+                "media_id": "1668",
+                "source": "tmdb",
+                "media_type": "episode",
+                "title": "Friends",
+                "image": "http://image.tmdb.org/t/p/original/friends.jpg",
+                "season_number": "1",
+                "episode_number": "1",
+                "score": score,
+                "progress": "",
+                "status": "",
+                "start_date": "",
+                "end_date": "2025-11-19 19:00:00+00:00",
+                "notes": "",
+                "progressed_at": "",
+            },
+        )
+        return importer.bulk_media["episode"][0]
+
+    def test_episode_score_is_imported(self):
+        """A rated watch keeps its rating."""
+        self.assertEqual(self.import_episode("7.5").score, Decimal("7.5"))
+
+    def test_invalid_episode_score_is_left_out(self):
+        """A rating that isn't a valid score leaves the watch unrated."""
+        self.assertIsNone(self.import_episode("11").score)
+        self.assertIsNone(self.import_episode("good").score)
 
 
 class ImportYamtrackPartials(TestCase):

@@ -1,3 +1,4 @@
+import contextlib
 import logging
 from collections import defaultdict
 from csv import DictReader
@@ -5,6 +6,7 @@ from io import StringIO
 
 from django.apps import apps
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.utils.dateparse import parse_datetime
 
 import app
@@ -206,6 +208,16 @@ class YamtrackImporter:
             progressed_at = row.get("progressed_at") or row.get("end_date")
             if progressed_at:
                 form.instance._history_date = parse_datetime(progressed_at)
+
+            # Episode watches are rated outside their form, so the score
+            # comes from the row, and an invalid one is left out
+            if media_type == MediaTypes.EPISODE.value and row.get("score"):
+                score_field = form.instance._meta.get_field("score")
+                with contextlib.suppress(ValidationError):
+                    form.instance.score = score_field.clean(
+                        row["score"],
+                        form.instance,
+                    )
 
             if self.mode != "new" or not self._sync_existing(
                 media_type,

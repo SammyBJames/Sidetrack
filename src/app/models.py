@@ -1791,6 +1791,18 @@ class Episode(models.Model):
     )
     end_date = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True, default="")
+    # The user's rating of this watch of the episode
+    score = models.DecimalField(
+        null=True,
+        blank=True,
+        max_digits=3,
+        decimal_places=1,
+        validators=[
+            DecimalValidator(3, 1),
+            MinValueValidator(0),
+            MaxValueValidator(10),
+        ],
+    )
 
     class Meta:
         """Meta options for the model."""
