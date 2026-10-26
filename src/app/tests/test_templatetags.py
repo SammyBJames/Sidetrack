@@ -569,6 +569,23 @@ class UnreleasedOnHomeTests(TestCase):
                 self.assertTrue(app_tags.unreleased_on_home(caught_up, status))
 
 
+class PlaysHeadingTests(TestCase):
+    """Test the heading of the list of times through media."""
+
+    def test_heading_uses_the_media_types_words(self):
+        """Books are read, games played and anime watched."""
+        cases = {
+            MediaTypes.BOOK.value: "Your Reads",
+            MediaTypes.MANGA.value: "Your Reads",
+            MediaTypes.GAME.value: "Your Plays",
+            MediaTypes.BOARDGAME.value: "Your Plays",
+            MediaTypes.ANIME.value: "Your Watches",
+            MediaTypes.MOVIE.value: "Your Watches",
+        }
+        for media_type, heading in cases.items():
+            self.assertEqual(app_tags.plays_heading(media_type), heading)
+
+
 class StatusBadgeTests(TestCase):
     """Test the status shown on cards without an action."""
 

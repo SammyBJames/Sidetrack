@@ -19,7 +19,8 @@
           {% endif %}
         </span>
       </div>
-      {% if show_progress and entry.progress %}
+      {# A movie's progress only says it was watched #}
+      {% if show_progress and entry.progress and media_type != MediaTypes.MOVIE.value %}
         <div class="mt-0.5 text-xs text-gray-400">
           {{ entry.formatted_progress }}
           {% if media_type != MediaTypes.GAME.value %}{{ media_type|long_unit|lower }}{{ entry.progress|pluralize }}{% endif %}

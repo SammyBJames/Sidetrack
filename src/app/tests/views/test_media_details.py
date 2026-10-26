@@ -7,6 +7,7 @@ from django.urls import reverse
 
 from app import config
 from app.models import (
+    Book,
     Item,
     MediaTypes,
     Movie,
@@ -332,6 +333,58 @@ class MediaDetailsViewTests(TestCase):
                 args=[MediaTypes.MOVIE.value, movie.id],
             )
             self.assertIn(f"ratingStars(null, '{score_url}'", content)
+
+    @patch("app.providers.services.get_media_metadata")
+    def test_book_lists_all_its_reads(self, mock_get_metadata):
+        """A book lists every read, the current one too, under Your Reads."""
+        mock_get_metadata.return_value = {
+            "media_id": "377193",
+            "title": "Test Book",
+            "media_type": MediaTypes.BOOK.value,
+            "source": Sources.HARDCOVER.value,
+            "image": "http://example.com/image.jpg",
+            "max_progress": 300,
+            "synopsis": "Test synopsis",
+        }
+        item = Item.objects.create(
+            media_id="377193",
+            source=Sources.HARDCOVER.value,
+            media_type=MediaTypes.BOOK.value,
+            title="Test Book",
+            image="http://example.com/image.jpg",
+        )
+        Book.objects.create(
+            item=item,
+            user=self.user,
+            status=Status.COMPLETED.value,
+            progress=300,
+        )
+        Book.objects.create(
+            item=item,
+            user=self.user,
+            status=Status.REPEATING.value,
+            progress=120,
+        )
+
+        response = self.client.get(
+            reverse(
+                "media_details",
+                kwargs={
+                    "source": Sources.HARDCOVER.value,
+                    "media_type": MediaTypes.BOOK.value,
+                    "media_id": "377193",
+                    "title": "test-book",
+                },
+            ),
+        )
+
+        content = response.content.decode()
+        self.assertRegex(content, r"Your Reads</h2>\s*<span[^>]*>2</span>")
+        self.assertNotIn("Repeats", content)
+        # Each read shows how far it got, the one in progress named as a reread
+        self.assertRegex(content, r"120\s*pages")
+        self.assertRegex(content, r"300\s*pages")
+        self.assertIn("Rereading", content)
 
     @patch("app.providers.services.get_media_metadata")
     def test_planned_movie_has_no_watches(self, mock_get_metadata):

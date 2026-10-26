@@ -178,6 +178,14 @@ def default_source(media_type):
 
 
 @register.filter
+def plays_heading(media_type):
+    """Return the heading of a media type's times through, e.g. Your Reads."""
+    verb = config.get_verb(media_type, past_tense=False).capitalize()
+    plural = f"{verb}es" if verb.endswith(("ch", "sh")) else f"{verb}s"
+    return f"Your {plural}"
+
+
+@register.filter
 def media_past_verb(media_type):
     """Return the past tense verb for the given media type."""
     return config.get_verb(media_type, past_tense=True)

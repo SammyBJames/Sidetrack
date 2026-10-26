@@ -273,29 +273,19 @@
             {% endfor %}
           {% endwith %}
 
-          {# A movie's watches, all of them, or other media's repeats after the current entry, each with its rating to change #}
-          {% if media.media_type == MediaTypes.MOVIE.value %}
+          {# Every time through media with entries of its own, the current one too, each with its rating to change, e.g. Your Reads for books. Shows and seasons list theirs on their episodes' pages #}
+          {% if media_type != MediaTypes.TV.value and media_type != MediaTypes.SEASON.value %}
             {% if user_medias|length > 1 or current_instance.status == Status.COMPLETED.value %}
               <section class="mb-8">
-                {% include "app/components/section_heading.html" with title="Your Watches" count=user_medias|length %}
+                {% include "app/components/section_heading.html" with title=media_type|plays_heading count=user_medias|length %}
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
                   {% for user_media in user_medias %}
                     {% url 'update_media_score' media_type user_media.id as score_url %}
-                    {% include "app/components/entry_tile.html" with entry=user_media status=user_media.status score_url=score_url actions="app/components/repeat_actions.html" %}
+                    {% include "app/components/entry_tile.html" with entry=user_media status=user_media.status score_url=score_url actions="app/components/repeat_actions.html" show_progress=True %}
                   {% endfor %}
                 </div>
               </section>
             {% endif %}
-          {% elif user_medias|length > 1 %}
-            <section class="mb-8">
-              {% include "app/components/section_heading.html" with title="Repeats" count=user_medias|length|add:"-1" %}
-              <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-                {% for user_media in user_medias|slice:"1:" %}
-                  {% url 'update_media_score' media_type user_media.id as score_url %}
-                  {% include "app/components/entry_tile.html" with entry=user_media status=user_media.status score_url=score_url actions="app/components/repeat_actions.html" show_progress=True %}
-                {% endfor %}
-              </div>
-            </section>
           {% endif %}
 
           {# Streaming providers #}
