@@ -470,22 +470,16 @@ class LibraryFiltersTests(TestCase):
         )
 
         response = self.client.get(url, {"rated": "rated"})
-        self.assertEqual(response.context["current_rated"], "rated")
         self.assertEqual(
             [m.item.title for m in response.context["media_list"]], ["Good"]
         )
         response = self.client.get(url, {"rated": "unrated"})
-        self.assertEqual(response.context["current_rated"], "unrated")
         self.assertEqual(
             [m.item.title for m in response.context["media_list"]], ["Bad"]
         )
         response = self.client.get(url, {"rewatched": "1"})
-        self.assertTrue(response.context["current_rewatched"])
         self.assertEqual(list(response.context["media_list"]), [])
         self.assertContains(response, "Nothing matches these filters")
 
-        # Not a toolbar filter, so the toolbar shows none selected
-        response = self.client.get(url, {"score_min": "5", "score_max": "6"})
-        self.assertEqual(response.context["current_rated"], "")
         counts = self.client.get(url, {"part": "counts", "imdb_min": "7"}).context
         self.assertEqual(counts["status_choices"][0]["count"], 1)

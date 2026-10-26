@@ -2,8 +2,11 @@
 
 {# A media type's list under its filters: the statuses, then the media as cards or rows, or why there's none. Dimmed while the filters reload it #}
 <div id="library-results"
+     data-count="{{ result_count }}"
+     data-filter-count="{{ filter_count }}"
      class="space-y-5 transition-opacity duration-200 [&.htmx-request]:opacity-50">
   {% include "app/components/library_status_chips.html" %}
+  {% include "app/components/library_filter_pills.html" %}
 
   {% if media_list %}
     {% if current_layout == "grid" %}
@@ -19,11 +22,7 @@
             {% include "app/components/library_sort_heading.html" with sort="progress" label="Progress" %}
           {% endif %}
           {% include "app/components/library_sort_heading.html" with sort="score" label="Rating" %}
-          {% if current_sort == "added" or current_sort == "start_date" or current_sort == "end_date" %}
-            {% include "app/components/library_sort_heading.html" with sort=current_sort label=date_heading %}
-          {% else %}
-            {% include "app/components/library_sort_heading.html" with sort="recent" label=date_heading %}
-          {% endif %}
+          {% include "app/components/library_sort_heading.html" with sort=sorted_field.key label=sorted_field.label %}
           <span class="sr-only">Actions</span>
         </div>
         <div class="divide-y divide-white/5">{% include "app/components/media_list_rows.html" %}</div>
@@ -44,7 +43,7 @@
           {% if current_search %}No {{ media_type_plural }} match “{{ current_search }}” with these filters.{% else %}Try another status or fewer filters.{% endif %}
         </p>
         <button type="button"
-                @click="clearFilters()"
+                @click="clearFilters(true)"
                 class="mt-5 h-9 cursor-pointer rounded-xl bg-white/10 px-4 text-sm font-semibold text-white ring-1 ring-white/10 transition-colors hover:bg-white/15">
           Clear filters
         </button>

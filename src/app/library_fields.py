@@ -865,3 +865,136 @@ def present_choices(user, media_type):
             for name, count in sorted(counts.items(), key=lambda c: (-c[1], c[0]))
         ]
     return choices
+
+
+# The groups the panel lists filters in, by field key; the rest are about the title
+ACTIVITY_KEYS = (
+    MediaSortChoices.SCORE,
+    MediaSortChoices.PLAYS,
+    MediaSortChoices.PROGRESS,
+    MediaSortChoices.START_DATE,
+    MediaSortChoices.END_DATE,
+    MediaSortChoices.ADDED,
+    MediaSortChoices.RECENT,
+)
+
+# The fields whose numbers have a fraction, by the step their inputs take
+FRACTION_STEPS = {
+    MediaSortChoices.SCORE: "0.5",
+    MediaSortChoices.PROVIDER_SCORE: "0.1",
+    MediaSortChoices.IMDB: "0.1",
+}
+
+
+def _input_value(value):
+    """Return a filter's bound as its input shows it."""
+    if value is None:
+        return ""
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(_plain(value))
+
+
+def panel_filters(media_type, filters, choices):
+    """Return the filters the panel offers, in groups with their current values.
+
+    Each group has a `title`, its `ranges` and its `choices`. A range is a
+    number, date or year field with its min and max `inputs`, of a `type` and
+    `step`. A choice is a field of toggles, each option with its `value`,
+    `label`, `count` and whether it is `checked`. Groups left empty are
+    dropped. Genres and platforms are those of the user's library, plus any
+    asked for that it lacks, so no filter in the address is lost.
+    """
+    groups = {
+        "activity": {"title": "Your activity", "ranges": [], "choices": []},
+        "about": {"title": "About the title", "ranges": [], "choices": []},
+        "genre": {"title": "Genre", "ranges": [], "choices": []},
+        "platform": {"title": "Platform", "ranges": [], "choices": []},
+    }
+    for field in get_filterable_fields(media_type):
+        flt = filters.get(field.key)
+        if field.kind in _PARSERS:
+            group = "activity" if field.key in ACTIVITY_KEYS else "about"
+            groups[group]["ranges"].append(
+                {
+                    "key": field.key,
+                    "label": field.label,
+                    "unit": field.unit,
+                    "type": {NUMBER: "number", DATE: "date", YEAR: "number"}[
+                        field.kind
+                    ],
+                    "step": FRACTION_STEPS.get(field.key, "1"),
+                    "inputs": [
+                        {
+                            "name": f"{field.key}_{bound}",
+                            "value": _input_value(getattr(flt, bound) if flt else None),
+                            "label": f"{field.label}, {words}",
+                            "placeholder": placeholder if field.kind != DATE else "",
+                        }
+                        for bound, words, placeholder in (
+                            ("min", "from", "Min" if field.kind != YEAR else "From"),
+                            ("max", "up to", "Max" if field.kind != YEAR else "To"),
+                        )
+                    ],
+                    "unset": field.unset_choice,
+                    "unset_checked": bool(flt and flt.unset),
+                },
+            )
+            continue
+        asked = {value.lower() for value in flt.values} if flt else set()
+        if field.choices:
+            options = [
+                {"value": value, "label": AiringStatus(value).label, "count": None}
+                for value in field.choices
+            ]
+            group = "about"
+        else:
+            options = [
+                dict(option, label=option["value"])
+                for option in choices.get(field.key, [])
+            ]
+            known = {option["value"].lower() for option in options}
+            options += [
+                {"value": value, "label": value, "count": 0}
+                for value in (flt.values if flt else ())
+                if value.lower() not in known
+            ]
+            group = field.key if field.key in groups else "about"
+        for option in options:
+            option["checked"] = option["value"].lower() in asked
+        groups[group]["choices"].append(
+            {"key": field.key, "label": field.label, "options": options},
+        )
+    return [group for group in groups.values() if group["ranges"] or group["choices"]]
+
+
+def list_text(field, media, format_datetime):
+    """Return a field's value in a listed media as text, e.g. "2h 5m", or "".
+
+    The value is read without queries from the media's item, its annotations or
+    what it has gone through. Dates of the entry go through `format_datetime`.
+    A field with no column of its own, such as the title, has none.
+    """
+    key = field.key
+    if key == MediaSortChoices.RECENT:
+        value = media.progressed_at or media.created_at
+    elif key == MediaSortChoices.PLAYS:
+        shown = media.item.media_type in SHOWS
+        value = media.plays if shown else media.completed_entries
+    elif key == MediaSortChoices.AIRING_STATUS:
+        value = media.item.airing_status
+    elif key == MediaSortChoices.PLAYERS:
+        low, high = media.item.min_players, media.item.max_players
+        if low and high and low != high:
+            return f"{low}\u2013{high} {field.unit}"
+        value = high
+    else:
+        expression = field.sort(media.item.media_type)
+        name = expression.name if isinstance(expression, F) else key
+        if name.startswith("item__"):
+            value = getattr(media.item, name.removeprefix("item__"))
+        else:
+            value = getattr(media, name, None)
+    if isinstance(value, datetime):
+        return format_datetime(value) or ""
+    return field.format(value)

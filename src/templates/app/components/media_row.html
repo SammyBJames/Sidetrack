@@ -1,6 +1,6 @@
 {% load app_tags %}
 
-{# A media's row in a list: its poster and title, status, progress, rating and the date the list sorts by or its last activity. On narrower screens all but the title fold under it. The owner gets its quick action #}
+{# A media's row in a list: its poster and title, status, progress, rating and the value the list sorts by or its last activity. On narrower screens all but the title fold under it. The owner gets its quick action #}
 {% card_title item item as heading %}
 {% firstof item|release_year "" as year %}
 {% with user=target_user|default:user caught=media|caught_up %}
@@ -46,7 +46,7 @@
             {{ media.formatted_score }}
           </span>
         {% endif %}
-        {% if media.list_date %}<span class="text-gray-500">{{ media.list_date|date_format:user }}</span>{% endif %}
+        {% if media.sorted_value %}<span class="text-gray-500">{% if sorted_field.kind == "number" and not sorted_field.unit %}{{ sorted_field.label }} {% endif %}{{ media.sorted_value }}</span>{% endif %}
       </div>
     </div>
 
@@ -80,8 +80,8 @@
     </div>
 
     <div class="hidden text-sm text-gray-300 xl:block">
-      {% if media.list_date %}
-        {{ media.list_date|date_format:user }}
+      {% if media.sorted_value %}
+        {{ media.sorted_value }}
       {% else %}
         <span class="text-gray-600">—</span>
       {% endif %}

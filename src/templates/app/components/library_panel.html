@@ -1,0 +1,151 @@
+{% load app_tags %}
+
+{# A media type's sort and filter panel: a side sheet on wider screens and a bottom sheet on phones. Its inputs belong to the list's form, named by the params they filter by, so each change reloads the results #}
+<div x-cloak
+     x-show="panelOpen"
+     x-ref="dialog"
+     x-transition:leave="transition-opacity duration-150"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-100"
+     class="pointer-events-none fixed inset-0 z-50"
+     role="dialog"
+     aria-modal="true"
+     aria-label="Sort and filter">
+  <div x-cloak
+       x-show="panelOpen"
+       x-transition.opacity.duration.200ms
+       @click="closePanel()"
+       class="pointer-events-auto absolute inset-0 bg-black/60"></div>
+
+  <div x-cloak
+       x-show="panelOpen"
+       x-ref="panel"
+       tabindex="-1"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="translate-y-full md:translate-x-full md:translate-y-0"
+       x-transition:enter-end="translate-y-0 md:translate-x-0"
+       x-transition:leave="transition ease-in duration-150"
+       x-transition:leave-start="translate-y-0 md:translate-x-0"
+       x-transition:leave-end="translate-y-full md:translate-x-full md:translate-y-0"
+       class="pointer-events-auto absolute inset-x-0 bottom-0 flex max-h-[85vh] flex-col rounded-t-2xl bg-surface-800 shadow-2xl ring-1 shadow-black/50 ring-white/10 outline-none md:inset-y-0 md:right-0 md:left-auto md:max-h-none md:w-96 md:rounded-t-none md:rounded-l-2xl">
+    <div class="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-white/20 md:hidden"
+         aria-hidden="true"></div>
+    <div class="flex shrink-0 items-center justify-between px-5 pt-3 pb-2 md:pt-4">
+      <h2 class="text-base font-semibold text-white">Sort &amp; filter</h2>
+      <button type="button"
+              @click="closePanel()"
+              aria-label="Close"
+              class="flex size-8 cursor-pointer items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-white/10 hover:text-white">
+        {% include "app/icons/x.svg" with classes="size-5" %}
+      </button>
+    </div>
+
+    <div class="flex-1 space-y-6 overflow-y-auto overscroll-contain px-5 py-3">
+      <section>
+        <h3 class="mb-2 text-[0.6875rem] font-semibold tracking-wide text-gray-400 uppercase">Sort by</h3>
+        <div class="flex flex-wrap gap-1.5" role="group" aria-label="Sort by">
+          <template x-for="choice in sorts" :key="choice.value">
+            <button type="button"
+                    @click="if (sort !== choice.value) sortBy(choice.value)"
+                    :aria-pressed="sort === choice.value"
+                    class="h-7 cursor-pointer rounded-full px-3 text-xs font-medium ring-1 transition-colors"
+                    :class="sort === choice.value ? 'bg-indigo-600 text-white ring-indigo-400' : 'bg-white/5 text-gray-300 ring-white/10 hover:bg-white/10'"
+                    x-text="choice.label"></button>
+          </template>
+        </div>
+        <div class="mt-3 grid grid-cols-2 gap-1 rounded-xl bg-white/5 p-1"
+             role="group"
+             aria-label="Order">
+          <button type="button"
+                  @click="set('order', 'asc')"
+                  :aria-pressed="order === 'asc'"
+                  class="h-8 cursor-pointer rounded-lg text-xs font-medium transition-colors"
+                  :class="order === 'asc' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'"
+                  x-text="orderLabels[0]"></button>
+          <button type="button"
+                  @click="set('order', 'desc')"
+                  :aria-pressed="order === 'desc'"
+                  class="h-8 cursor-pointer rounded-lg text-xs font-medium transition-colors"
+                  :class="order === 'desc' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'"
+                  x-text="orderLabels[1]"></button>
+        </div>
+      </section>
+
+      {# One change reloads the results, after a pause for typing #}
+      <div @input.debounce.400ms="submit()">
+        <h3 class="mb-3 text-[0.6875rem] font-semibold tracking-wide text-gray-400 uppercase">Filter</h3>
+        <div class="space-y-5">
+          {% for group in filter_groups %}
+            <section>
+              <h4 class="mb-2 text-sm font-medium text-white">{{ group.title }}</h4>
+              <div class="space-y-3">
+                {% for range in group.ranges %}
+                  <div>
+                    <div class="mb-1 flex items-baseline justify-between gap-2 text-xs">
+                      <span class="text-gray-300">{{ range.label }}</span>
+                      {% if range.unit %}<span class="text-gray-500">{{ range.unit }}</span>{% endif %}
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                      {% for input in range.inputs %}
+                        <input type="{{ range.type }}"
+                               name="{{ input.name }}"
+                               value="{{ input.value }}"
+                               {% if range.type == "number" %}step="{{ range.step }}" inputmode="decimal"{% endif %}
+                               placeholder="{{ input.placeholder }}"
+                               aria-label="{{ input.label }}"
+                               class="h-8 min-w-0 rounded-lg bg-white/5 px-2.5 text-sm text-white ring-1 ring-white/10 placeholder:text-gray-500 focus:ring-2 focus:ring-indigo-400 focus:outline-none [color-scheme:dark]">
+                      {% endfor %}
+                    </div>
+                    {% if range.unset %}
+                      <label class="mt-2 inline-block cursor-pointer">
+                        <input type="checkbox"
+                               name="{{ range.key }}"
+                               value="{{ range.unset }}"
+                               {% if range.unset_checked %}checked{% endif %}
+                               class="peer sr-only">
+                        <span class="flex h-7 items-center rounded-full bg-white/5 px-3 text-xs font-medium text-gray-300 ring-1 ring-white/10 transition-colors peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-400 peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-400 hover:bg-white/10">Unrated</span>
+                      </label>
+                    {% endif %}
+                  </div>
+                {% endfor %}
+                {% for field in group.choices %}
+                  <div>
+                    {% if field.label != group.title %}<p class="mb-1 text-xs text-gray-300">{{ field.label }}</p>{% endif %}
+                    <div class="flex max-h-44 flex-wrap gap-1.5 overflow-y-auto p-0.5">
+                      {% for option in field.options %}
+                        <label class="cursor-pointer">
+                          <input type="checkbox"
+                                 name="{{ field.key }}"
+                                 value="{{ option.value }}"
+                                 {% if option.checked %}checked{% endif %}
+                                 class="peer sr-only">
+                          <span class="flex h-7 items-center gap-1.5 rounded-full bg-white/5 px-3 text-xs font-medium text-gray-300 ring-1 ring-white/10 transition-colors peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-400 peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-400 hover:bg-white/10">
+                            {{ option.label }}
+                            {% if option.count is not None %}<span class="tabular-nums opacity-60">{{ option.count }}</span>{% endif %}
+                          </span>
+                        </label>
+                      {% endfor %}
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            </section>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="flex shrink-0 items-center gap-3 border-t border-white/5 px-5 py-3">
+      <button type="button"
+              @click="clearFilters()"
+              class="h-9 cursor-pointer rounded-xl px-3 text-sm font-medium text-gray-300 transition-colors hover:bg-white/5 hover:text-white">
+        Clear all
+      </button>
+      <button type="button"
+              @click="closePanel()"
+              x-text="showLabel"
+              class="h-9 flex-1 cursor-pointer rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white shadow-lg ring-1 shadow-black/30 ring-white/10 transition-colors hover:bg-indigo-500">
+      </button>
+    </div>
+  </div>
+</div>

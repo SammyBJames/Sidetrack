@@ -61,20 +61,17 @@ MAX_SCORE = 10
 # Entries per page of a media type's list
 LIST_PAGE_SIZE = 32
 
-# The rated filter's choices for media with or without a score
-RATED_FILTERS = ("rated", "unrated")
-
 # Media gone through all at once, whose list rows have no progress to show
 UNPROGRESSED_MEDIA_TYPES = (MediaTypes.MOVIE.value, MediaTypes.BOARDGAME.value)
 
-# The date a list's rows show for its sort, as its heading and the entry's
-# attribute, else its last activity
-LIST_DATE_COLUMNS = {
-    MediaSortChoices.ADDED: ("Added", "added_at"),
-    MediaSortChoices.START_DATE: ("Started", "start_date"),
-    MediaSortChoices.END_DATE: ("Finished", "end_date"),
-    MediaSortChoices.RECENT: ("Last Activity", "progressed_at"),
-}
+# The sorts whose value a list's rows already show in a column of their own, so
+# their rows' last column is the last activity instead
+SORTS_WITH_COLUMNS = (
+    MediaSortChoices.TITLE,
+    MediaSortChoices.STATUS,
+    MediaSortChoices.SCORE,
+    MediaSortChoices.PROGRESS,
+)
 
 
 @require_GET
@@ -222,13 +219,19 @@ def media_list(request, username, media_type):
         LIST_PAGE_SIZE,
     ).get_page(request.GET.get("page", 1))
     BasicMedia.objects.annotate_releases(media_page.object_list, media_type)
-    date_heading = _annotate_list_dates(media_page.object_list, sort_filter)
+    sorted_field = _annotate_sorted_values(
+        media_page.object_list,
+        media_type,
+        sort_filter,
+        target_user,
+    )
 
     context = {
         **_library_context(target_user, media_type, status_filter, search, filters),
         "media_list": media_page,
         "active_filters": library_fields.describe_filters(filters),
-        "filter_choices": library_fields.present_choices(target_user, media_type),
+        "filter_count": len(filters),
+        "result_count": media_page.paginator.count,
         "current_layout": layout,
         "current_sort": sort_filter,
         "current_order": sort_order,
@@ -242,7 +245,7 @@ def media_list(request, username, media_type):
             }
             for field in library_fields.get_sortable_fields(media_type)
         ],
-        "date_heading": date_heading,
+        "sorted_field": sorted_field,
         "show_progress": media_type not in UNPROGRESSED_MEDIA_TYPES,
     }
 
@@ -261,6 +264,16 @@ def media_list(request, username, media_type):
             template_name = "app/components/library_results.html"
     else:
         template_name = "app/media_list.html"
+        # Only the whole page has the panel, which the results reloads leave be
+        context["filter_choices"] = library_fields.present_choices(
+            target_user,
+            media_type,
+        )
+        context["filter_groups"] = library_fields.panel_filters(
+            media_type,
+            filters,
+            context["filter_choices"],
+        )
 
     return render(request, template_name, context)
 
@@ -284,40 +297,23 @@ def _list_sort(user, media_type, params, preference, *, own_list):
     return field, preference(f"{media_type}_sort_order", order)
 
 
-def _annotate_list_dates(media_list, sort_filter):
-    """Annotate media with the date its list row shows as `list_date`.
+def _annotate_sorted_values(media_list, media_type, sort_key, user):
+    """Annotate media with the value its list row shows as `sorted_value`.
 
-    It's the date sorted by, else the last activity, or when it was added for
-    media not gone through yet. Returns the date's heading.
+    It's the value of the field the list is sorted by, else its last activity,
+    or when it was added for media not gone through yet. Returns the field the
+    column is of, for its heading.
     """
-    heading, field = LIST_DATE_COLUMNS.get(
-        sort_filter,
-        LIST_DATE_COLUMNS[MediaSortChoices.RECENT],
-    )
+    field = library_fields.get_sort_field(media_type, sort_key)
+    if field.key in SORTS_WITH_COLUMNS:
+        field = library_fields.get_fields(media_type)[MediaSortChoices.RECENT]
     for media in media_list:
-        media.list_date = getattr(media, field, None)
-        if field == "progressed_at" and media.list_date is None:
-            media.list_date = media.created_at
-    return heading
-
-
-def _legacy_rated(filters):
-    """Return "rated" or "unrated" if that's all the rating filter asks, else "".
-
-    It's what the toolbar's rating buttons show as selected.
-    """
-    flt = filters.get(MediaSortChoices.SCORE)
-    if flt is None or flt.max is not None:
-        return ""
-    if flt.unset and flt.min is None:
-        return "unrated"
-    return "rated" if flt.min == 0 and not flt.unset else ""
-
-
-def _legacy_rewatched(filters):
-    """Return whether the filters ask for media finished at least twice."""
-    flt = filters.get(MediaSortChoices.PLAYS)
-    return flt is not None and flt.min == 2 and flt.max is None  # noqa: PLR2004
+        media.sorted_value = library_fields.list_text(
+            field,
+            media,
+            lambda value: app_tags.date_format(value, user),
+        )
+    return field
 
 
 def _library_context(user, media_type, status_filter, search, filters):
@@ -339,12 +335,6 @@ def _library_context(user, media_type, status_filter, search, filters):
         "target_user": user,
         "current_status": status_filter,
         "current_search": search,
-        "current_rated": _legacy_rated(filters),
-        "current_rewatched": _legacy_rewatched(filters),
-        "rated_choices": [
-            ("", "Any"),
-            *zip(RATED_FILTERS, ("Rated", "Unrated"), strict=True),
-        ],
         "status_choices": [
             {
                 "value": value,
@@ -1039,6 +1029,9 @@ def _quick_action_card(request, media_type, media_id):
     )
     media.repeats = len(entries)
     media.added_at = min(entry.created_at for entry in entries)
+    media.completed_entries = sum(
+        entry.status == Status.COMPLETED.value for entry in entries
+    )
 
     # A new item's release is fetched in the background, so keep the card's year
     if request.POST.get("release_year"):
@@ -1053,9 +1046,11 @@ def _quick_action_card(request, media_type, media_id):
         "active": request.POST.get("active") == "true",
     }
     if request.POST.get("card") == "row":
-        context["date_heading"] = _annotate_list_dates(
+        context["sorted_field"] = _annotate_sorted_values(
             [media],
+            media_type,
             request.POST.get("sort"),
+            request.user,
         )
         context["media_type"] = media_type
         context["target_user"] = request.user

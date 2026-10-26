@@ -19,6 +19,7 @@ from app.models import (
     Sources,
     Status,
 )
+from app.templatetags import app_tags
 
 
 class QuickActionViewTests(TestCase):
@@ -553,8 +554,11 @@ class QuickActionViewTests(TestCase):
 
         self.assertTemplateUsed(response, "app/components/media_row.html")
         self.assertNotContains(response, "media-card")
-        self.assertEqual(response.context["date_heading"], "Added")
-        self.assertEqual(response.context["media"].list_date, movie.created_at)
+        self.assertEqual(response.context["sorted_field"].label, "Date added")
+        self.assertEqual(
+            response.context["media"].sorted_value,
+            app_tags.date_format(movie.created_at, self.user),
+        )
         # The list's status counts change with it
         self.assertEqual(response["HX-Trigger"], "libraryChanged")
 

@@ -5,6 +5,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from app.models import Item, MediaTypes, Movie, Sources, Status
+from app.templatetags import app_tags
 
 
 class MediaListFilterViewTests(TestCase):
@@ -66,7 +67,6 @@ class MediaListFilterViewTests(TestCase):
         """The rated filter narrows the list for the request alone."""
         response = self.client.get(f"{self.url}?rated=unrated")
         self.assertEqual(self.titles(response), ["Beta"])
-        self.assertEqual(response.context["current_rated"], "unrated")
 
         response = self.client.get(self.url)
         self.assertEqual(len(self.titles(response)), 2)
@@ -90,9 +90,11 @@ class MediaListFilterViewTests(TestCase):
         """The rows show when media was added while the list sorts by it."""
         response = self.client.get(f"{self.url}?sort=added&layout=table")
 
-        self.assertEqual(response.context["date_heading"], "Added")
+        self.assertEqual(response.context["sorted_field"].label, "Date added")
         movie = response.context["media_list"][0]
-        self.assertEqual(movie.list_date, movie.added_at)
+        self.assertEqual(
+            movie.sorted_value, app_tags.date_format(movie.added_at, self.user)
+        )
         self.assertContains(response, 'class="media-row', count=2)
 
     def test_other_users_list_isnt_saved(self):

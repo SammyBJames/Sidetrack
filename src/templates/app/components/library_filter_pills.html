@@ -1,0 +1,23 @@
+{# The filters narrowing a media type's list, each a pill that removes just itself, with one to clear them all #}
+{% if active_filters %}
+  <div class="-mt-2 flex flex-wrap items-center gap-2"
+       aria-label="Active filters"
+       role="group">
+    {% for pill in active_filters %}
+      <button type="button"
+              data-params="{{ pill.params|join:',' }}"
+              data-value="{{ pill.value|default:'' }}"
+              @click="removeFilter($el.dataset.params.split(','), $el.dataset.value)"
+              aria-label="Remove filter {{ pill.label }}"
+              class="group flex h-7 cursor-pointer items-center gap-1 rounded-full bg-indigo-500/15 pr-1.5 pl-3 text-xs font-medium text-indigo-200 ring-1 ring-indigo-400/30 transition-colors hover:bg-indigo-500/25">
+        {{ pill.label }}
+        <span class="text-indigo-300 group-hover:text-white">{% include "app/icons/x.svg" with classes="size-3.5" %}</span>
+      </button>
+    {% endfor %}
+    <button type="button"
+            @click="clearFilters()"
+            class="h-7 cursor-pointer rounded-full px-2 text-xs font-medium text-gray-400 transition-colors hover:text-white">
+      Clear all
+    </button>
+  </div>
+{% endif %}
