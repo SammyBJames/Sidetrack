@@ -35,6 +35,18 @@ SHOW_METADATA = {
 }
 
 
+# The same show with a third season still to air
+WAITING_SHOW_METADATA = {
+    **SHOW_METADATA,
+    "related": {
+        "seasons": [
+            *SHOW_METADATA["related"]["seasons"],
+            {"season_number": 3, "image": "img3.jpg", "first_air_date": "2099-01-01"},
+        ],
+    },
+}
+
+
 @patch("app.models.providers.services.get_media_metadata", return_value=SHOW_METADATA)
 class ShowRewatchTests(TestCase):
     """Test rewatching a finished show through its seasons and episodes."""
@@ -210,6 +222,49 @@ class ShowRewatchTests(TestCase):
         # Season 3, not watched yet, doesn't count
         self.assertEqual(TV.objects.get(pk=self.tv.pk).plays, 2)
 
+    def plan_waiting_show_rewatch(self):
+        """Plan to rewatch the show from the form while it waits for season 3."""
+        TV.objects.filter(pk=self.tv.pk).update(status=Status.PLANNING.value)
+        self.tv = TV.objects.get(pk=self.tv.pk)
+        self.tv.status = Status.PLANNING_REPEAT.value
+        self.tv.save()
+
+    def test_rewatch_of_show_waiting_for_new_season_ends_planned(self, mock_metadata):
+        """Rewatching a show before its new season airs leaves it waiting for it."""
+        mock_metadata.return_value = WAITING_SHOW_METADATA
+        self.plan_waiting_show_rewatch()
+
+        for season_number in (1, 2):
+            for episode_number in (1, 2):
+                self.watch(season_number, episode_number)
+
+        self.assertEqual(self.statuses()[0], Status.PLANNING.value)
+
+    def test_rewatch_finished_from_form_on_waiting_show_ends_planned(
+        self,
+        mock_metadata,
+    ):
+        """Finishing a waiting show's rewatch at once leaves it waiting too."""
+        mock_metadata.return_value = WAITING_SHOW_METADATA
+        self.plan_waiting_show_rewatch()
+
+        self.tv = TV.objects.get(pk=self.tv.pk)
+        self.tv.status = Status.COMPLETED.value
+        self.tv.save()
+
+        self.assertEqual(
+            self.statuses(),
+            (
+                Status.PLANNING.value,
+                {
+                    0: Status.COMPLETED.value,
+                    1: Status.COMPLETED.value,
+                    2: Status.COMPLETED.value,
+                    3: Status.PLANNING.value,
+                },
+            ),
+        )
+
     def test_leaving_a_rewatch_cancels_it(self, _):
         """Another status than finished cancels the rewatch, adding no watches."""
         self.plan_rewatch()
@@ -243,6 +298,40 @@ class ShowRewatchTests(TestCase):
         season = Season.objects.get(pk=season.pk)
         self.assertIsNone(
             quick_actions.get_quick_action(MediaTypes.SEASON.value, season),
+        )
+
+    def test_finishing_a_season_leaves_an_earlier_one_to_watch(self, mock_metadata):
+        """A show doesn't wait for a new season while a released one is unwatched."""
+        mock_metadata.return_value = {
+            **WAITING_SHOW_METADATA,
+            "season/2": {"episodes": SHOW_METADATA["episodes"]},
+        }
+        Episode.objects.filter(related_season=self.seasons[1]).delete()
+        Season.objects.filter(pk=self.seasons[1].pk).update(
+            status=Status.PLANNING.value,
+        )
+        Season.objects.filter(pk=self.seasons[2].pk).update(
+            status=Status.IN_PROGRESS.value,
+        )
+        Episode.objects.filter(
+            related_season=self.seasons[2],
+            item__episode_number=2,
+        ).delete()
+        TV.objects.filter(pk=self.tv.pk).update(status=Status.IN_PROGRESS.value)
+
+        self.watch(2, 2)
+
+        self.assertEqual(
+            self.statuses(),
+            (
+                Status.IN_PROGRESS.value,
+                {
+                    0: Status.COMPLETED.value,
+                    1: Status.PLANNING.value,
+                    2: Status.COMPLETED.value,
+                    3: Status.PLANNING.value,
+                },
+            ),
         )
 
     def test_marking_rewatched_watches_every_episode_again(self, _):

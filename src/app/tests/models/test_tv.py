@@ -295,6 +295,52 @@ class TVStatusTests(TestCase):
             self.assertTrue(season.episodes.exists())
 
     @patch("app.models.providers.services.get_media_metadata")
+    def test_completed_status_plans_show_waiting_on_new_season(
+        self,
+        mock_get_metadata,
+    ):
+        """A show finished up to an unaired season is planned for it."""
+        mock_get_metadata.return_value = {
+            "max_progress": 1,
+            "related": {
+                "seasons": [
+                    {"season_number": 1, "image": "img1.jpg"},
+                    {"season_number": 2, "image": "img2.jpg"},
+                ],
+            },
+            "season/1": {
+                "image": "http://example.com/image.jpg",
+                "season_number": 1,
+                "episodes": [
+                    {"episode_number": 1, "air_date": datetime(2020, 1, 1, tzinfo=UTC)},
+                ],
+            },
+            "season/2": {
+                "image": "http://example.com/image.jpg",
+                "season_number": 2,
+                "episodes": [
+                    {"episode_number": 1, "air_date": datetime(2999, 1, 1, tzinfo=UTC)},
+                ],
+            },
+        }
+
+        self.tv.status = Status.COMPLETED.value
+        self.tv.save()
+
+        self.tv.refresh_from_db()
+        self.assertEqual(self.tv.status, Status.PLANNING.value)
+        self.assertEqual(
+            self.tv.seasons.get(item__season_number=2).status,
+            Status.PLANNING.value,
+        )
+        self.assertTrue(
+            UserMessage.objects.filter(
+                user=self.user,
+                message=f"{self.tv} was planned until its next season starts.",
+            ).exists(),
+        )
+
+    @patch("app.models.providers.services.get_media_metadata")
     def test_completed_status_skips_unaired_episodes_and_future_seasons(
         self,
         mock_get_metadata,

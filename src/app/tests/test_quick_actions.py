@@ -306,3 +306,32 @@ class ShowNextSeasonTests(TestCase):
         self.seasons[0].status = Status.IN_PROGRESS.value
         Season.save_base(self.seasons[0])
         self.assertEqual(self.next_season_number(), 0)
+
+    def test_unaired_planned_season_waits_for_its_release(self):
+        """An unaired planned season, and a show waiting on it, offer nothing."""
+        self.tv.status = Status.PLANNING.value
+        TV.save_base(self.tv)
+        for season in self.seasons.values():
+            season.status = Status.COMPLETED.value
+            Season.save_base(season)
+        self.seasons[2].status = Status.PLANNING.value
+        Season.save_base(self.seasons[2])
+        Event.objects.filter(item=self.seasons[2].item).update(
+            datetime=timezone.now() + timedelta(days=30),
+        )
+
+        self.assertIsNone(
+            quick_actions.get_quick_action(MediaTypes.SEASON.value, self.seasons[2]),
+        )
+        self.assertIsNone(quick_actions.get_quick_action(MediaTypes.TV.value, self.tv))
+
+    def test_unaired_uses_prefetched_events(self):
+        """Cards with their releases loaded don't query them again."""
+        item = self.seasons[2].item
+        item.prefetched_events = list(Event.objects.filter(item=item))
+
+        with self.assertNumQueries(0):
+            self.assertFalse(quick_actions._unaired(item))
+
+        item.prefetched_events[0].datetime = timezone.now() + timedelta(days=1)
+        self.assertTrue(quick_actions._unaired(item))

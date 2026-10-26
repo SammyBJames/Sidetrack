@@ -250,6 +250,9 @@ def _build_user_media_lookup(user, items, media_type):
         media_type,
     )
     BasicMedia.objects.annotate_max_progress(media_queryset, media_type)
+    # Shows get theirs with max_progress, and the rest from their prefetched events
+    if media_type != MediaTypes.TV.value:
+        BasicMedia.objects._annotate_next_event(media_queryset)
 
     media_lookup = {}
     for media in media_queryset:

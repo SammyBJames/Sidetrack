@@ -32,6 +32,18 @@
         </span>
       </span>
     </button>
+  {% elif media.next_event and media.status == Status.PLANNING.value or media.next_event and media.status == Status.IN_PROGRESS.value %}
+    {# Nothing to watch until its next release, e.g. a show waiting on its new season, so it shows when that is, in its status's colors like on home #}
+    {% if media.status == Status.PLANNING.value %}
+      {% firstof "text-sky-400" as clock_color %}
+    {% else %}
+      {% firstof "text-indigo-300" as clock_color %}
+    {% endif %}
+    {% if item.media_type == MediaTypes.TV.value %}
+      {% include "app/components/release_button.html" with event=media.next_event event_label=media.next_event|season_release_label:user home_status=media.status %}
+    {% else %}
+      {% include "app/components/release_button.html" with event=media.next_event home_status=media.status %}
+    {% endif %}
   {% elif media.status %}
     {% include "app/components/status_badge.html" with status=media.status %}
   {% endif %}

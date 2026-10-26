@@ -8,13 +8,29 @@ from django.db.models import Prefetch
 from django.utils import timezone
 from simple_history.utils import bulk_create_with_history, bulk_update_with_history
 
-from app.models import TV, Item, MediaTypes, Season, Status
+from app.models import REPEAT_STATUSES, TV, Item, MediaTypes, Season, Status
 from app.providers import services, tmdb
 from events.models import Event
 
 from .helpers import date_parser, resolve_episode_datetimes
 
 logger = logging.getLogger(__name__)
+
+# Shows that get their new seasons planned, unlike paused and dropped ones
+PLANNABLE_TV_STATUSES = (
+    Status.COMPLETED.value,
+    Status.PLANNING.value,
+    Status.IN_PROGRESS.value,
+    *REPEAT_STATUSES,
+)
+
+# Statuses of the season before a new one that plan it, as the user is caught
+# up to it or means to watch it. Seasons being repeated were finished before.
+NEXT_SEASON_PLANNING_STATUSES = (
+    Status.COMPLETED.value,
+    Status.PLANNING.value,
+    *REPEAT_STATUSES,
+)
 
 
 def process_tv(tv_item, events_bulk):
@@ -33,7 +49,7 @@ def process_tv(tv_item, events_bulk):
             seasons_to_process,
             events_bulk,
         )
-        reopen_completed_tv_with_new_seasons(
+        plan_new_seasons(
             tv_item,
             processed_season_items,
             events_bulk,
@@ -130,8 +146,13 @@ def process_tv_seasons(tv_item, seasons_to_process, events_bulk):
     return processed_season_items
 
 
-def reopen_completed_tv_with_new_seasons(tv_item, season_items, events_bulk):
-    """Reopen completed TV entries and create planning seasons when needed."""
+def plan_new_seasons(tv_item, season_items, events_bulk):
+    """Plan a show's newly announced seasons for users caught up to them.
+
+    A new season is planned when the season before it is planned or finished.
+    A finished show is planned with it rather than started, so it waits in
+    Planning until the season's first episode is watched.
+    """
     eligible_season_items = [
         season_item
         for season_item in season_items
@@ -141,14 +162,11 @@ def reopen_completed_tv_with_new_seasons(tv_item, season_items, events_bulk):
         season_item.season_number: season_item for season_item in eligible_season_items
     }
     if not season_item_map:
-        logger.info(
-            "%s - No processed seasons eligible for completed-TV reopening",
-            tv_item,
-        )
+        logger.info("%s - No processed seasons eligible for planning", tv_item)
         return
 
-    # Only future season events should reopen a completed show; processed
-    # past-only seasons can exist when local season tracking was incomplete.
+    # Only future season events are new seasons; processed past-only seasons
+    # can exist when local season tracking was incomplete.
     future_season_numbers = {
         event.item.season_number
         for event in events_bulk
@@ -156,18 +174,15 @@ def reopen_completed_tv_with_new_seasons(tv_item, season_items, events_bulk):
     }
     if not future_season_numbers:
         logger.info(
-            "%s - Processed seasons have no future events; "
-            "skipping completed-TV reopening",
+            "%s - Processed seasons have no future events; skipping season planning",
             tv_item,
         )
         return
 
     sorted_season_numbers = sorted(future_season_numbers)
-    completed_tvs = list(
-        TV.objects.filter(
-            item=tv_item,
-            status=Status.COMPLETED.value,
-        )
+    # Paused and dropped shows are left as they are
+    tracked_tvs = list(
+        TV.objects.filter(item=tv_item, status__in=PLANNABLE_TV_STATUSES)
         .select_related("user")
         .prefetch_related(
             Prefetch(
@@ -176,81 +191,99 @@ def reopen_completed_tv_with_new_seasons(tv_item, season_items, events_bulk):
             ),
         ),
     )
-    if not completed_tvs:
-        logger.info("%s - No completed TV entries to reopen", tv_item)
+    if not tracked_tvs:
+        logger.info("%s - No TV entries to plan new seasons for", tv_item)
         return
 
     logger.info(
-        "%s - Checking %d completed TV entries against discovered seasons %s",
+        "%s - Checking %d TV entries against discovered seasons %s",
         tv_item,
-        len(completed_tvs),
+        len(tracked_tvs),
         sorted_season_numbers,
     )
 
-    seasons_by_tv_id = {}
-    tvs_to_update = []
+    plans = []
+    for tv in tracked_tvs:
+        new_seasons = _new_seasons_to_plan(tv, sorted_season_numbers, season_item_map)
+        if new_seasons:
+            plans.append((tv, new_seasons))
 
-    for tv in completed_tvs:
-        existing_season_numbers = {
-            season.item.season_number
-            for season in tv.seasons.all()
-            if season.item.season_number and season.item.season_number > 0
-        }
-        missing_season_numbers = [
-            season_number
-            for season_number in sorted_season_numbers
-            if season_number not in existing_season_numbers
-        ]
-
-        if not missing_season_numbers:
-            logger.info(
-                "%s - User %s already tracks all discovered seasons",
-                tv_item,
-                tv.user,
-            )
-            continue
-
-        logger.info(
-            "%s - Reopening completed TV for user %s; new seasons: %s",
-            tv_item,
-            tv.user,
-            missing_season_numbers,
-        )
-        seasons_by_tv_id[tv.id] = [
-            Season(
-                item=season_item_map[season_number],
-                related_tv=tv,
-                user=tv.user,
-                status=Status.PLANNING.value,
-            )
-            for season_number in missing_season_numbers
-        ]
-        tv.status = Status.IN_PROGRESS.value
-        tvs_to_update.append(tv)
-
-    if not seasons_by_tv_id:
-        logger.info("%s - No completed TV entries required reopening", tv_item)
+    if not plans:
+        logger.info("%s - No TV entries needed new seasons planned", tv_item)
         return
 
     with transaction.atomic():
-        for tv in tvs_to_update:
-            bulk_create_with_history(
-                seasons_by_tv_id[tv.id],
-                Season,
-                default_user=tv.user,
-            )
-            bulk_update_with_history(
-                [tv],
-                TV,
-                ["status"],
-                default_user=tv.user,
-            )
+        for tv, new_seasons in plans:
+            bulk_create_with_history(new_seasons, Season, default_user=tv.user)
+            # A finished show waits in Planning for its new season
+            if tv.status == Status.COMPLETED.value:
+                tv.status = Status.PLANNING.value
+                bulk_update_with_history(
+                    [tv],
+                    TV,
+                    ["status"],
+                    default_user=tv.user,
+                )
             logger.info(
-                "%s - Reopened TV for user %s and created %d planning seasons",
+                "%s - Planned %d new seasons for user %s",
                 tv_item,
+                len(new_seasons),
                 tv.user,
-                len(seasons_by_tv_id[tv.id]),
             )
+
+
+def _new_seasons_to_plan(tv, season_numbers, season_item_map):
+    """Return the new planning seasons of a show for the season numbers found.
+
+    There are none when the user tracks them all already, or when the season
+    before the first new one isn't planned or finished.
+    """
+    existing_seasons = {
+        season.item.season_number: season
+        for season in tv.seasons.all()
+        if season.item.season_number and season.item.season_number > 0
+    }
+    missing_season_numbers = [
+        season_number
+        for season_number in season_numbers
+        if season_number not in existing_seasons
+    ]
+    if not missing_season_numbers:
+        logger.info(
+            "%s - User %s already tracks all discovered seasons",
+            tv.item,
+            tv.user,
+        )
+        return []
+
+    earlier = [
+        number for number in existing_seasons if number < missing_season_numbers[0]
+    ]
+    previous_status = existing_seasons[max(earlier)].status if earlier else tv.status
+    if previous_status not in NEXT_SEASON_PLANNING_STATUSES:
+        logger.info(
+            "%s - User %s isn't caught up to the new seasons %s",
+            tv.item,
+            tv.user,
+            missing_season_numbers,
+        )
+        return []
+
+    logger.info(
+        "%s - Planning new seasons %s for user %s",
+        tv.item,
+        missing_season_numbers,
+        tv.user,
+    )
+    return [
+        Season(
+            item=season_item_map[season_number],
+            related_tv=tv,
+            user=tv.user,
+            status=Status.PLANNING.value,
+        )
+        for season_number in missing_season_numbers
+    ]
 
 
 def process_season_episodes(item, metadata, events_bulk):

@@ -4,10 +4,12 @@ from dataclasses import dataclass
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Min
 from django.utils import timezone
 
 from app import config
 from app.models import REPEAT_STATUSES, BasicMedia, MediaTypes, Status
+from events.models import Event
 
 PLAN = "plan"
 START = "start"
@@ -108,6 +110,9 @@ def get_quick_action(media_type, media):
                 config.get_status_icon(Status.IN_PROGRESS.value),
                 Status.IN_PROGRESS.value,
             )
+        if status == Status.PLANNING.value:
+            # Its planned seasons are still to air
+            return None
 
     key = _action_key(media_type, media)
     if key is None:
@@ -151,6 +156,9 @@ def _action_key(media_type, media):
     if status is None:
         return PLAN
     if media_type == MediaTypes.SEASON.value and status in EPISODE_STATUSES:
+        if status == Status.PLANNING.value and _unaired(media.item):
+            # Nothing to watch until it airs
+            return None
         return _progress_action_key(media_type, media)
     if status in (Status.IN_PROGRESS.value, Status.REPEATING.value):
         return _progress_action_key(media_type, media)
@@ -324,6 +332,21 @@ def get_show_next_season(tv):
         if get_quick_action(MediaTypes.SEASON.value, season):
             return season
     return None
+
+
+def _unaired(item):
+    """Return whether all of an item's known releases are still to come.
+
+    Uses the item's `prefetched_events` when they were loaded.
+    """
+    events = getattr(item, "prefetched_events", None)
+    if events is not None:
+        first_release = min((event.datetime for event in events), default=None)
+    else:
+        first_release = Event.objects.filter(item=item).aggregate(
+            first=Min("datetime"),
+        )["first"]
+    return first_release is not None and first_release > timezone.now()
 
 
 def _watched(media_type):

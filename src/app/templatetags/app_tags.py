@@ -430,6 +430,12 @@ def play_count(entry, entries):
 
 
 @register.filter
+def season_release_label(event, user):
+    """Return a season release's episode and day, e.g. S2E1 · Tomorrow 21:00."""
+    return f"S{event.item.season_number}{release_label(event, user)}"
+
+
+@register.filter
 def release_label(event, user):
     """Return a release's number and day, e.g. E4 · Tomorrow 21:00."""
     day = release_day(event, user)

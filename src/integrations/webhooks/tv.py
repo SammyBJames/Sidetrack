@@ -235,7 +235,14 @@ class TVWebhookMixin:
 
         if tv_created:
             logger.info("Created new TV instance: %s", tv_metadata["title"])
-        elif tv_instance.status not in SETTLED_STATUSES:
+        # A finished season's episode played again leaves a waiting show planned
+        elif (
+            tv_instance.status not in SETTLED_STATUSES
+            and not tv_instance.seasons.filter(
+                item__season_number=season_number,
+                status__in=(Status.COMPLETED.value, *REPEAT_STATUSES),
+            ).exists()
+        ):
             tv_instance.status = Status.IN_PROGRESS.value
             tv_instance.save()
             logger.info(

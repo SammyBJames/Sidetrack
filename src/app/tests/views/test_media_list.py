@@ -10,6 +10,7 @@ from app.models import (
     Item,
     MediaTypes,
     Movie,
+    Season,
     Sources,
     Status,
 )
@@ -311,3 +312,25 @@ class TVCardCountsTests(TestCase):
         TV.save_base(self.tv)
 
         self.assertIn(">2 Seasons • 5 Episodes<", self.card_text())
+
+    def test_show_waiting_on_its_new_season_shows_when_it_airs(self):
+        """A planned show with only unaired seasons left offers its release date."""
+        self.tv.status = Status.PLANNING.value
+        TV.save_base(self.tv)
+        for number, status in ((1, Status.COMPLETED.value), (3, Status.PLANNING.value)):
+            Season.save_base(
+                Season(
+                    item=Item.objects.get(
+                        media_type=MediaTypes.SEASON.value,
+                        season_number=number,
+                    ),
+                    user=self.user,
+                    related_tv=self.tv,
+                    status=status,
+                ),
+            )
+
+        content = self.card_text()
+
+        self.assertIn('aria-label="Add to calendar: S3E8', content)
+        self.assertNotIn("Mark S3E1 watched", content)

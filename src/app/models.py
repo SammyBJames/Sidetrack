@@ -600,20 +600,28 @@ class MediaManager(models.Manager):
     def _annotate_tv_released_episodes(self, tv_list, current_datetime):
         """Annotate TV shows with the number of released episodes."""
         # Prefetch all relevant events in one query
-        released_events = events.models.Event.objects.filter(
+        season_events = events.models.Event.objects.filter(
             item__media_id__in=[tv.item.media_id for tv in tv_list],
             item__source=tv_list[0].item.source if tv_list else None,
             item__media_type=MediaTypes.SEASON.value,
             item__season_number__gt=0,
-            datetime__lte=current_datetime,
             content_number__isnull=False,
         ).select_related("item")
 
-        # Create a dictionary to store max episode numbers per season per show
+        # Create a dictionary to store max episode numbers per season per show,
+        # and one of each show's next release with a known date
         released_episodes = {}
+        next_events = {}
 
-        for event in released_events:
+        for event in season_events:
             media_id = event.item.media_id
+            if event.datetime > current_datetime:
+                upcoming = next_events.get(media_id)
+                if not event.is_max_datetime and (
+                    upcoming is None or event.datetime < upcoming.datetime
+                ):
+                    next_events[media_id] = event
+                continue
             season_number = event.item.season_number
             episode_number = event.content_number
 
@@ -631,6 +639,7 @@ class MediaManager(models.Manager):
             tv_episodes = released_episodes.get(tv.item.media_id, {})
             tv.max_progress = sum(tv_episodes.values()) if tv_episodes else 0
             tv.released_seasons = len(tv_episodes)
+            tv.next_event = next_events.get(tv.item.media_id)
 
     def fetch_media_for_items(self, media_types, item_ids, user, status_filter=None):
         """Fetch media objects for given items, optionally filtering by status.
@@ -1158,6 +1167,8 @@ class TV(Media):
         episodes_to_create = []
         current_date = timezone.localdate()
         tv_completed = True
+        # What the seasons not finished are left as
+        remaining_statuses = set()
 
         season_numbers = [
             season["season_number"]
@@ -1218,6 +1229,7 @@ class TV(Media):
 
             if target_status != Status.COMPLETED.value:
                 tv_completed = False
+                remaining_statuses.add(target_status)
 
         bulk_create_with_history(seasons_to_create, Season)
         bulk_update_with_history(seasons_to_update, Season, ["status"])
@@ -1243,7 +1255,10 @@ class TV(Media):
                 level=UserMessageLevel.INFO,
             )
 
-        if not tv_completed:
+        if remaining_statuses == {Status.PLANNING.value}:
+            # Only seasons still to air are left
+            self._plan_until_next_season()
+        elif not tv_completed:
             self.status = Status.IN_PROGRESS.value
             bulk_update_with_history(
                 [self],
@@ -1254,6 +1269,20 @@ class TV(Media):
                 "was left in progress because unreleased episodes or seasons remain.",
                 level=UserMessageLevel.WARNING,
             )
+
+    def _plan_until_next_season(self):
+        """Plan a show whose released seasons are all watched, for the next one.
+
+        It's started again when the next season's first episode is watched.
+        """
+        if self.status == Status.PLANNING.value:
+            return
+        self.status = Status.PLANNING.value
+        bulk_update_with_history([self], TV, fields=["status"])
+        self.create_user_message(
+            "was planned until its next season starts.",
+            level=UserMessageLevel.INFO,
+        )
 
     def plan_seasons(self):
         """Add the show's seasons, other than specials, to the watchlist with it.
@@ -1390,12 +1419,49 @@ class TV(Media):
                 level=UserMessageLevel.INFO,
             )
 
+        if self._waits_for_next_season():
+            self._plan_until_next_season()
+
     def _cancel_repeat(self):
         """Return the seasons being rewatched to finished, without new watches."""
         seasons = list(self.seasons.filter(status__in=REPEAT_STATUSES))
         for season in seasons:
             season.status = Status.COMPLETED.value
         bulk_update_with_history(seasons, Season, fields=["status"])
+
+    def _waits_for_next_season(self):
+        """Return whether the only seasons left to watch are planned and unaired.
+
+        Seasons missing from the show's metadata aren't known to be unaired.
+        """
+        seasons_left = list(
+            self.seasons.filter(item__season_number__gt=0)
+            .exclude(status__in=(Status.COMPLETED.value, *REPEAT_STATUSES))
+            .select_related("item"),
+        )
+        if not seasons_left or any(
+            season.status != Status.PLANNING.value for season in seasons_left
+        ):
+            return False
+
+        tv_metadata = providers.services.get_media_metadata(
+            self.item.media_type,
+            self.item.media_id,
+            self.item.source,
+        )
+        air_dates = {
+            season_data["season_number"]: season_data.get("first_air_date")
+            for season_data in tv_metadata.get("related", {}).get("seasons", [])
+        }
+        current_date = timezone.localdate()
+        return all(
+            season.item.season_number in air_dates
+            and not app.helpers.is_released_date(
+                air_dates[season.item.season_number],
+                current_date,
+            )
+            for season in seasons_left
+        )
 
     def _mark_in_progress_seasons_as_dropped(self):
         """Mark all in-progress seasons as dropped."""
@@ -1526,8 +1592,11 @@ class TV(Media):
                     "was marked as rewatched automatically.",
                     level=UserMessageLevel.SUCCESS,
                 )
-                self.status = Status.COMPLETED.value
-                bulk_update_with_history([self], TV, fields=["status"])
+                if self._waits_for_next_season():
+                    self._plan_until_next_season()
+                else:
+                    self.status = Status.COMPLETED.value
+                    bulk_update_with_history([self], TV, fields=["status"])
             return
 
         if self._start_next_available_season(
@@ -1546,7 +1615,10 @@ class TV(Media):
             .exists()
         )
 
-        if incomplete_seasons_exist and self.status != Status.IN_PROGRESS.value:
+        if self._waits_for_next_season():
+            self._plan_until_next_season()
+
+        elif incomplete_seasons_exist and self.status != Status.IN_PROGRESS.value:
             self.status = Status.IN_PROGRESS.value
             bulk_update_with_history(
                 [self],

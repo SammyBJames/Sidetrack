@@ -1,7 +1,7 @@
 {% load app_tags %}
 
-{# An upcoming release on a card, which reveals its date on hover. With an `event` it adds that to a calendar when clicked; without one it shows `label`. Takes home_status and clock_color from the including card #}
-{% firstof event|release_label:user label as label %}
+{# An upcoming release on a card, which reveals its date on hover. With an `event` it adds that to a calendar when clicked, named by `event_label` if given; without one it shows `label`. Takes home_status and clock_color from the including card #}
+{% firstof event_label event|release_label:user label as label %}
 <div class="relative size-7 shrink-0">
   {% if event %}
     <a href="{% url 'download_event' event.id %}"

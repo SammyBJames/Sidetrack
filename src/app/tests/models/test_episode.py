@@ -347,7 +347,8 @@ class EpisodeStatusTests(TestCase):
         self.tv.refresh_from_db()
 
         self.assertEqual(next_season.status, Status.PLANNING.value)
-        self.assertEqual(self.tv.status, Status.IN_PROGRESS.value)
+        # Every released episode is watched, so the show waits for the next season
+        self.assertEqual(self.tv.status, Status.PLANNING.value)
 
     @patch("app.models.providers.services.get_media_metadata")
     def test_rewatch_last_episode_does_not_duplicate_completion_messages(

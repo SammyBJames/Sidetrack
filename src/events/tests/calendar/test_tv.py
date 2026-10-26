@@ -5,7 +5,7 @@ import requests
 from django.core.cache import cache
 from django.test import TestCase
 
-from app.models import TV, Item, Season, Status
+from app.models import TV, Item, MediaTypes, Season, Status
 from events.calendar.helpers import date_parser
 from events.calendar.tv import (
     get_episode_datetime,
@@ -92,13 +92,13 @@ class CalendarTVTests(CalendarFixturesMixin, TestCase):
     @patch("events.calendar.tv.get_tvmaze_episode_map")
     @patch("events.calendar.tv.tmdb.tv_with_seasons")
     @patch("events.calendar.tv.tmdb.tv")
-    def test_process_tv_reopens_completed_show_with_new_season_as_planning(
+    def test_process_tv_plans_completed_show_with_new_season(
         self,
         mock_tv,
         mock_tv_with_seasons,
         mock_get_tvmaze_episode_map,
     ):
-        """Completed TV should reopen and create the discovered season as planning."""
+        """A completed show is planned with its new season, not started."""
         TV.objects.filter(item=self.tv_item, user=self.user).update(
             status=Status.COMPLETED.value,
         )
@@ -144,7 +144,7 @@ class CalendarTVTests(CalendarFixturesMixin, TestCase):
         season_two = Season.objects.get(item=season_two_item, user=self.user)
         tv = TV.objects.get(item=self.tv_item, user=self.user)
 
-        self.assertEqual(tv.status, Status.IN_PROGRESS.value)
+        self.assertEqual(tv.status, Status.PLANNING.value)
         self.assertEqual(season_two.status, Status.PLANNING.value)
         self.assertEqual(len(events_bulk), 1)
 
@@ -205,6 +205,133 @@ class CalendarTVTests(CalendarFixturesMixin, TestCase):
             ).exists(),
         )
         self.assertEqual(len(events_bulk), 1)
+
+    @patch("events.calendar.tv.get_tvmaze_episode_map", return_value={})
+    @patch("events.calendar.tv.tmdb.tv_with_seasons")
+    @patch("events.calendar.tv.tmdb.tv")
+    def test_process_tv_plans_new_season_only_when_caught_up(
+        self,
+        mock_tv,
+        mock_tv_with_seasons,
+        _,
+    ):
+        """A new season is planned after a planned or finished one, never dropped."""
+        mock_tv.return_value = {
+            "related": {
+                "seasons": [
+                    {"season_number": 1, "episodes": [1]},
+                    {"season_number": 2, "episodes": [1]},
+                ],
+            },
+            "next_episode_season": 2,
+        }
+        mock_tv_with_seasons.return_value = {
+            "season/2": {
+                "image": "http://example.com/season2.jpg",
+                "season_number": 2,
+                "episodes": [{"episode_number": 1, "air_date": "2099-01-20"}],
+                "tvdb_id": "81189",
+            },
+        }
+        Event.objects.create(
+            item=self.season_item,
+            content_number=1,
+            datetime=date_parser("2008-01-20"),
+        )
+        cases = (
+            # The show, its first season, whether the new one is planned, and
+            # the show's status after
+            (Status.PLANNING.value, Status.PLANNING.value, True, Status.PLANNING),
+            (Status.IN_PROGRESS.value, Status.IN_PROGRESS.value, False, None),
+            (Status.REPEATING.value, Status.COMPLETED.value, True, None),
+            (Status.REPEATING.value, Status.REPEATING.value, True, None),
+            (Status.DROPPED.value, Status.COMPLETED.value, False, None),
+            # The previous season decides, not the show
+            (Status.IN_PROGRESS.value, Status.COMPLETED.value, True, None),
+        )
+        for tv_status, season_status, planned, status_after in cases:
+            with self.subTest(tv=tv_status, season=season_status):
+                TV.objects.filter(item=self.tv_item, user=self.user).update(
+                    status=tv_status,
+                )
+                Season.objects.filter(item=self.season_item, user=self.user).update(
+                    status=season_status,
+                )
+                Season.objects.filter(
+                    item__season_number=2,
+                    user=self.user,
+                ).delete()
+
+                process_tv(self.tv_item, [])
+
+                tv = TV.objects.get(item=self.tv_item, user=self.user)
+                self.assertEqual(
+                    Season.objects.filter(
+                        item__season_number=2,
+                        user=self.user,
+                        status=Status.PLANNING.value,
+                    ).exists(),
+                    planned,
+                )
+                self.assertEqual(tv.status, status_after or tv_status)
+
+    @patch("events.calendar.tv.get_tvmaze_episode_map", return_value={})
+    @patch("events.calendar.tv.tmdb.tv_with_seasons")
+    @patch("events.calendar.tv.tmdb.tv")
+    def test_process_tv_new_season_follows_the_season_before_it(
+        self,
+        mock_tv,
+        mock_tv_with_seasons,
+        _,
+    ):
+        """A new season isn't planned while the season just before it is watched."""
+        mock_tv.return_value = {
+            "related": {
+                "seasons": [
+                    {"season_number": number, "episodes": [1]} for number in (1, 2, 3)
+                ],
+            },
+            "next_episode_season": 3,
+        }
+        mock_tv_with_seasons.return_value = {
+            "season/3": {
+                "image": "http://example.com/season3.jpg",
+                "season_number": 3,
+                "episodes": [{"episode_number": 1, "air_date": "2099-01-20"}],
+                "tvdb_id": "81189",
+            },
+        }
+        TV.objects.filter(item=self.tv_item, user=self.user).update(
+            status=Status.IN_PROGRESS.value,
+        )
+        Season.objects.filter(item=self.season_item, user=self.user).update(
+            status=Status.COMPLETED.value,
+        )
+        second_item = Item.objects.create(
+            media_id=self.tv_item.media_id,
+            source=self.tv_item.source,
+            media_type=MediaTypes.SEASON.value,
+            title=self.tv_item.title,
+            season_number=2,
+        )
+        Season.objects.create(
+            item=second_item,
+            user=self.user,
+            related_tv=TV.objects.get(item=self.tv_item, user=self.user),
+            status=Status.IN_PROGRESS.value,
+        )
+        for item in (self.season_item, second_item):
+            Event.objects.create(
+                item=item,
+                content_number=1,
+                datetime=date_parser("2008-01-20"),
+            )
+
+        process_tv(self.tv_item, [])
+
+        self.assertFalse(
+            Season.objects.filter(item__season_number=3, user=self.user).exists(),
+        )
 
     @patch("events.calendar.tv.services.api_request")
     def test_get_tvmaze_episode_map(self, mock_api_request):

@@ -617,11 +617,11 @@ class SeasonStatusTests(TestCase):
         )
 
     @patch("app.models.providers.services.get_media_metadata")
-    def test_completed_status_with_future_next_season_keeps_tv_in_progress(
+    def test_completed_status_with_future_next_season_plans_tv(
         self,
         mock_get_metadata,
     ):
-        """Completing a season should not auto-start a future season."""
+        """Completing a season plans the show for its unaired next season."""
         next_season_item = Item.objects.create(
             media_id="123",
             source=Sources.TMDB.value,
@@ -637,6 +637,24 @@ class SeasonStatusTests(TestCase):
             status=Status.PLANNING.value,
         )
 
+        tv_metadata = {
+            "related": {
+                "seasons": [
+                    {
+                        "season_number": 1,
+                        "image": "season_img.jpg",
+                        "first_air_date": datetime(2020, 1, 1, tzinfo=UTC),
+                    },
+                    {
+                        "season_number": 2,
+                        "image": "season_img2.jpg",
+                        "first_air_date": datetime(2999, 1, 1, tzinfo=UTC),
+                    },
+                ],
+            },
+        }
+        # The show's metadata is fetched to find the next season, then to check
+        # that it's still to air
         mock_get_metadata.side_effect = [
             {
                 "episodes": [
@@ -648,22 +666,8 @@ class SeasonStatusTests(TestCase):
                 ],
                 "image": "season_img.jpg",
             },
-            {
-                "related": {
-                    "seasons": [
-                        {
-                            "season_number": 1,
-                            "image": "season_img.jpg",
-                            "first_air_date": datetime(2020, 1, 1, tzinfo=UTC),
-                        },
-                        {
-                            "season_number": 2,
-                            "image": "season_img2.jpg",
-                            "first_air_date": datetime(2999, 1, 1, tzinfo=UTC),
-                        },
-                    ],
-                },
-            },
+            tv_metadata,
+            tv_metadata,
         ]
 
         self.season.status = Status.COMPLETED.value
@@ -672,13 +676,12 @@ class SeasonStatusTests(TestCase):
         next_season.refresh_from_db()
         self.tv.refresh_from_db()
         self.assertEqual(next_season.status, Status.PLANNING.value)
-        self.assertEqual(self.tv.status, Status.IN_PROGRESS.value)
-        self.assertTrue(
+        # Already planned, it stays so rather than going in progress
+        self.assertEqual(self.tv.status, Status.PLANNING.value)
+        self.assertFalse(
             UserMessage.objects.filter(
                 user=self.user,
-                level=UserMessageLevel.INFO,
-                message=f"{self.tv} remains in progress because another season "
-                "is still pending or has not aired yet.",
+                message__contains="remains in progress",
             ).exists(),
         )
 

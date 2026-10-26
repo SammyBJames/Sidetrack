@@ -913,6 +913,71 @@ class JellyfinWebhookTests(TestCase):
         self.assertEqual(season.status, Status.REPEATING.value)
         self.assertEqual(season.episodes.count(), 3)
 
+    def test_replayed_episode_of_finished_season_leaves_show_status(self):
+        """Playing a finished season's episode again leaves its show as it was."""
+        tv_item = Item.objects.create(
+            media_id="1668",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Friends",
+        )
+        season_item = Item.objects.create(
+            media_id="1668",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.SEASON.value,
+            title="Friends",
+            season_number=1,
+        )
+        tv = TV(item=tv_item, user=self.user)
+        TV.save_base(tv)
+        season = Season(
+            item=season_item,
+            user=self.user,
+            related_tv=tv,
+            status=Status.COMPLETED.value,
+        )
+        payload = {
+            "Event": "Stop",
+            "Item": {
+                "Type": "Episode",
+                "Name": "The One Where Monica Gets a Roommate",
+                "ProviderIds": {"Tvdb": "303821", "Imdb": "tt0583459"},
+                "SeriesName": "Friends",
+                "ParentIndexNumber": 1,
+                "IndexNumber": 1,
+                "UserData": {"Played": True},
+            },
+        }
+        # Waiting for its next season, or finished
+        for tv_status in (Status.PLANNING.value, Status.COMPLETED.value):
+            with self.subTest(tv=tv_status):
+                tv.status = tv_status
+                TV.save_base(tv)
+                Season.save_base(season)
+                Episode.objects.filter(related_season=season).delete()
+                # Watched before, without the cascade
+                Episode.objects.bulk_create(
+                    [
+                        Episode(
+                            related_season=season,
+                            item=season.get_episode_item(1),
+                            end_date=timezone.now() - timezone.timedelta(days=1),
+                        ),
+                    ],
+                )
+
+                self.client.post(
+                    self.url,
+                    data=json.dumps(payload),
+                    content_type="application/json",
+                )
+
+                tv.refresh_from_db()
+                season.refresh_from_db()
+                self.assertEqual(tv.status, tv_status)
+                self.assertEqual(season.status, Status.COMPLETED.value)
+                self.assertEqual(season.episodes.count(), 2)
+
     @patch("app.models.providers.services.get_media_metadata")
     @patch("app.providers.mal.anime")
     def test_rewatched_anime_stays_rewatched(self, mock_anime, mock_metadata):
