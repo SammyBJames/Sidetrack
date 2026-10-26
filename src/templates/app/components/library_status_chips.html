@@ -8,7 +8,7 @@
      hx-swap="outerHTML"
      role="group"
      aria-label="Status"
-     class="-mx-4 -my-1 flex gap-2 overflow-x-auto px-4 py-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
+     class="-mx-4 flex gap-2 overflow-x-auto px-4 py-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
   {% for choice in status_choices %}
     {% with active=choice.value|str_equals:current_status %}
       <button type="button"
