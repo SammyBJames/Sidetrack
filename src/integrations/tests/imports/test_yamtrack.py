@@ -674,3 +674,114 @@ class ImportYamtrackNewMode(TestCase):
 
         movie = Movie.objects.get(user=self.user)
         self.assertEqual(movie.status, Status.PLANNING.value)
+
+
+class ImportYamtrackAddedDates(TestCase):
+    """Test that imported entries keep when they were first added."""
+
+    HEADER = (
+        '"media_id","source","media_type","title","image","season_number",'
+        '"episode_number","score","progress","status","start_date","end_date",'
+        '"notes","progressed_at","created_at"\n'
+    )
+
+    def setUp(self):
+        """Create user for the tests."""
+        self.credentials = {"username": "test", "password": "12345"}
+        self.user = get_user_model().objects.create_user(**self.credentials)
+
+    def row(self, media_type, status, created_at, season="", episode=""):
+        """Return a CSV row of the export with when it was added."""
+        values = [
+            "1668",
+            Sources.TMDB.value,
+            media_type,
+            "Title",
+            "https://example.com/image.jpg",
+            season,
+            episode,
+            "",
+            "1" if status == Status.COMPLETED.value else "",
+            status,
+            "",
+            "2024-02-09" if media_type == MediaTypes.EPISODE.value else "",
+            "",
+            "",
+            created_at,
+        ]
+        return ",".join(f'"{value}"' for value in values) + "\n"
+
+    def run_import(self, *rows):
+        """Run a Yamtrack import in "overwrite" mode."""
+        csv = self.HEADER + "".join(rows)
+        return yamtrack.importer(BytesIO(csv.encode()), self.user, "overwrite")
+
+    def test_entries_keep_their_added_dates(self):
+        """A rewatched movie's entries keep their dates, the newest last."""
+        self.run_import(
+            self.row(
+                MediaTypes.MOVIE.value,
+                Status.IN_PROGRESS.value,
+                "2025-03-01 10:00:00+00:00",
+            ),
+            self.row(
+                MediaTypes.MOVIE.value,
+                Status.COMPLETED.value,
+                "2023-05-04 08:30:00+00:00",
+            ),
+        )
+
+        dates = list(
+            Movie.objects.filter(user=self.user)
+            .order_by("-created_at")
+            .values_list("status", "created_at"),
+        )
+        self.assertEqual(
+            dates,
+            [
+                (Status.IN_PROGRESS.value, datetime(2025, 3, 1, 10, tzinfo=UTC)),
+                (Status.COMPLETED.value, datetime(2023, 5, 4, 8, 30, tzinfo=UTC)),
+            ],
+        )
+
+    def test_episodes_are_added_now(self):
+        """Episode watches are dated by the import, a show and season by the file."""
+        self.run_import(
+            self.row(
+                MediaTypes.TV.value,
+                Status.IN_PROGRESS.value,
+                "2023-05-04 08:30:00+00:00",
+            ),
+            self.row(
+                MediaTypes.SEASON.value,
+                Status.IN_PROGRESS.value,
+                "2023-05-04 08:30:00+00:00",
+                season="1",
+            ),
+            self.row(
+                MediaTypes.EPISODE.value,
+                "",
+                "2023-05-04 08:30:00+00:00",
+                season="1",
+                episode="1",
+            ),
+        )
+
+        added = datetime(2023, 5, 4, 8, 30, tzinfo=UTC)
+        self.assertEqual(TV.objects.get(user=self.user).created_at, added)
+        self.assertEqual(Season.objects.get(user=self.user).created_at, added)
+        self.assertGreater(
+            Episode.objects.get(related_season__user=self.user).created_at,
+            added,
+        )
+
+    def test_invalid_added_date_is_left_out(self):
+        """An entry whose added date can't be read is dated by the import."""
+        self.run_import(
+            self.row(MediaTypes.MOVIE.value, Status.COMPLETED.value, "2023-13-45"),
+        )
+
+        self.assertGreater(
+            Movie.objects.get(user=self.user).created_at,
+            datetime(2025, 1, 1, tzinfo=UTC),
+        )

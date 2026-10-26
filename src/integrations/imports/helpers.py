@@ -10,6 +10,7 @@ from django.apps import apps
 from django.conf import settings
 from django.contrib import messages
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django_celery_beat.models import CrontabSchedule, PeriodicTask
 from simple_history.utils import bulk_create_with_history, bulk_update_with_history
 
@@ -65,6 +66,17 @@ class MediaImportError(Exception):
 
 class MediaImportUnexpectedError(Exception):
     """Custom exception for unexpected import errors."""
+
+
+def parse_added_date(value):
+    """Return an export's date an entry was added, or None if it can't be read."""
+    try:
+        created_at = parse_datetime(value or "")
+    except ValueError:
+        return None
+    if created_at is not None and timezone.is_naive(created_at):
+        created_at = timezone.make_aware(created_at)
+    return created_at
 
 
 def get_existing_media(user):
@@ -446,6 +458,17 @@ def bulk_create_media(bulk_media_list, user):
             batch_size=500,
             default_user=user,
         )
+
+        # Saving stamps entries as added now, so those imported with when they
+        # were added get it back
+        dated = [
+            media
+            for media in bulk_media
+            if getattr(media, "imported_created_at", None) is not None
+        ]
+        for media in dated:
+            media.created_at = media.imported_created_at
+        model.objects.bulk_update(dated, ["created_at"], batch_size=500)
 
     # Seasons imported in a repeat status start it over now, as every episode
     # imported with them is older
