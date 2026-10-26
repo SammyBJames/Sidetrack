@@ -408,6 +408,10 @@ IGDB_SECRET = config(
 )
 IGDB_NSFW = config("IGDB_NSFW", default=False, cast=bool)
 
+# OMDb API key for IMDb, Rotten Tomatoes and Metacritic ratings, which are shown
+# only when it is set - Register at https://www.omdbapi.com/apikey.aspx
+OMDB_API = config("OMDB_API", default=secret("OMDB_API_FILE", ""))
+
 # BoardGameGeek API Token - Register at https://boardgamegeek.com/using_the_xml_api
 BGG_API_TOKEN = config(
     "BGG_API_TOKEN",

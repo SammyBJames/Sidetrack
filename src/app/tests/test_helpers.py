@@ -6,6 +6,7 @@ from django.http import HttpRequest
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
+from app import helpers
 from app.helpers import (
     build_absolute_app_url,
     enrich_items_with_user_data,
@@ -150,6 +151,93 @@ class HelpersTest(TestCase):
             request,
             "Release Date: Enter a valid date.",
         )
+
+
+class GetMediaRatingsTest(TestCase):
+    """Test the ratings shown on details pages."""
+
+    @patch("app.helpers.omdb.get_ratings")
+    def test_source_rating_comes_first_then_omdb(self, mock_ratings):
+        """Movies and shows add OMDb's ratings after their source's, with logos."""
+        mock_ratings.return_value = [
+            {"source": "imdb", "score": "8.7", "scale": "/10", "votes": 10},
+        ]
+        media = {
+            "source": Sources.TMDB.value,
+            "media_type": MediaTypes.MOVIE.value,
+            "score": 8.3,
+            "score_count": 29063,
+            "external_links": {"IMDb": "https://www.imdb.com/title/tt1/"},
+        }
+
+        ratings = helpers.get_media_ratings(media)
+
+        self.assertEqual([r["source"] for r in ratings], ["tmdb", "imdb"])
+        self.assertEqual(ratings[0]["score"], 8.3)
+        self.assertEqual(ratings[0]["icon"], "app/icons/sources/tmdb.svg")
+        self.assertEqual(ratings[1]["label"], "IMDb")
+        mock_ratings.assert_called_once_with(media["external_links"])
+
+    @patch("app.helpers.omdb.get_ratings")
+    def test_other_media_has_only_its_source_rating(self, mock_ratings):
+        """Media other than movies and shows isn't looked up on OMDb."""
+        media = {
+            "source": Sources.HARDCOVER.value,
+            "media_type": MediaTypes.BOOK.value,
+            "score": 4.1,
+            "score_count": 12,
+        }
+
+        ratings = helpers.get_media_ratings(media)
+
+        self.assertEqual(len(ratings), 1)
+        # Sources without a logo show a star
+        self.assertEqual(ratings[0]["icon"], "app/icons/star.svg")
+        self.assertEqual(ratings[0]["label"], "Hardcover")
+        mock_ratings.assert_not_called()
+
+    @patch("app.helpers.omdb.get_ratings")
+    def test_rotten_tomatometer_shows_a_splat(self, mock_ratings):
+        """Rotten Tomatoes scores under 60% show the splat, others the tomato."""
+        media = {"source": Sources.TMDB.value, "media_type": MediaTypes.MOVIE.value}
+
+        icons = []
+        for score in ("59%", "60%"):
+            mock_ratings.return_value = [
+                {
+                    "source": "rotten_tomatoes",
+                    "score": score,
+                    "scale": "",
+                    "votes": None,
+                },
+            ]
+            icons.append(helpers.get_media_ratings(media)[0]["icon"])
+
+        self.assertEqual(
+            icons,
+            [
+                "app/icons/sources/rotten_tomatoes_rotten.svg",
+                "app/icons/sources/rotten_tomatoes.svg",
+            ],
+        )
+
+    def test_no_rating_without_votes(self):
+        """Media whose source has no rating has no tile."""
+        media = {"source": Sources.MANUAL.value, "media_type": MediaTypes.BOOK.value}
+        self.assertEqual(helpers.get_media_ratings(media), [])
+
+
+class GetCertificationTest(TestCase):
+    """Test the age rating shown on details pages."""
+
+    def test_region_rating_falls_back_to_the_us(self):
+        """The user's region is used, else the US rating, else none."""
+        media = {"certifications": {"US": "R", "GB": "15"}}
+
+        self.assertEqual(helpers.get_certification(media, "GB"), "15")
+        self.assertEqual(helpers.get_certification(media, "DE"), "R")
+        self.assertEqual(helpers.get_certification(media, "UNSET"), "R")
+        self.assertIsNone(helpers.get_certification({}, "GB"))
 
 
 class EnrichItemsWithUserDataTest(TestCase):

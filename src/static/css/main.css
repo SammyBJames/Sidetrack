@@ -1875,6 +1875,18 @@
   .whitespace-nowrap {
     white-space: nowrap;
   }
+  .text-\[\#01b4e4\] {
+    color: #01b4e4;
+  }
+  .text-\[\#6d8fdc\] {
+    color: #6d8fdc;
+  }
+  .text-\[\#a571ff\] {
+    color: #a571ff;
+  }
+  .text-\[\#ff5100\] {
+    color: #ff5100;
+  }
   .text-amber-300 {
     color: var(--color-amber-300);
   }

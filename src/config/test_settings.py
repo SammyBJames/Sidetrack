@@ -19,3 +19,6 @@ TESTING = True
 
 # Steam API key for testing
 STEAM_API_KEY = "test_steam_api_key"
+
+# Ratings from OMDb are only fetched by tests that mock it, never with a real key
+OMDB_API = ""

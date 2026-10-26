@@ -15,6 +15,7 @@ This page outlines the environment variables used in the YamTrack project.
 | `IGDB_ID`       | IGDB API key for games. A default key is provided, but it's recommended to get your own as it has a low rate limit.                                                                                                                                   |
 | `IGDB_SECRET`   | IGDB API secret for games. A default value is provided, but it's recommended to get your own as it has a low rate limit.                                                                                                                              |
 | `IGDB_NSFW`     | Default to `False`. Set to `True` to include adult content in game searches.                                                                                                                                                                          |
+| `OMDB_API`      | OMDb API key for IMDb, Rotten Tomatoes and Metacritic ratings on movie and show pages. Not set by default, which hides them. Get a free key at https://www.omdbapi.com/apikey.aspx.                                                                   |
 | `HARDCOVER_API` | Hardcover API key for books. A default key is provided, but it's recommended to get your own as it has a low rate limit. Custom values must include the `Bearer ` prefix.                                                                              |
 | `COMICVINE_API` | ComicVine API key for comics. A default key is provided, but it's recommended to get your own as it has a low rate limit.                                                                                                                             |
 
@@ -119,6 +120,7 @@ YamTrack supports reading sensitive configuration values from Docker secrets fil
 | `MAL_API`                 | `MAL_API_FILE`                 |
 | `IGDB_ID`                 | `IGDB_ID_FILE`                 |
 | `IGDB_SECRET`             | `IGDB_SECRET_FILE`             |
+| `OMDB_API`                | `OMDB_API_FILE`                |
 | `HARDCOVER_API`           | `HARDCOVER_API_FILE`           |
 | `COMICVINE_API`           | `COMICVINE_API_FILE`           |
 | `TRAKT_API`               | `TRAKT_API_FILE`               |

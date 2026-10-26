@@ -14,7 +14,9 @@ from django.utils import timezone
 from django.utils.encoding import iri_to_uri
 from django.utils.http import url_has_allowed_host_and_scheme
 
+from app import config
 from app.models import BasicMedia, Item, MediaTypes, Status
+from app.providers import omdb
 
 YEAR_ONLY_PARTS = 1
 YEAR_MONTH_PARTS = 2
@@ -268,3 +270,49 @@ def _should_skip_completed_recommendation(user, section_name, media_item):
         and media_item is not None
         and media_item.status == Status.COMPLETED.value
     )
+
+
+def get_media_ratings(media):
+    """Return the ratings shown on a details page, the media's own source first.
+
+    Each rating is a dict of `source`, `score`, `scale` and `votes`, with the
+    `label`, `icon`, `size` and `color` of its source. Movies and shows add IMDb, Rotten
+    Tomatoes and Metacritic when an OMDb key is set.
+    """
+    ratings = []
+    if media.get("score_count") is not None:
+        ratings.append(
+            {
+                "source": media["source"],
+                "score": media.get("score"),
+                "scale": "/10",
+                "votes": media["score_count"],
+            },
+        )
+    if media.get("media_type") in (MediaTypes.MOVIE.value, MediaTypes.TV.value):
+        ratings.extend(omdb.get_ratings(media.get("external_links")))
+    return [_with_rating_source(rating) for rating in ratings]
+
+
+# The lowest Tomatometer score that's fresh, shown as a tomato instead of a splat
+FRESH_TOMATOMETER = 60
+
+
+def _with_rating_source(rating):
+    """Return a rating with its source's `label`, `icon`, `size` and `color`."""
+    source = config.get_rating_source(rating["source"])
+    rating = {**rating, **source}
+    score = str(rating.get("score") or "").rstrip("%")
+    if "rotten_icon" in source and score.isdigit() and int(score) < FRESH_TOMATOMETER:
+        rating["icon"] = source["rotten_icon"]
+    return rating
+
+
+def get_certification(media, region):
+    """Return the media's age rating in the user's region, e.g. "PG-13".
+
+    Falls back to the US rating when the region has none or isn't set, and
+    returns None when neither is known.
+    """
+    certifications = media.get("certifications") or {}
+    return certifications.get(region) or certifications.get("US")

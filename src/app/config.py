@@ -275,6 +275,72 @@ STATUS_CONFIG = {
     },
 }
 
+# --- Rating Source Configuration ---
+# The name, logo, logo size and logo color of each source of a rating on
+# details pages. Single color logos use the brand's color, lightened where it
+# would be hard to see on dark surfaces, and full color logos none. Sources
+# without a logo show a star.
+RATING_SOURCES = {
+    Sources.TMDB.value: {
+        "label": "TMDB",
+        "icon": "app/icons/sources/tmdb.svg",
+        "size": "size-5",
+        "color": "text-[#01b4e4]",
+    },
+    Sources.MAL.value: {
+        "label": "MyAnimeList",
+        "icon": "app/icons/sources/mal.svg",
+        "size": "size-5",
+        "color": "text-[#6d8fdc]",
+    },
+    Sources.IGDB.value: {
+        "label": "IGDB",
+        "icon": "app/icons/sources/igdb.svg",
+        "size": "size-5",
+        "color": "text-[#a571ff]",
+    },
+    Sources.BGG.value: {
+        "label": "BoardGameGeek",
+        "icon": "app/icons/sources/bgg.svg",
+        "size": "size-4",
+        "color": "text-[#ff5100]",
+    },
+    "imdb": {
+        "label": "IMDb",
+        "icon": "app/icons/sources/imdb.svg",
+        # Twice as wide as it is tall
+        "size": "h-4 w-8",
+        "color": "",
+    },
+    "rotten_tomatoes": {
+        "label": "Rotten Tomatoes",
+        "icon": "app/icons/sources/rotten_tomatoes.svg",
+        # A splat in place of the tomato under the Tomatometer's 60% for fresh
+        "rotten_icon": "app/icons/sources/rotten_tomatoes_rotten.svg",
+        "size": "size-5",
+        "color": "",
+    },
+    "metacritic": {
+        "label": "Metacritic",
+        "icon": "app/icons/sources/metacritic.svg",
+        "size": "size-5",
+        "color": "",
+    },
+}
+
+
+def get_rating_source(source):
+    """Return the `label`, `icon`, `size` and `color` of a rating source."""
+    if source in RATING_SOURCES:
+        return RATING_SOURCES[source]
+    return {
+        "label": Sources(source).label,
+        "icon": "app/icons/star.svg",
+        "size": "size-4",
+        "color": "text-yellow-400",
+    }
+
+
 # --- Journal Accent Configuration ---
 # The journal badge is a filled circle with a white icon, so it uses each
 # status's stronger background and its icon from STATUS_CONFIG. Only the
