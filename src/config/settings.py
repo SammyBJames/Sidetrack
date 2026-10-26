@@ -577,6 +577,14 @@ USER_MESSAGE_RETENTION_DAYS = config(
     default=30,
     cast=int,
 )
+# The most items the daily refresh fetches details for, which keeps OMDb's free
+# 1000 requests a day and the providers' rate limits. A library over seven times
+# this is refreshed less often than weekly
+LIBRARY_DETAILS_BATCH = config(
+    "LIBRARY_DETAILS_BATCH",
+    default=300,
+    cast=int,
+)
 CELERY_BEAT_SCHEDULE = {
     "reload_calendar": {
         "task": "Reload calendar",
@@ -592,6 +600,10 @@ CELERY_BEAT_SCHEDULE = {
     },
     "cleanup_user_messages": {
         "task": "Cleanup user messages",
+        "schedule": 60 * 60 * 24,  # every 24 hours
+    },
+    "refresh_library_details": {
+        "task": "Refresh library details",
         "schedule": 60 * 60 * 24,  # every 24 hours
     },
 }

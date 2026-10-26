@@ -5,15 +5,23 @@ formats its metadata its own way, so `details_from_metadata` reads them into
 the columns of `Item` and leaves out what a provider doesn't know.
 """
 
+import logging
 import re
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
+from django.apps import apps
+from django.db.models import Exists, F, OuterRef, Q
 from django.utils import timezone
 
 from app import helpers
 from app.models import AiringStatus, Item, MediaTypes, Sources
 from app.providers import services
+
+logger = logging.getLogger(__name__)
+
+# How old details get before they're fetched again
+STALE_AFTER = timedelta(days=7)
 
 # How a provider words that a title is still coming out, ended or on its way
 AIRING_STATUSES = {
@@ -256,3 +264,42 @@ def refresh_item_details(item, metadata=None):
         helpers.get_media_ratings(metadata),
         touch=True,
     )
+
+
+def refresh_library_details(limit=None):
+    """Refresh the details of library items that have none or are a week old.
+
+    A library item is one with an entry of any user, and an episode never is. Items
+    never fetched come first, then the oldest, up to `limit` (all when None). An
+    item that fails, on a provider error or odd metadata, is logged and stamped as
+    looked at, so it waits a week instead of heading the queue every day, and the
+    run continues. Returns the number of items refreshed and of failures.
+    """
+    tracked = Q()
+    for media_type in MediaTypes.values:
+        if media_type != MediaTypes.EPISODE.value:
+            model = apps.get_model("app", media_type)
+            tracked |= Exists(model.objects.filter(item=OuterRef("pk")))
+
+    items = (
+        Item.objects.filter(tracked)
+        .filter(
+            Q(details_updated_at__isnull=True)
+            | Q(details_updated_at__lt=timezone.now() - STALE_AFTER),
+        )
+        .order_by(F("details_updated_at").asc(nulls_first=True), "pk")
+    )
+    if limit is not None:
+        items = items[:limit]
+
+    refreshed = failed = 0
+    for item in items:
+        try:
+            refresh_item_details(item)
+        except Exception:
+            logger.exception("Failed to refresh the details of %s", item)
+            Item.objects.filter(pk=item.pk).update(details_updated_at=timezone.now())
+            failed += 1
+        else:
+            refreshed += 1
+    return refreshed, failed

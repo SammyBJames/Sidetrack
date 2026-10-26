@@ -63,3 +63,13 @@ Here, you can view and edit data. For example, to edit an item image:
 1. Click on the **Items** entry.
 2. You will see a list of items. Click on the specific item you want to change.
 3. In the item detail view, you can update the image URL in the corresponding field.
+
+## Refreshing Library Details
+
+Yamtrack stores details of the items in your libraries (release date, length, ratings, genres and so on) to sort and filter them. A daily task refreshes the items without details or with week-old ones, up to `LIBRARY_DETAILS_BATCH` items a run (see [environment variables](env-variables.md)). To fetch them right away, for example after upgrading, run:
+
+```bash
+docker exec -it yamtrack python manage.py refresh_library_details
+```
+
+Add `--all` to ignore the daily limit and refresh every item that needs it. This can take a while and uses provider requests, including OMDb's daily limit.
