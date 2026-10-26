@@ -1,8 +1,12 @@
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from app.models import (
+    TV,
     Item,
     MediaTypes,
     Movie,
@@ -10,6 +14,7 @@ from app.models import (
     Status,
 )
 from app.templatetags import app_tags
+from events.models import Event
 from users.forms import UserUpdateForm
 
 
@@ -254,3 +259,55 @@ class MediaListViewTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn("media_list", response.context)
+
+
+class TVCardCountsTests(TestCase):
+    """Test the seasons and episodes on the TV list's cards."""
+
+    def setUp(self):
+        """Log in and track a show with two released seasons of 3 and 2 episodes."""
+        credentials = {"username": "test", "password": "12345"}
+        self.user = get_user_model().objects.create_user(**credentials)
+        self.client.login(**credentials)
+        tv_item = Item.objects.create(
+            media_id="1",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Show",
+            image="http://example.com/show.jpg",
+        )
+        self.tv = TV(item=tv_item, user=self.user, status=Status.COMPLETED.value)
+        TV.save_base(self.tv)
+        aired = timezone.now() - timedelta(days=30)
+        # Season 3 hasn't aired yet
+        upcoming = timezone.now() + timedelta(days=30)
+        for number, episodes, when in ((1, 3, aired), (2, 2, aired), (3, 8, upcoming)):
+            item = Item.objects.create(
+                media_id="1",
+                source=Sources.TMDB.value,
+                media_type=MediaTypes.SEASON.value,
+                title="Show",
+                season_number=number,
+            )
+            Event.objects.create(item=item, content_number=episodes, datetime=when)
+
+    def card_text(self):
+        """Return the TV list's page."""
+        return self.client.get(
+            reverse("medialist", args=[self.user.username, MediaTypes.TV.value]),
+        ).content.decode()
+
+    def test_shows_count_what_is_out(self):
+        """A show lists its released seasons and episodes, shortened to fit."""
+        content = self.card_text()
+
+        self.assertIn(">2 Seasons • 5 Episodes<", content)
+        self.assertIn(">2 Seasons • 5 Eps<", content)
+        self.assertIn(">2 S • 5 E<", content)
+
+    def test_shows_in_progress_count_the_same(self):
+        """A show in progress lists its seasons and episodes the same way."""
+        self.tv.status = Status.IN_PROGRESS.value
+        TV.save_base(self.tv)
+
+        self.assertIn(">2 Seasons • 5 Episodes<", self.card_text())

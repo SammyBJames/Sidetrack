@@ -3262,6 +3262,22 @@
       grid-template-columns: repeat(4, minmax(0, 1fr));
     }
   }
+  @container (width >= 7.75rem) {
+    .\@\[7\.75rem\]\:hidden {
+      display: none;
+    }
+    .\@\[7\.75rem\]\:inline {
+      display: inline;
+    }
+  }
+  @container (width >= 9.5rem) {
+    .\@\[9\.5rem\]\:hidden {
+      display: none;
+    }
+    .\@\[9\.5rem\]\:inline {
+      display: inline;
+    }
+  }
   @container (width >= 10.25rem) {
     .\@\[10\.25rem\]\:hidden {
       display: none;

@@ -51,7 +51,7 @@
         <a href="{{ item|media_url }}"
            class="pointer-events-auto line-clamp-2 text-[1rem] leading-snug font-semibold text-white drop-shadow-md"
            title="{{ heading.full }}">{{ heading.title }}</a>
-        {% if heading.subtitle or year or episode_count or media.progress and item.media_type != MediaTypes.MOVIE.value or media.repeats > 1 %}
+        {% if heading.subtitle or year or episode_count or media.progress and item.media_type != MediaTypes.MOVIE.value and item.media_type != MediaTypes.TV.value or media.repeats > 1 %}
           <div class="mt-1 flex items-center gap-1.5 text-xs text-gray-300">
             {% if heading.subtitle %}
               <span class="font-semibold text-gray-100"><span class="@[10.25rem]:hidden">{{ heading.short_subtitle }}</span><span class="hidden @[10.25rem]:inline">{{ heading.subtitle }}</span></span>
@@ -66,7 +66,7 @@
                 {% if media.status == Status.IN_PROGRESS.value or media.status == Status.REPEATING.value %}{{ media.progress }} /{% endif %}
                 {{ episode_count }} Episode{{ episode_count|pluralize }}
               </span>
-            {% elif media.progress and item.media_type != MediaTypes.MOVIE.value %}
+            {% elif media.progress and item.media_type != MediaTypes.MOVIE.value and item.media_type != MediaTypes.TV.value %}
               {% if heading.subtitle or year %}<span class="text-gray-500">•</span>{% endif %}
               <span>
                 {{ media.formatted_progress }}
@@ -81,6 +81,10 @@
               </span>
             {% endif %}
           </div>
+        {% endif %}
+        {# A show's seasons and episodes, which its own line has room for #}
+        {% if item.media_type == MediaTypes.TV.value and media.released_seasons %}
+          <div class="mt-0.5 truncate text-xs text-gray-300">{% include "app/components/tv_counts.html" %}</div>
         {% endif %}
       </div>
     </div>

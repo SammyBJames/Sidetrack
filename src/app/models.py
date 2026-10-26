@@ -626,10 +626,11 @@ class MediaManager(models.Manager):
             ):
                 released_episodes[media_id][season_number] = episode_number
 
-        # Calculate total released episodes per TV show
+        # Calculate total released episodes and seasons per TV show
         for tv in tv_list:
             tv_episodes = released_episodes.get(tv.item.media_id, {})
             tv.max_progress = sum(tv_episodes.values()) if tv_episodes else 0
+            tv.released_seasons = len(tv_episodes)
 
     def fetch_media_for_items(self, media_types, item_ids, user, status_filter=None):
         """Fetch media objects for given items, optionally filtering by status.
