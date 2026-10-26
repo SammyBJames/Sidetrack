@@ -24,6 +24,10 @@ from app.providers import (
 
 logger = logging.getLogger(__name__)
 
+# How many times a rate limited request is retried before it fails, so a page
+# doesn't hang while a provider keeps refusing
+RATE_LIMIT_RETRIES = 3
+
 
 def get_redis_client():
     """Return a Redis client."""
@@ -72,7 +76,8 @@ session.mount(
 )
 session.mount(
     "https://api.hardcover.app/v1/graphql",
-    LimiterAdapter(per_minute=50),
+    # Hardcover allows bursts of 5 that refill at one a second
+    LimiterAdapter(per_second=1, per_minute=50),
 )
 session.mount(
     "https://boardgamegeek.com/xmlapi2",
@@ -134,7 +139,7 @@ def raise_not_found_error(provider, media_id, media_type="item"):
 
 
 def api_request(
-    provider,
+    provider,  # noqa: ARG001 Kept for callers' error messages
     method,
     url,
     *,
@@ -144,6 +149,9 @@ def api_request(
     response_format="json",
 ):
     """Make a request to the API and return the response.
+
+    A rate limited request waits as asked and is retried, at most
+    `RATE_LIMIT_RETRIES` times, then fails like any other error.
 
     Args:
         provider: Provider identifier for error messages
@@ -157,49 +165,41 @@ def api_request(
     Returns:
         Parsed JSON dict or ElementTree for XML
     """
-    try:
-        request_kwargs = {
-            "url": url,
-            "headers": headers,
-            "timeout": settings.REQUEST_TIMEOUT,
-        }
+    request_kwargs = {
+        "url": url,
+        "headers": headers,
+        "timeout": settings.REQUEST_TIMEOUT,
+    }
 
-        if method == "GET":
-            request_kwargs["params"] = params
-            request_func = session.get
-        elif method == "POST":
-            request_kwargs["data"] = data
-            request_kwargs["json"] = params
-            request_func = session.post
+    if method == "GET":
+        request_kwargs["params"] = params
+        request_func = session.get
+    elif method == "POST":
+        request_kwargs["data"] = data
+        request_kwargs["json"] = params
+        request_func = session.post
 
-        response = request_func(**request_kwargs)
-        response.raise_for_status()
+    for retries_left in range(RATE_LIMIT_RETRIES, -1, -1):
+        try:
+            response = request_func(**request_kwargs)
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as error:
+            error_resp = error.response
+            rate_limited = error_resp.status_code == requests.codes.too_many_requests
+            if not rate_limited or retries_left == 0:
+                raise error from None
+
+            seconds_to_wait = int(error_resp.headers.get("Retry-After", 5))
+            logger.warning("Rate limited, waiting %s seconds", seconds_to_wait)
+            time.sleep(seconds_to_wait + 3)
+            logger.info("Retrying request")
+            continue
 
         if response_format == "xml":
             return ElementTree.fromstring(response.text)
         return response.json()
 
-    except requests.exceptions.HTTPError as error:
-        error_resp = error.response
-        status_code = error_resp.status_code
-
-        # handle rate limiting
-        if status_code == requests.codes.too_many_requests:
-            seconds_to_wait = int(error_resp.headers.get("Retry-After", 5))
-            logger.warning("Rate limited, waiting %s seconds", seconds_to_wait)
-            time.sleep(seconds_to_wait + 3)
-            logger.info("Retrying request")
-            return api_request(
-                provider,
-                method,
-                url,
-                params=params,
-                data=data,
-                headers=headers,
-                response_format=response_format,
-            )
-
-        raise error from None
+    return None
 
 
 def get_media_metadata(
