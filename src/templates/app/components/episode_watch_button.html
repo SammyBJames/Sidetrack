@@ -19,16 +19,7 @@
               hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
               hx-swap="none"
               hx-disabled-elt="this">
-        {# How often it was watched, which hover swaps for planning a rewatch in its color #}
-        <span class="absolute inset-0 hidden group-hover/track:block group-focus-visible/track:block {{ Status.PLANNING_REPEAT.value|status_button_color }}"></span>
-        <span class="relative flex items-center gap-2 group-hover/track:hidden group-focus-visible/track:hidden [.htmx-request_&]:invisible">
-          {% include "app/icons/states/completed.svg" with classes="size-4 shrink-0" %}
-          Watched{% if watches > 1 %} {{ watches }} times{% endif %}
-        </span>
-        <span class="relative hidden items-center gap-2 group-hover/track:flex group-focus-visible/track:flex [.htmx-request_&]:invisible">
-          {% include Status.PLANNING_REPEAT.value|status_icon with classes="size-4 shrink-0" %}
-          Plan to rewatch
-        </span>
+        {% include "app/components/crossfade_label.html" with hover_status=Status.PLANNING_REPEAT.value past="Watched" count=watches hover_icon=Status.PLANNING_REPEAT.value|status_icon hover_label="Plan to rewatch" %}
         <span class="htmx-indicator absolute top-1/2 left-1/2 size-4 -translate-1/2 animate-spin">
           {% include "app/icons/circle-spinning-clockwise.svg" with classes="size-4" %}
         </span>

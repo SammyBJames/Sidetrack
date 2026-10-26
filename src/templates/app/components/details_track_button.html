@@ -15,16 +15,7 @@
               hx-disabled-elt="this">
         {% if repeat_offer %}
           {% play_count track_target.entry user_medias as plays %}
-          {# How often it was finished, which hover swaps for the rewatch in its color #}
-          <span class="absolute inset-0 hidden group-hover/track:block group-focus-visible/track:block {{ quick.target_status|status_button_color }}"></span>
-          <span class="relative flex items-center gap-2 group-hover/track:hidden group-focus-visible/track:hidden [.htmx-request_&]:invisible">
-            {% include "app/icons/states/completed.svg" with classes="size-4 shrink-0" %}
-            {{ media_type|media_past_verb|capfirst }}{% if plays > 1 %} {{ plays }} times{% endif %}
-          </span>
-          <span class="relative hidden items-center gap-2 group-hover/track:flex group-focus-visible/track:flex [.htmx-request_&]:invisible">
-            {% include quick.icon with classes="size-4 shrink-0" %}
-            {{ quick.label }}
-          </span>
+          {% include "app/components/crossfade_label.html" with hover_status=quick.target_status past=media_type|media_past_verb|capfirst count=plays hover_icon=quick.icon hover_label=quick.label %}
         {% else %}
           <span class="flex items-center gap-2 [.htmx-request_&]:invisible">
             {% include quick.icon with classes="size-4 shrink-0" %}

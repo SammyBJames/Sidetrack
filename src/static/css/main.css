@@ -1098,6 +1098,10 @@
     --tw-translate-y: 0px;
     translate: var(--tw-translate-x) var(--tw-translate-y);
   }
+  .translate-y-3 {
+    --tw-translate-y: calc(var(--spacing) * 3);
+    translate: var(--tw-translate-x) var(--tw-translate-y);
+  }
   .translate-y-\[-1rem\] {
     --tw-translate-y: -1rem;
     translate: var(--tw-translate-x) var(--tw-translate-y);
@@ -1179,6 +1183,9 @@
   }
   .flex-wrap {
     flex-wrap: wrap;
+  }
+  .place-items-center {
+    place-items: center;
   }
   .items-center {
     align-items: center;
@@ -2471,6 +2478,9 @@
     --tw-outline-style: none;
     outline-style: none;
   }
+  .\[grid-area\:1\/1\] {
+    grid-area: 1/1;
+  }
   .\[text-shadow\:0_1px_4px_rgb\(0_0_0\/0\.8\)\] {
     text-shadow: 0 1px 4px rgb(0 0 0/0.8);
   }
@@ -2547,24 +2557,34 @@
     .group-hover\/qa\:opacity-100:is(:where(.group\/qa):hover *) {
       opacity: 100%;
     }
-    .group-hover\/track\:block:is(:where(.group\/track):hover *) {
-      display: block;
+    .group-hover\/track\:-translate-y-3:is(:where(.group\/track):hover *) {
+      --tw-translate-y: calc(var(--spacing) * -3);
+      translate: var(--tw-translate-x) var(--tw-translate-y);
     }
-    .group-hover\/track\:flex:is(:where(.group\/track):hover *) {
-      display: flex;
+    .group-hover\/track\:translate-y-0:is(:where(.group\/track):hover *) {
+      --tw-translate-y: 0px;
+      translate: var(--tw-translate-x) var(--tw-translate-y);
     }
-    .group-hover\/track\:hidden:is(:where(.group\/track):hover *) {
-      display: none;
+    .group-hover\/track\:opacity-0:is(:where(.group\/track):hover *) {
+      opacity: 0%;
+    }
+    .group-hover\/track\:opacity-100:is(:where(.group\/track):hover *) {
+      opacity: 100%;
     }
   }
-  .group-focus-visible\/track\:block:is(:where(.group\/track):focus-visible *) {
-    display: block;
+  .group-focus-visible\/track\:-translate-y-3:is(:where(.group\/track):focus-visible *) {
+    --tw-translate-y: calc(var(--spacing) * -3);
+    translate: var(--tw-translate-x) var(--tw-translate-y);
   }
-  .group-focus-visible\/track\:flex:is(:where(.group\/track):focus-visible *) {
-    display: flex;
+  .group-focus-visible\/track\:translate-y-0:is(:where(.group\/track):focus-visible *) {
+    --tw-translate-y: 0px;
+    translate: var(--tw-translate-x) var(--tw-translate-y);
   }
-  .group-focus-visible\/track\:hidden:is(:where(.group\/track):focus-visible *) {
-    display: none;
+  .group-focus-visible\/track\:opacity-0:is(:where(.group\/track):focus-visible *) {
+    opacity: 0%;
+  }
+  .group-focus-visible\/track\:opacity-100:is(:where(.group\/track):focus-visible *) {
+    opacity: 100%;
   }
   .peer-checked\:bg-indigo-600:is(:where(.peer):checked ~ *) {
     background-color: var(--color-indigo-600);
@@ -2950,6 +2970,11 @@
   @media (hover: hover) {
     .disabled\:hover\:bg-surface-800:disabled:hover {
       background-color: var(--color-surface-800);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .motion-reduce\:translate-none\! {
+      translate: none !important;
     }
   }
   @media (width < 48rem) {
