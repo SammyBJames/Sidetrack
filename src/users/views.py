@@ -219,6 +219,7 @@ def test_notification(request):
 def preferences(request):
     """Render the preferences settings page."""
     media_types = MediaTypes.values
+    media_types.remove(MediaTypes.SEASON.value)
     media_types.remove(MediaTypes.EPISODE.value)
     watch_provider_regions = tmdb.watch_provider_regions()
 

@@ -633,7 +633,8 @@ class User(AbstractUser):
         enabled_types = []
 
         for media_type in MediaTypes.values:
-            if media_type == MediaTypes.EPISODE.value:
+            # Seasons and episodes are part of their shows, not types of their own
+            if media_type in (MediaTypes.SEASON.value, MediaTypes.EPISODE.value):
                 continue
 
             enabled_field = f"{media_type}_enabled"
@@ -646,11 +647,8 @@ class User(AbstractUser):
         """Return a list of active media type values based on user preferences."""
         enabled_types = self.get_enabled_media_types()
 
-        # Add season if TV is enabled (and season isn't already in the list)
-        if (
-            MediaTypes.TV.value in enabled_types
-            and MediaTypes.SEASON.value not in enabled_types
-        ):
+        # Seasons come with TV, as they aren't a type of their own
+        if MediaTypes.TV.value in enabled_types:
             enabled_types.insert(0, MediaTypes.SEASON.value)
 
         return enabled_types

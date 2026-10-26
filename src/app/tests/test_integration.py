@@ -102,10 +102,9 @@ class IntegrationTest(StaticLiveServerTestCase):
         self.page.get_by_role("button", name="Add to tracker").click()
         expect(self.page.locator("#track-season-1396-1")).to_contain_text("Score")
         self.page.get_by_role("button", name="Add", exact=True).click()
-        self.page.get_by_role("link", name="TV Seasons").click()
-        self.page.get_by_role("link", name="Table View").click()
-        expect(self.page.locator("tbody")).to_contain_text("Completed")
-        expect(self.page.locator("tbody")).to_contain_text("7")
+        # Seasons have no list of their own, so their page shows the entry
+        expect(self.page.get_by_role("button", name="Completed")).to_be_visible()
+        expect(self.page.get_by_role("main")).to_contain_text("Progress:")
 
     def test_tv_manual(self):
         """Test the manual creation of a TV show."""
@@ -162,9 +161,6 @@ class IntegrationTest(StaticLiveServerTestCase):
         self.page.get_by_role("link", name="TV Shows").click()
         self.page.get_by_role("link", name="Grid View").click()
         expect(self.page.get_by_role("main")).to_contain_text("Friends")
-        self.page.get_by_role("link", name="TV Seasons").click()
-        self.page.get_by_role("link", name="Grid View").click()
-        expect(self.page.get_by_title("Friends \u2013 Season 1")).to_be_visible()
         self.page.get_by_role("link", name="TV Shows").click()
         self.page.get_by_title("Friends").click()
         expect(self.page.get_by_role("main")).to_contain_text("Friends")

@@ -112,6 +112,15 @@ def progress_edit(request, media_type, instance_id):
 
 @login_not_required
 @require_GET
+def season_list(request, username):
+    """Redirect to the TV list, since seasons are listed with their shows."""
+    url = reverse("medialist", args=[username, MediaTypes.TV.value])
+    query = request.GET.urlencode()
+    return redirect(f"{url}?{query}" if query else url)
+
+
+@login_not_required
+@require_GET
 def media_list(request, username, media_type):
     """Return the media list page."""
     target_user = get_object_or_404(User, username=username)

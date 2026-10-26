@@ -1,12 +1,12 @@
 {% load app_tags %}
 
-{# A home row: one status and media type by recent activity, scrolling sideways, with a link to the full list in the same order #}
+{# A home row: one status and media type by recent activity, scrolling sideways, with a link to the full list in the same order. Seasons link to their shows' list, as they have none of their own #}
 <section class="space-y-3"
          x-data="{ atStart: true, atEnd: true, update() { const track = this.$refs.track; this.atStart = track.scrollLeft <= 1; this.atEnd = track.scrollLeft + track.clientWidth >= track.scrollWidth - 1; }, scroll(direction) { const track = this.$refs.track; track.scrollBy({ left: direction * track.clientWidth * 0.9, behavior: 'smooth' }); }, }"
          x-init="$nextTick(() => update())"
          @resize.window.debounce.100ms="update()">
   <div class="flex items-center justify-between gap-3">
-    <a href="{% url 'medialist' request.user.username row.media_type %}?status={{ row.status|urlencode }}&sort=recent"
+    <a href="{% if row.media_type == MediaTypes.SEASON.value %}{% url 'medialist' request.user.username MediaTypes.TV.value %}{% else %}{% url 'medialist' request.user.username row.media_type %}{% endif %}?status={{ row.status|urlencode }}&sort=recent"
        class="group flex min-w-0 items-center gap-2 text-lg font-semibold text-white"
        title="See all {{ row.total }}">
       <span class="size-5 shrink-0 {{ row.status|status_color }}">

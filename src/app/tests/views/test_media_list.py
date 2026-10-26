@@ -73,6 +73,28 @@ class MediaListViewTests(TestCase):
             app_tags.media_type_readable_plural(MediaTypes.MOVIE.value).lower(),
         )
 
+    def test_season_list_opens_the_tv_list(self):
+        """Seasons have no list of their own, so theirs opens their shows'."""
+        response = self.client.get(
+            reverse("medialist", args=[self.user.username, MediaTypes.SEASON.value]),
+            {"status": Status.IN_PROGRESS.value},
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("medialist", args=[self.user.username, MediaTypes.TV.value])
+            + "?status=In+progress",
+        )
+
+    def test_seasons_are_not_in_the_sidebar(self):
+        """The sidebar lists shows but not their seasons."""
+        media_types = [
+            item["media_type"] for item in app_tags.get_sidebar_media_types(self.user)
+        ]
+
+        self.assertIn(MediaTypes.TV.value, media_types)
+        self.assertNotIn(MediaTypes.SEASON.value, media_types)
+
     def test_media_list_with_filters(self):
         """Test the media list view with filters."""
         response = self.client.get(

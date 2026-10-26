@@ -203,12 +203,17 @@ class HomeViewTests(TestCase):
         self.assertEqual(season_row["items"][0].progress, 5)
 
     def test_row_headers_open_their_list_in_the_same_order(self):
-        """Each row's header opens its media list filtered and ordered like the row."""
+        """Each row's header opens its media list filtered and ordered like the row.
+
+        Seasons have no list of their own, so theirs opens their shows' list.
+        """
         response = self.client.get(reverse("home"))
 
         for row in response.context["home_rows"]:
+            is_season = row["media_type"] == MediaTypes.SEASON.value
+            list_type = MediaTypes.TV.value if is_season else row["media_type"]
             link = (
-                reverse("medialist", args=[self.user.username, row["media_type"]])
+                reverse("medialist", args=[self.user.username, list_type])
                 + f"?status={quote(row['status'])}&sort=recent"
             )
             self.assertContains(response, f'href="{link}"')
@@ -216,6 +221,8 @@ class HomeViewTests(TestCase):
             list_response = self.client.get(link)
 
             self.assertEqual(list_response.status_code, 200, link)
+            if is_season:
+                continue
             listed = [media.id for media in list_response.context["media_list"]]
             self.assertEqual(listed[: len(row["items"])], [m.id for m in row["items"]])
 
