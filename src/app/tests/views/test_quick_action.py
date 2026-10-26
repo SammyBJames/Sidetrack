@@ -7,7 +7,17 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app import quick_actions
-from app.models import TV, Anime, Game, Item, MediaTypes, Movie, Sources, Status
+from app.models import (
+    TV,
+    Anime,
+    Game,
+    Item,
+    MediaTypes,
+    Movie,
+    Season,
+    Sources,
+    Status,
+)
 
 
 class QuickActionViewTests(TestCase):
@@ -205,6 +215,186 @@ class QuickActionViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         tv.refresh_from_db()
         self.assertEqual(tv.status, Status.IN_PROGRESS.value)
+
+    @patch("app.models.Item.fetch_releases")
+    @patch("app.providers.services.get_media_metadata")
+    def test_watchlist_tv_plans_its_seasons(self, mock_metadata, _):
+        """Putting a show on the watchlist plans its seasons, but not specials."""
+        mock_metadata.return_value = {
+            "title": "Test Show",
+            "image": "http://example.com/show.jpg",
+            "max_progress": 10,
+            "related": {
+                "seasons": [
+                    {"season_number": number, "image": "http://example.com/s.jpg"}
+                    for number in (0, 1, 2)
+                ],
+            },
+        }
+        item = Item.objects.create(
+            media_id="3",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Test Show",
+            image="http://example.com/show.jpg",
+        )
+
+        self.post(item, quick_actions.PLAN, title="Test Show")
+
+        tv = TV.objects.get(item=item, user=self.user)
+        self.assertEqual(
+            sorted(
+                (season.item.season_number, season.status)
+                for season in tv.seasons.select_related("item")
+            ),
+            [(1, Status.PLANNING.value), (2, Status.PLANNING.value)],
+        )
+
+    @patch("app.models.Item.fetch_releases")
+    @patch("app.providers.services.get_media_metadata")
+    def test_tracking_form_watchlist_plans_seasons(self, mock_metadata, _):
+        """Adding a show as planned through the tracking form plans its seasons."""
+        mock_metadata.return_value = {
+            "title": "Test Show",
+            "image": "http://example.com/show.jpg",
+            "max_progress": 10,
+            "related": {
+                "seasons": [{"season_number": 1, "image": "http://example.com/s.jpg"}],
+            },
+        }
+
+        self.client.post(
+            reverse("media_save"),
+            {
+                "media_id": "3",
+                "source": Sources.TMDB.value,
+                "media_type": MediaTypes.TV.value,
+                "status": Status.PLANNING.value,
+            },
+        )
+
+        tv = TV.objects.get(item__media_id="3", user=self.user)
+        self.assertEqual(
+            list(tv.seasons.values_list("status", flat=True)),
+            [Status.PLANNING.value],
+        )
+
+    def show_with_seasons(self, status, season_statuses):
+        """Track a show with seasons of the given statuses, without their cascades.
+
+        Returns the show, and stubs its metadata with those seasons and one more.
+        """
+        item = Item.objects.create(
+            media_id="3",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Test Show",
+            image="http://example.com/show.jpg",
+        )
+        tv = TV(item=item, user=self.user, status=status)
+        TV.save_base(tv)
+        for number, season_status in enumerate(season_statuses, start=1):
+            season_item = Item.objects.create(
+                media_id="3",
+                source=Sources.TMDB.value,
+                media_type=MediaTypes.SEASON.value,
+                title="Test Show",
+                image="http://example.com/s.jpg",
+                season_number=number,
+            )
+            Season.save_base(
+                Season(
+                    item=season_item,
+                    user=self.user,
+                    related_tv=tv,
+                    status=season_status,
+                ),
+            )
+        return tv
+
+    def season_statuses(self, tv):
+        """Return the show's seasons' statuses by number."""
+        return {
+            season.item.season_number: season.status
+            for season in tv.seasons.select_related("item")
+        }
+
+    @patch("app.models.Item.fetch_releases")
+    @patch("app.providers.services.get_media_metadata")
+    def test_tracking_form_watchlist_leaves_dropped_seasons(self, mock_metadata, _):
+        """A show put back on the watchlist plans its seasons, not dropped ones."""
+        tv = self.show_with_seasons(
+            Status.IN_PROGRESS.value,
+            [Status.IN_PROGRESS.value, Status.DROPPED.value],
+        )
+        mock_metadata.return_value = {
+            "related": {
+                "seasons": [
+                    {"season_number": number, "image": "http://example.com/s.jpg"}
+                    for number in (1, 2, 3)
+                ],
+            },
+        }
+
+        self.client.post(
+            reverse("media_save"),
+            {
+                "instance_id": tv.id,
+                "media_id": "3",
+                "source": Sources.TMDB.value,
+                "media_type": MediaTypes.TV.value,
+                "status": Status.PLANNING.value,
+            },
+        )
+
+        self.assertEqual(
+            self.season_statuses(tv),
+            {
+                1: Status.PLANNING.value,
+                2: Status.DROPPED.value,
+                3: Status.PLANNING.value,
+            },
+        )
+
+    @patch("app.models.Item.fetch_releases")
+    @patch("app.models.TV.plan_seasons")
+    def test_resaving_a_planned_show_leaves_its_seasons(self, mock_plan, _):
+        """Only a show newly put on the watchlist plans its seasons."""
+        tv = self.show_with_seasons(Status.PLANNING.value, [Status.IN_PROGRESS.value])
+
+        self.client.post(
+            reverse("media_save"),
+            {
+                "instance_id": tv.id,
+                "media_id": "3",
+                "source": Sources.TMDB.value,
+                "media_type": MediaTypes.TV.value,
+                "status": Status.PLANNING.value,
+                "notes": "Someday",
+            },
+        )
+
+        mock_plan.assert_not_called()
+        tv.refresh_from_db()
+        self.assertEqual(tv.notes, "Someday")
+
+    @patch("app.models.Item.fetch_releases")
+    @patch("app.providers.services.get_media_metadata")
+    def test_watchlist_is_undone_when_seasons_cant_be_planned(self, mock_metadata, _):
+        """A show isn't left planned without its seasons, so trying again works."""
+        item = Item.objects.create(
+            media_id="3",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Test Show",
+            image="http://example.com/show.jpg",
+        )
+        mock_metadata.side_effect = RuntimeError("TMDB is down")
+
+        with self.assertRaises(RuntimeError):
+            self.post(item, quick_actions.PLAN, title="Test Show")
+
+        self.assertFalse(TV.objects.filter(item=item, user=self.user).exists())
 
     def test_card_leaves_filtered_list(self):
         """A card is removed from a list filtered to a status it no longer has."""

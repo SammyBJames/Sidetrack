@@ -1201,6 +1201,64 @@ class TV(Media):
                 level=UserMessageLevel.WARNING,
             )
 
+    def plan_seasons(self):
+        """Add the show's seasons, other than specials, to the watchlist with it.
+
+        Called when the user puts the show on their watchlist. Seasons with
+        watched episodes, and seasons the user dropped or finished, are left as
+        they are.
+        """
+        tv_metadata = providers.services.get_media_metadata(
+            self.item.media_type,
+            self.item.media_id,
+            self.item.source,
+        )
+        existing_seasons = {
+            season.item.season_number: season
+            for season in self.seasons.select_related("item").prefetch_related(
+                "episodes",
+            )
+        }
+        seasons_to_create = []
+        seasons_to_update = []
+
+        for season_data in tv_metadata.get("related", {}).get("seasons", []):
+            season_number = season_data["season_number"]
+            if season_number == 0:
+                continue
+
+            season = existing_seasons.get(season_number)
+            if season is None:
+                item, _ = Item.objects.get_or_create(
+                    media_id=self.item.media_id,
+                    source=self.item.source,
+                    media_type=MediaTypes.SEASON.value,
+                    season_number=season_number,
+                    defaults={
+                        "title": self.item.title,
+                        "image": season_data["image"],
+                    },
+                )
+                seasons_to_create.append(
+                    Season(
+                        item=item,
+                        user=self.user,
+                        related_tv=self,
+                        status=Status.PLANNING.value,
+                        score=None,
+                        notes="",
+                    ),
+                )
+            elif (
+                season.status in (Status.IN_PROGRESS.value, Status.PAUSED.value)
+                and not season.episodes.all()
+            ):
+                season.status = Status.PLANNING.value
+                seasons_to_update.append(season)
+
+        bulk_create_with_history(seasons_to_create, Season)
+        bulk_update_with_history(seasons_to_update, Season, ["status"])
+
     def _mark_in_progress_seasons_as_dropped(self):
         """Mark all in-progress seasons as dropped."""
         in_progress_seasons = list(

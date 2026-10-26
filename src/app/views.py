@@ -8,7 +8,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_not_required
 from django.core.cache import cache
 from django.core.paginator import Paginator
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import Prefetch, prefetch_related_objects
 from django.http import Http404, HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -598,11 +598,27 @@ def media_save(request):
         model = apps.get_model(app_label="app", model_name=media_type)
         instance = model(item=item, user=request.user)
 
+    # Only shows cascade, and episode watches have no status
+    was_planned = (
+        media_type == MediaTypes.TV.value
+        and instance.pk is not None
+        and instance.status == Status.PLANNING.value
+    )
+
     # Validate the form and save the instance if it's valid
     form_class = get_form_class(media_type)
     form = form_class(request.POST, instance=instance)
     if form.is_valid():
-        form.save()
+        # A show put on the watchlist brings its seasons with it, or isn't
+        # saved at all when they can't be planned, so saving again plans them
+        with transaction.atomic():
+            form.save()
+            if (
+                media_type == MediaTypes.TV.value
+                and instance.status == Status.PLANNING.value
+                and not was_planned
+            ):
+                instance.plan_seasons()
         logger.info("%s saved successfully.", form.instance)
     else:
         logger.error(form.errors.as_json())

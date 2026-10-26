@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 
 from app import config
@@ -107,7 +108,8 @@ def apply_quick_action(action, media):
     """Apply a quick action to a tracked entry, or to an unsaved one to create it.
 
     Saves `media`. A start or end date is filled in only when it is empty, and
-    not at all for media whose dates come from its episodes.
+    not at all for media whose dates come from its episodes. Planning a show
+    plans its seasons too.
     """
     if action.key == NEXT:
         media.increase_progress()
@@ -123,7 +125,12 @@ def apply_quick_action(action, media):
         and getattr(media, date_field) is None
     ):
         setattr(media, date_field, _now())
-    media.save()
+    # A show on the watchlist brings its seasons with it, or isn't saved at all
+    # when they can't be planned, so trying again plans them
+    with transaction.atomic():
+        media.save()
+        if action.key == PLAN and media.item.media_type == MediaTypes.TV.value:
+            media.plan_seasons()
 
 
 def success_message(action, media):

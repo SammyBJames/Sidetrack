@@ -205,6 +205,47 @@ class TVStatusTests(TestCase):
         )
 
     @patch("app.models.providers.services.get_media_metadata")
+    def test_plan_seasons_plans_all_but_specials(self, mock_get_metadata):
+        """Planning a show plans its seasons, leaving started ones as they are."""
+        mock_get_metadata.return_value = {
+            "related": {
+                "seasons": [
+                    {"season_number": number, "image": f"img{number}.jpg"}
+                    for number in range(4)
+                ],
+            },
+        }
+        # Season 2 has been started, unlike season 1
+        self.season2.status = Status.IN_PROGRESS.value
+        Season.save_base(self.season2)
+        episode_item = Item.objects.create(
+            media_id="123",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.EPISODE.value,
+            title="Test Show",
+            image="http://example.com/image.jpg",
+            season_number=2,
+            episode_number=1,
+        )
+        Episode.objects.bulk_create(
+            [Episode(related_season=self.season2, item=episode_item)],
+        )
+        self.tv.plan_seasons()
+
+        statuses = {
+            season.item.season_number: season.status
+            for season in self.tv.seasons.select_related("item")
+        }
+        self.assertEqual(
+            statuses,
+            {
+                1: Status.PLANNING.value,
+                2: Status.IN_PROGRESS.value,
+                3: Status.PLANNING.value,
+            },
+        )
+
+    @patch("app.models.providers.services.get_media_metadata")
     def test_completed_status_creates_all_seasons(self, mock_get_metadata):
         """Test setting status to COMPLETED creates all seasons."""
         released_episodes = [
