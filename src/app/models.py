@@ -1819,8 +1819,14 @@ class Episode(models.Model):
         return self.item.__str__()
 
     def save(self, *args, **kwargs):
-        """Save the episode instance."""
+        """Save the episode instance, moving its season and show on when it's new.
+
+        Changing a watch's date, notes or score leaves their statuses as they are.
+        """
+        is_new = self._state.adding
         super().save(*args, **kwargs)
+        if not is_new:
+            return
 
         season_number = self.item.season_number
         tv_with_seasons_metadata = providers.services.get_media_metadata(
