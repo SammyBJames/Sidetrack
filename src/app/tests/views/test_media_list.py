@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -147,40 +148,53 @@ class MediaListViewTests(TestCase):
         self.assertEqual(planned[0].repeats, 2)
 
     def test_status_filter_uses_the_media_types_words(self):
-        """The book list's filter offers rereading, the movie list's rewatching."""
-        books = self.client.get(
-            reverse("medialist", args=[self.user.username, MediaTypes.BOOK.value]),
+        """The movie list's statuses are named in its words, each with its count."""
+        Movie.objects.filter(item__title="Test Movie 3").update(
+            status=Status.REPEATING.value,
         )
-        movies = self.client.get(
+
+        response = self.client.get(
             reverse("medialist", args=[self.user.username, MediaTypes.MOVIE.value]),
         )
 
-        self.assertIn(
-            (Status.PLANNING_REPEAT.value, "Planning Reread"),
-            books.context["status_choices"],
-        )
-        self.assertIn(
-            (Status.REPEATING.value, "Rewatching"),
-            movies.context["status_choices"],
-        )
+        choices = {
+            choice["value"]: (choice["label"], choice["count"])
+            for choice in response.context["status_choices"]
+        }
+        self.assertEqual(choices[Status.REPEATING.value], ("Rewatching", 1))
+        self.assertEqual(choices["All"], ("All", 5))
+        # Statuses without media are left out
+        self.assertNotIn(Status.DROPPED.value, choices)
 
     def test_media_list_htmx_request(self):
-        """Test the media list view with HTMX request."""
-        response = self.client.get(
-            reverse("medialist", args=[self.user.username, MediaTypes.MOVIE.value])
-            + "?layout=grid",
-            headers={"hx-request": "true"},
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "app/components/media_grid_items.html")
+        """Filtering gets the results alone, scrolling the next page's entries."""
+        url = reverse("medialist", args=[self.user.username, MediaTypes.MOVIE.value])
 
-        response = self.client.get(
-            reverse("medialist", args=[self.user.username, MediaTypes.MOVIE.value])
-            + "?layout=table",
-            headers={"hx-request": "true"},
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "app/components/media_table_items.html")
+        response = self.client.get(f"{url}?layout=grid", headers={"hx-request": "true"})
+        self.assertTemplateUsed(response, "app/components/library_results.html")
+        self.assertTemplateNotUsed(response, "app/media_list.html")
+
+        for page in range(1, 6):
+            Movie.objects.create(
+                item=Item.objects.create(
+                    media_id=f"9{page}",
+                    source=Sources.TMDB.value,
+                    media_type=MediaTypes.MOVIE.value,
+                    title=f"More {page}",
+                    image="http://example.com/image.jpg",
+                ),
+                user=self.user,
+                status=Status.PLANNING.value,
+            )
+        with patch("app.views.LIST_PAGE_SIZE", 4):
+            grid = self.client.get(f"{url}?page=2", headers={"hx-request": "true"})
+            rows = self.client.get(
+                f"{url}?page=2&layout=table",
+                headers={"hx-request": "true"},
+            )
+        self.assertTemplateUsed(grid, "app/components/media_grid_items.html")
+        self.assertTemplateNotUsed(grid, "app/components/library_results.html")
+        self.assertTemplateUsed(rows, "app/components/media_list_rows.html")
 
     def test_media_list_soft_navigation_returns_full_page(self):
         """Soft-navigation body swaps (after an edit modal) get the full page."""

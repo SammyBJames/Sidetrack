@@ -95,8 +95,8 @@ class IntegrationTest(StaticLiveServerTestCase):
         self.page.get_by_label("Status").select_option("Completed")
         self.page.get_by_role("button", name="Add", exact=True).click()
         self.page.get_by_role("link", name="TV Shows").click()
-        self.page.get_by_role("link", name="Table View").click()
-        expect(self.page.locator("tbody")).to_contain_text("62")
+        self.page.get_by_role("button", name="List", exact=True).click()
+        expect(self.page.locator(".media-row")).to_contain_text("62")
 
     def test_season_completed(self):
         """Test the completed status of a season."""
@@ -171,7 +171,7 @@ class IntegrationTest(StaticLiveServerTestCase):
 
         # Check visibility
         self.page.get_by_role("link", name="TV Shows").click()
-        self.page.get_by_role("link", name="Grid View").click()
+        self.page.get_by_role("button", name="Grid", exact=True).click()
         expect(self.page.get_by_role("main")).to_contain_text("Friends")
         self.page.get_by_role("link", name="TV Shows").click()
         self.page.get_by_title("Friends").click()

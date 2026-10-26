@@ -1,0 +1,65 @@
+{% load app_tags %}
+
+{# A media type's list under its filters: the statuses, then the media as cards or rows, or why there's none. Dimmed while the filters reload it #}
+<div id="library-results"
+     class="space-y-5 transition-opacity duration-200 [&.htmx-request]:opacity-50">
+  {% include "app/components/library_status_chips.html" %}
+
+  {% if media_list %}
+    {% if current_layout == "grid" %}
+      <div class="media-grid">{% include "app/components/media_grid_items.html" %}</div>
+    {% else %}
+      <div class="panel overflow-hidden">
+        {# Headings sort by their column, the sorted one marked with its direction #}
+        <div class="hidden items-center gap-x-4 border-b border-white/5 px-4 py-2.5 text-[0.6875rem] font-semibold tracking-wide text-gray-400 uppercase xl:grid {% if show_progress %}xl:grid-cols-[3rem_minmax(0,1fr)_9rem_10rem_4.5rem_7.5rem_2rem]{% else %}xl:grid-cols-[3rem_minmax(0,1fr)_9rem_4.5rem_7.5rem_2rem]{% endif %}">
+          <span></span>
+          {% include "app/components/library_sort_heading.html" with sort="title" label="Title" %}
+          {% include "app/components/library_sort_heading.html" with sort="status" label="Status" %}
+          {% if show_progress %}
+            {% include "app/components/library_sort_heading.html" with sort="progress" label="Progress" %}
+          {% endif %}
+          {% include "app/components/library_sort_heading.html" with sort="score" label="Rating" %}
+          {% if current_sort == "added" or current_sort == "start_date" or current_sort == "end_date" %}
+            {% include "app/components/library_sort_heading.html" with sort=current_sort label=date_heading %}
+          {% else %}
+            {% include "app/components/library_sort_heading.html" with sort="recent" label=date_heading %}
+          {% endif %}
+          <span class="sr-only">Actions</span>
+        </div>
+        <div class="divide-y divide-white/5">{% include "app/components/media_list_rows.html" %}</div>
+      </div>
+    {% endif %}
+  {% else %}
+    <div class="panel flex flex-col items-center px-6 py-16 text-center">
+      <div class="mb-4 flex size-14 items-center justify-center rounded-full bg-white/5 text-gray-400 ring-1 ring-white/10">
+        {% if current_search or current_rated or current_rewatched or current_status != "All" %}
+          {% include "app/icons/funnel.svg" with classes="size-6" %}
+        {% else %}
+          {% icon media_type is_active=False extra_classes="size-6" %}
+        {% endif %}
+      </div>
+      {% if current_search or current_rated or current_rewatched or current_status != "All" %}
+        <h2 class="text-lg font-semibold text-white">Nothing matches these filters</h2>
+        <p class="mt-1 max-w-sm text-sm text-gray-400">
+          {% if current_search %}No {{ media_type_plural }} match “{{ current_search }}” with these filters.{% else %}Try another status or fewer filters.{% endif %}
+        </p>
+        <button type="button"
+                @click="clearFilters()"
+                class="mt-5 h-9 cursor-pointer rounded-xl bg-white/10 px-4 text-sm font-semibold text-white ring-1 ring-white/10 transition-colors hover:bg-white/15">
+          Clear filters
+        </button>
+      {% else %}
+        <h2 class="text-lg font-semibold text-white">No {{ media_type_plural }} tracked yet</h2>
+        {% if request.user == target_user %}
+          <p class="mt-1 max-w-sm text-sm text-gray-400">
+            Start tracking your {{ media_type_plural }} to keep a record of what you've {{ media_type|media_past_verb }}.
+          </p>
+          <a href="{{ media_type|sample_search }}"
+             class="mt-5 flex h-9 items-center rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white shadow-lg ring-1 shadow-black/30 ring-white/10 transition-colors hover:bg-indigo-500">
+            Browse {{ media_type|media_type_readable_plural }}
+          </a>
+        {% endif %}
+      {% endif %}
+    </div>
+  {% endif %}
+</div>

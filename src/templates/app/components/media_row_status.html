@@ -1,0 +1,23 @@
+{% load app_tags %}
+
+{# A list row's status in the media type's words, or for caught up media, when its next release is #}
+{% if caught %}
+  <span class="flex items-center gap-1.5 text-gray-200">
+    <span class="{{ Status.PLANNING.value|status_color }}">
+      {% include "app/icons/clock.svg" with classes="size-3.5" %}
+    </span>
+    Caught Up
+  </span>
+  <span class="truncate text-xs text-gray-400">
+    {% if item.media_type == MediaTypes.TV.value %}
+      {{ media.next_event|season_release_label:user }}
+    {% else %}
+      {{ media.next_event|release_label:user }}
+    {% endif %}
+  </span>
+{% elif media.status %}
+  <span class="flex items-center gap-1.5 text-gray-200">
+    <span class="{{ media.status|status_color }}">{% include media.status|status_icon with classes="size-3.5" %}</span>
+    {{ media.status|media_status_readable:item.media_type }}
+  </span>
+{% endif %}

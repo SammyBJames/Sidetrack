@@ -38,15 +38,46 @@ from app.templatetags import app_tags
 from events.models import Event
 from users.models import (
     DateFormatChoices,
+    LayoutChoices,
+    LibraryStatusChoices,
     MediaSortChoices,
     MediaStatusChoices,
     User,
+    default_sort_order,
 )
 
 logger = logging.getLogger(__name__)
 
 # The highest score, matching the stars' ten half points
 MAX_SCORE = 10
+
+# Entries per page of a media type's list
+LIST_PAGE_SIZE = 32
+
+# The rated filter's choices for media with or without a score
+RATED_FILTERS = ("rated", "unrated")
+
+# Media gone through all at once, whose list rows have no progress to show
+UNPROGRESSED_MEDIA_TYPES = (MediaTypes.MOVIE.value, MediaTypes.BOARDGAME.value)
+
+# How a list's sort reads in each direction, ascending then descending, dates
+# reading by age
+DATE_ORDER_LABELS = ("Oldest first", "Newest first")
+SORT_ORDER_LABELS = {
+    MediaSortChoices.TITLE: ("A to Z", "Z to A"),
+    MediaSortChoices.SCORE: ("Lowest first", "Highest first"),
+    MediaSortChoices.STATUS: ("In progress first", "Dropped first"),
+    MediaSortChoices.PROGRESS: ("Least first", "Most first"),
+}
+
+# The date a list's rows show for its sort, as its heading and the entry's
+# attribute, else its last activity
+LIST_DATE_COLUMNS = {
+    MediaSortChoices.ADDED: ("Added", "added_at"),
+    MediaSortChoices.START_DATE: ("Started", "start_date"),
+    MediaSortChoices.END_DATE: ("Finished", "end_date"),
+    MediaSortChoices.RECENT: ("Last Activity", "progressed_at"),
+}
 
 
 @require_GET
@@ -128,24 +159,16 @@ def season_list(request, username):
 @login_not_required
 @require_GET
 def media_list(request, username, media_type):
-    """Return the media list page."""
-    target_user = get_object_or_404(User, username=username)
+    """Return a user's list of a media type, filtered and sorted.
 
-    # if user is looking at own page then update preferences
-    if request.user == target_user:
-        layout = target_user.update_preference(
-            f"{media_type}_layout",
-            request.GET.get("layout"),
-        )
-        sort_filter = target_user.update_preference(
-            f"{media_type}_sort",
-            request.GET.get("sort"),
-        )
-        status_filter = target_user.update_preference(
-            f"{media_type}_status",
-            request.GET.get("status"),
-        )
-    else:
+    The sort, its direction, the status and the layout are saved to the user's
+    preferences when it's their own list. A sort given without a direction goes
+    in its usual one. HTMX requests get the results alone, or the next page of
+    entries when scrolled to.
+    """
+    target_user = get_object_or_404(User, username=username)
+    own_list = request.user == target_user
+    if not own_list:
         # privacy check then media type check
         if target_user.profile_private:
             msg = "User not found"
@@ -163,90 +186,144 @@ def media_list(request, username, media_type):
                 media_type=enabled_media_types[0],
             )
 
-        layout = target_user.get_valid_preference(
-            f"{media_type}_layout",
-            request.GET.get("layout"),
-        )
-        sort_filter = target_user.get_valid_preference(
-            f"{media_type}_sort",
-            request.GET.get("sort"),
-        )
-        status_filter = target_user.get_valid_preference(
-            f"{media_type}_status",
-            request.GET.get("status"),
-        )
-
-    search_query = request.GET.get("search", "")
-    page = request.GET.get("page", 1)
-
-    # Prepare status filter for database query
-    if not status_filter:
-        status_filter = MediaStatusChoices.ALL
-
-    # Get media list with filters applied
-    media_queryset = BasicMedia.objects.get_media_list(
-        user=target_user,
-        media_type=media_type,
-        status_filter=status_filter,
-        sort_filter=sort_filter,
-        search=search_query,
+    # Someone else's list goes by what's asked or their own preferences
+    preference = (
+        target_user.update_preference if own_list else target_user.get_valid_preference
     )
+    layout = preference(f"{media_type}_layout", request.GET.get("layout"))
+    sort_filter = preference(f"{media_type}_sort", request.GET.get("sort"))
+    sort_order = request.GET.get("order")
+    if sort_order is None and "sort" in request.GET:
+        sort_order = default_sort_order(sort_filter)
+    sort_order = preference(f"{media_type}_sort_order", sort_order)
+    status_filter = preference(f"{media_type}_status", request.GET.get("status"))
 
-    # Paginate results
-    items_per_page = 32
-    paginator = Paginator(media_queryset, items_per_page)
-    media_page = paginator.get_page(page)
-
-    BasicMedia.objects.annotate_max_progress(
-        media_page.object_list,
-        media_type,
-    )
-
-    context = {
-        "media_type": media_type,
-        "media_type_plural": app_tags.media_type_readable_plural(media_type).lower(),
-        "media_list": media_page,
-        "current_layout": layout,
-        "layout_class": ".media-grid" if layout == "grid" else "tbody",
-        "current_sort": sort_filter,
-        "current_status": status_filter,
-        "sort_choices": MediaSortChoices.choices,
-        # Named in the media type's words, e.g. Rereading for books
-        "status_choices": [
-            (
-                value,
-                label
-                if value == MediaStatusChoices.ALL
-                else config.get_status_label(value, media_type),
-            )
-            for value, label in MediaStatusChoices.choices
-        ],
-        "target_user": target_user,
+    search = request.GET.get("search", "").strip()
+    filters = {
+        "rated": request.GET.get("rated")
+        if request.GET.get("rated") in RATED_FILTERS
+        else "",
+        "rewatched": request.GET.get("rewatched") == "1",
     }
 
-    # Handle HTMX requests for partial updates. Soft-navigation requests (e.g.
-    # after saving from an edit modal) need the full page for the body swap.
+    if request.GET.get("part") == "counts":
+        # The status counts alone, after a card's action changed them
+        return render(
+            request,
+            "app/components/library_status_chips.html",
+            _library_context(target_user, media_type, status_filter, search, filters),
+        )
+
+    media_page = Paginator(
+        BasicMedia.objects.get_media_list(
+            user=target_user,
+            media_type=media_type,
+            status_filter=status_filter,
+            sort_filter=sort_filter,
+            search=search,
+            sort_order=sort_order,
+            **filters,
+        ),
+        LIST_PAGE_SIZE,
+    ).get_page(request.GET.get("page", 1))
+    BasicMedia.objects.annotate_releases(media_page.object_list, media_type)
+    date_heading = _annotate_list_dates(media_page.object_list, sort_filter)
+
+    context = {
+        **_library_context(target_user, media_type, status_filter, search, filters),
+        "media_list": media_page,
+        "current_layout": layout,
+        "current_sort": sort_filter,
+        "current_order": sort_order,
+        "current_sort_label": MediaSortChoices(sort_filter).label,
+        "sort_choices": [
+            {
+                "value": value,
+                "label": label,
+                "order": default_sort_order(value),
+                "order_labels": SORT_ORDER_LABELS.get(value, DATE_ORDER_LABELS),
+            }
+            for value, label in MediaSortChoices.choices
+        ],
+        "date_heading": date_heading,
+        "show_progress": media_type not in UNPROGRESSED_MEDIA_TYPES,
+    }
+
+    # Soft-navigation requests (e.g. after saving from an edit modal) need the
+    # full page for the body swap
     if request.headers.get("HX-Request") and not request.headers.get(
-        "X-Soft-Navigation"
+        "X-Soft-Navigation",
     ):
-        # Filtering from empty list
-        if request.headers.get("HX-Target") == "empty_list":
-            # If still empty, keep user in the same page
-            if not media_page.object_list:
-                return HttpResponse(status=204)
-            response = HttpResponse()
-            response["HX-Redirect"] = reverse(
-                "medialist", args=[target_user.username, media_type]
+        if media_page.number > 1:
+            template_name = (
+                "app/components/media_grid_items.html"
+                if layout == LayoutChoices.GRID
+                else "app/components/media_list_rows.html"
             )
-            return response
-        if layout == "grid":
-            template_name = "app/components/media_grid_items.html"
         else:
-            template_name = "app/components/media_table_items.html"
+            template_name = "app/components/library_results.html"
     else:
         template_name = "app/media_list.html"
 
     return render(request, template_name, context)
+
+
+def _annotate_list_dates(media_list, sort_filter):
+    """Annotate media with the date its list row shows as `list_date`.
+
+    It's the date sorted by, else the last activity, or when it was added for
+    media not gone through yet. Returns the date's heading.
+    """
+    heading, field = LIST_DATE_COLUMNS.get(
+        sort_filter,
+        LIST_DATE_COLUMNS[MediaSortChoices.RECENT],
+    )
+    for media in media_list:
+        media.list_date = getattr(media, field, None)
+        if field == "progressed_at" and media.list_date is None:
+            media.list_date = media.created_at
+    return heading
+
+
+def _library_context(user, media_type, status_filter, search, filters):
+    """Return what a media type's list shows of its filters.
+
+    Statuses are named in the media type's words, e.g. Rereading for books, with
+    how many media each has. Those with none are left out, except all and the
+    one filtered to.
+    """
+    counts = BasicMedia.objects.get_status_counts(
+        user,
+        media_type,
+        search,
+        **filters,
+    )
+    return {
+        "media_type": media_type,
+        "media_type_plural": app_tags.media_type_readable_plural(media_type).lower(),
+        "target_user": user,
+        "current_status": status_filter,
+        "current_search": search,
+        "current_rated": filters["rated"],
+        "current_rewatched": filters["rewatched"],
+        "rated_choices": [
+            ("", "Any"),
+            *zip(RATED_FILTERS, ("Rated", "Unrated"), strict=True),
+        ],
+        "status_choices": [
+            {
+                "value": value,
+                "label": label
+                if value in (MediaStatusChoices.ALL, LibraryStatusChoices.CAUGHT_UP)
+                else config.get_status_label(value, media_type),
+                "count": counts[value],
+                "all": value == MediaStatusChoices.ALL,
+                "caught_up": value == LibraryStatusChoices.CAUGHT_UP,
+            }
+            for value, label in LibraryStatusChoices.choices
+            if counts[value] or value in (MediaStatusChoices.ALL, status_filter)
+        ],
+    }
 
 
 @require_GET
@@ -882,38 +959,70 @@ def quick_action(request):
         return response
 
     status_filter = request.POST.get("status")
-    if status_filter not in {None, "", MediaStatusChoices.ALL, media.status}:
+    if not _matches_status_filter(media, status_filter):
         # The entry no longer matches the list's status filter
         response = render(request, "app/components/messages/messages_oob.html")
         response["HX-Reswap"] = "delete"
+        response["HX-Trigger"] = "libraryChanged"
         return response
 
-    media = BasicMedia.objects.get_media(request.user, media_type, media.id)
-    BasicMedia.objects.annotate_max_progress([media], media_type)
-    media.repeats = BasicMedia.objects.filter_media(
-        request.user,
-        media.item.media_id,
-        media_type,
-        media.item.source,
-        season_number=media.item.season_number,
-    ).count()
+    return _quick_action_card(request, media_type, media.id)
+
+
+def _quick_action_card(request, media_type, media_id):
+    """Return an entry's updated card or list row after a quick action."""
+    media = BasicMedia.objects.get_media_prefetch(request.user, media_type, media_id)
+    BasicMedia.objects.annotate_releases([media], media_type)
+    entries = list(
+        BasicMedia.objects.filter_media(
+            request.user,
+            media.item.media_id,
+            media_type,
+            media.item.source,
+            season_number=media.item.season_number,
+        ),
+    )
+    media.repeats = len(entries)
+    media.added_at = min(entry.created_at for entry in entries)
 
     # A new item's release is fetched in the background, so keep the card's year
     if request.POST.get("release_year"):
         media.item.release_year = request.POST["release_year"]
 
     # `title` and `active` are display state that only the posted card knows
-    return render(
-        request,
-        "app/components/media_card_response.html",
-        {
-            "item": media.item,
-            "media": media,
-            "title": request.POST.get("title") or media.item,
-            "filtered": "status" in request.POST,
-            "active": request.POST.get("active") == "true",
-        },
-    )
+    context = {
+        "item": media.item,
+        "media": media,
+        "title": request.POST.get("title") or media.item,
+        "filtered": "status" in request.POST,
+        "active": request.POST.get("active") == "true",
+    }
+    if request.POST.get("card") == "row":
+        context["date_heading"] = _annotate_list_dates(
+            [media],
+            request.POST.get("sort"),
+        )
+        context["media_type"] = media_type
+        context["target_user"] = request.user
+        context["show_progress"] = media_type not in UNPROGRESSED_MEDIA_TYPES
+        template_name = "app/components/media_row_response.html"
+    else:
+        template_name = "app/components/media_card_response.html"
+    response = render(request, template_name, context)
+    # A library's status counts change with the entry
+    if context["filtered"]:
+        response["HX-Trigger"] = "libraryChanged"
+    return response
+
+
+def _matches_status_filter(media, status_filter):
+    """Return whether an entry still belongs in a list filtered to a status.
+
+    Caught up media is in progress or repeated, which it may stop being.
+    """
+    if status_filter == LibraryStatusChoices.CAUGHT_UP:
+        return media.status in (Status.IN_PROGRESS.value, Status.REPEATING.value)
+    return status_filter in {None, "", MediaStatusChoices.ALL, media.status}
 
 
 def _get_or_create_item(media_id, source, media_type, season_number):

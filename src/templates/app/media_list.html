@@ -7,184 +7,182 @@
   {{ media_type|media_type_readable_plural }} - Sidetrack
 {% endblock title %}
 
+{% block extra_head %}
+  {# Going back to an earlier filter reloads the page, as a saved copy would lose its menus' state #}
+  <meta name="htmx-config"
+        content='{"historyCacheSize": 0, "refreshOnHistoryMiss": true}'>
+{% endblock extra_head %}
+
 {% block content %}
-  <h1 class="text-3xl font-bold mb-6">
-    {% if request.user != target_user %}{{ target_user.username }}'s{% endif %}
-    {{ media_type|media_type_readable_plural }}
-  </h1>
+  {% url 'medialist' target_user.username media_type as list_url %}
+  {{ sort_choices|json_script:"library-sorts" }}
 
-  <div x-data="{ sort: '{{ current_sort }}', status: '{{ current_status }}', layout: '{{ current_layout }}', search: '{{ request.GET.search|default:'' }}', statusLabels: {
-    {% for value, label in status_choices %}
-      '{{ value }}': '{{ label }}'
-      {% if not forloop.last %},{% endif %}
+  {# The filters live in the form's fields, and each change reloads the results and the address #}
+  <div x-data="libraryFilters({ search: '{{ current_search|escapejs }}', sort: '{{ current_sort }}', order: '{{ current_order }}', status: '{{ current_status|escapejs }}', layout: '{{ current_layout }}', rated: '{{ current_rated }}', rewatched: {{ current_rewatched|yesno:'true,false' }} })"
+       class="space-y-5">
+    {# The title with the search and the list's controls beside it, which wrap under it on narrower screens #}
+    <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <h1 class="text-3xl font-bold tracking-tight text-white">
+        {% if request.user != target_user %}{{ target_user.username }}'s{% endif %}
+        {{ media_type|media_type_readable_plural }}
+      </h1>
 
-    {% endfor %}
-    }, sortLabels: {
-    {% for value, label in sort_choices %}
-      '{{ value }}': '{{ label }}'
-      {% if not forloop.last %},{% endif %}
+      <form id="filter-form"
+            x-ref="form"
+            hx-get="{{ list_url }}"
+            hx-target="#library-results"
+            hx-swap="outerHTML"
+            hx-push-url="true"
+            hx-indicator="#library-results"
+            hx-on:htmx:config-request="for (const [name, value] of Object.entries(event.detail.parameters)) if (value === '') delete event.detail.parameters[name]"
+            class="flex flex-wrap items-center gap-2">
+        {# Empty filters are left out of the request and the address #}
+        <input type="hidden" name="sort" x-model="sort">
+        <input type="hidden" name="order" x-model="order">
+        <input type="hidden" name="status" x-model="status">
+        <input type="hidden" name="layout" x-model="layout">
+        <input type="hidden" name="rated" x-model="rated">
+        <input type="hidden" name="rewatched" value="1" :disabled="!rewatched">
 
-    {% endfor %}
-    } }">
-
-    <!-- Form to manage state -->
-    <form id="filter-form" class="hidden">
-      <input type="hidden" name="sort" x-model="sort">
-      <input type="hidden" name="status" x-model="status">
-      <input type="hidden" name="search" x-model="search">
-      <input type="hidden" name="layout" x-model="layout">
-    </form>
-
-    <div class="flex flex-col md:flex-row gap-4 mb-6">
-      <!-- Search -->
-      <div class="relative grow">
-        <input placeholder="Search {{ media_type_plural }} in {% if target_user != request.user %}{{ target_user.username }}'s {% else %}your {% endif %}list..."
-               class="w-full py-2 pl-10 pr-4 bg-surface-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-focus appearance-none"
-               type="text"
-               x-model="search"
-               hx-get="{% url 'medialist' target_user.username media_type %}"
-               hx-trigger="keyup changed delay:300ms, search"
-               {% if media_list %} hx-target="{{ layout_class }}" {% else %} hx-target="#empty_list" {% endif %}
-               hx-include="#filter-form"
-               hx-indicator="#search-indicator">
-        {% include "app/icons/magnifying-glass.svg" with classes="w-6 h-6 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" %}
-        <div id="search-indicator"
-             class="htmx-indicator absolute right-3 top-1/2 transform -translate-y-1/2">
-          <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-500"></div>
+        {# Search, a row of its own on phones #}
+        <div class="relative min-w-0 basis-full sm:flex-1 sm:basis-auto lg:w-64 lg:flex-none">
+          <span class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-gray-400">{% include "app/icons/magnifying-glass.svg" with classes="size-4" %}</span>
+          <input type="search"
+                 name="search"
+                 x-model="search"
+                 @input.debounce.300ms="submit()"
+                 @keydown.enter.prevent="submit()"
+                 placeholder="Search {{ media_type_plural }}..."
+                 aria-label="Search {% if target_user != request.user %}{{ target_user.username }}'s{% else %}your{% endif %} {{ media_type_plural }}"
+                 class="h-9 w-full rounded-xl bg-surface-800 pr-3 pl-9 text-sm text-white shadow-lg ring-1 shadow-black/20 ring-white/10 placeholder:text-gray-500 focus:ring-2 focus:ring-indigo-400 focus:outline-none">
         </div>
-      </div>
 
-      <div class="flex gap-2 flex-wrap">
-        <!-- Filter by Status -->
-        <div class="relative" x-data="{ open: false }">
-          <button class="flex items-center px-4 py-2 bg-surface-600 rounded-md hover:bg-surface-500 transition-colors cursor-pointer"
+        {# Sort, and beside it its direction #}
+        <div class="relative"
+             x-data="{ open: false }"
+             @click.outside="open = false"
+             @keydown.escape.window="open = false">
+          <button type="button"
                   @click="open = !open"
-                  type="button">
-            {% include "app/icons/funnel.svg" with classes="w-4 h-4 mr-2" %}
-            <span x-text="statusLabels[status] || status"></span>
-            {% include "app/icons/chevron-down.svg" with classes="w-4 h-4 ml-2" %}
+                  :aria-expanded="open"
+                  aria-haspopup="true"
+                  aria-label="Sort by"
+                  class="flex gap-1.5 pr-2.5 pl-3 h-9 cursor-pointer items-center rounded-xl bg-surface-800 text-sm text-gray-300 shadow-lg ring-1 shadow-black/20 ring-white/10 transition-colors hover:bg-surface-700 hover:text-white">
+            <span class="font-medium whitespace-nowrap text-white" x-text="sortLabel">{{ current_sort_label }}</span>
+            <span class="text-gray-400 transition-transform duration-200"
+                  :class="open && 'rotate-180'">{% include "app/icons/chevron-down.svg" with classes="size-4" %}</span>
           </button>
-
-          <div class="absolute z-10 mt-2 py-1 w-48 bg-surface-600 rounded-xl shadow-lg overflow-hidden border border-gray-700"
-               x-cloak
+          <div x-cloak
                x-show="open"
-               @click.outside="open = false"
-               x-transition:enter="transition ease-out duration-100"
-               x-transition:enter-start="transform opacity-0 scale-95"
-               x-transition:enter-end="transform opacity-100 scale-100"
-               x-transition:leave="transition ease-in duration-75"
-               x-transition:leave-start="transform opacity-100 scale-100"
-               x-transition:leave-end="transform opacity-0 scale-95">
-            {% for value, label in status_choices %}
-              <button hx-get="{% url 'medialist' target_user.username media_type %}"
-                      {% if media_list %} hx-target="{{ layout_class }}" {% else %} hx-target="#empty_list" {% endif %}
-                      hx-include="#filter-form"
-                      hx-indicator="#loading-indicator"
-                      class="block w-full px-4 py-2 text-left text-sm transition-colors cursor-pointer"
-                      :class="status === '{{ value }}' ? 'bg-indigo-600 text-white font-medium' : 'text-gray-300 hover:bg-surface-500 hover:text-white'"
-                      @click="status = '{{ value }}'; open = false"
-                      type="button">{{ label }}</button>
-            {% endfor %}
+               x-transition:enter="transition ease-out duration-150"
+               x-transition:enter-start="opacity-0 -translate-y-1"
+               x-transition:enter-end="opacity-100 translate-y-0"
+               x-transition:leave="transition ease-in duration-100"
+               x-transition:leave-start="opacity-100"
+               x-transition:leave-end="opacity-0"
+               class="absolute top-full left-0 z-30 mt-2 w-48 rounded-2xl bg-surface-800 p-1.5 shadow-2xl ring-1 shadow-black/50 ring-white/10 lg:right-0 lg:left-auto">
+            <template x-for="choice in sorts" :key="choice.value">
+              <button type="button"
+                      @click="if (sort !== choice.value) sortBy(choice.value); open = false"
+                      class="flex w-full cursor-pointer items-center justify-between rounded-xl px-2.5 py-2 text-left text-sm transition-colors"
+                      :class="sort === choice.value ? 'bg-white/10 text-white' : 'text-gray-300 hover:bg-white/5 hover:text-white'">
+                <span x-text="choice.label"></span>
+                <span x-show="sort === choice.value" class="text-indigo-400">{% include "app/icons/checkmark.svg" with classes="size-4" %}</span>
+              </button>
+            </template>
+          </div>
+        </div>
+        <button type="button"
+                @click="set('order', order === 'asc' ? 'desc' : 'asc')"
+                :aria-label="'Order: ' + orderLabel"
+                :data-tooltip="orderLabel"
+                class="tooltip flex w-9 justify-center h-9 cursor-pointer items-center rounded-xl bg-surface-800 text-sm text-gray-300 shadow-lg ring-1 shadow-black/20 ring-white/10 transition-colors hover:bg-surface-700 hover:text-white">
+          <span x-show="order === 'asc'">{% include "app/icons/sort-ascending.svg" with classes="size-4" %}</span>
+          <span x-show="order === 'desc'">{% include "app/icons/sort-descending.svg" with classes="size-4" %}</span>
+        </button>
+
+        {# Filters besides the status, counted on their button #}
+        <div class="relative"
+             x-data="{ open: false }"
+             @click.outside="open = false"
+             @keydown.escape.window="open = false">
+          <button type="button"
+                  @click="open = !open"
+                  :aria-expanded="open"
+                  aria-haspopup="true"
+                  aria-label="Filters"
+                  data-tooltip="Filters"
+                  class="tooltip relative flex w-9 justify-center h-9 cursor-pointer items-center rounded-xl bg-surface-800 text-sm text-gray-300 shadow-lg ring-1 shadow-black/20 ring-white/10 transition-colors hover:bg-surface-700 hover:text-white"
+                  :class="filterCount && 'text-indigo-300'">
+            {% include "app/icons/funnel.svg" with classes="size-4" %}
+            <span x-cloak
+                  x-show="filterCount"
+                  x-text="filterCount"
+                  class="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-indigo-500 text-[0.625rem] font-semibold text-white ring-2 ring-surface-900"></span>
+          </button>
+          <div x-cloak
+               x-show="open"
+               x-transition:enter="transition ease-out duration-150"
+               x-transition:enter-start="opacity-0 -translate-y-1"
+               x-transition:enter-end="opacity-100 translate-y-0"
+               x-transition:leave="transition ease-in duration-100"
+               x-transition:leave-start="opacity-100"
+               x-transition:leave-end="opacity-0"
+               class="absolute top-full right-0 z-30 mt-2 w-64 space-y-3 rounded-2xl bg-surface-800 p-3 shadow-2xl ring-1 shadow-black/50 ring-white/10">
+            <div>
+              <p class="mb-1.5 text-[0.6875rem] font-semibold tracking-wide text-gray-400 uppercase">Rating</p>
+              <div class="grid grid-cols-3 gap-1">
+                {% for value, label in rated_choices %}
+                  <button type="button"
+                          @click="set('rated', '{{ value }}')"
+                          class="cursor-pointer rounded-lg px-2 py-1.5 text-xs font-medium transition-colors"
+                          :class="rated === '{{ value }}' ? 'bg-indigo-600 text-white' : 'bg-white/5 text-gray-300 hover:bg-white/10'">
+                    {{ label }}
+                  </button>
+                {% endfor %}
+              </div>
+            </div>
+            <label class="flex cursor-pointer items-center justify-between gap-3 rounded-xl bg-white/5 px-3 py-2.5">
+              <span>
+                <span class="block text-sm font-medium text-white">{{ media_type|media_past_verb|capfirst }} more than once</span>
+                <span class="block text-xs text-gray-400">Only what you've finished again</span>
+              </span>
+              <input type="checkbox"
+                     class="peer sr-only"
+                     :checked="rewatched"
+                     @change="set('rewatched', $event.target.checked)">
+              <span class="relative h-5 w-9 shrink-0 rounded-full bg-surface-550 transition-colors peer-checked:bg-indigo-600 peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-400 after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
+            </label>
           </div>
         </div>
 
-        <!-- Sort by -->
-        <div class="relative" x-data="{ open: false }">
-          <button class="flex items-center px-4 py-2 bg-surface-600 rounded-md hover:bg-surface-500 transition-colors cursor-pointer"
-                  @click="open = !open"
-                  type="button">
-            {% include "app/icons/arrows-up-down.svg" with classes="w-4 h-4 mr-2" %}
-            <span x-text="sortLabels[sort] || sort"></span>
-            {% include "app/icons/chevron-down.svg" with classes="w-4 h-4 ml-2" %}
+        {# Layout #}
+        <div class="flex h-9 shrink-0 items-center gap-0.5 rounded-xl bg-surface-800 p-0.5 shadow-lg ring-1 shadow-black/20 ring-white/10"
+             role="group"
+             aria-label="Layout">
+          <button type="button"
+                  @click="set('layout', 'grid')"
+                  :aria-pressed="layout === 'grid'"
+                  aria-label="Grid"
+                  data-tooltip="Grid"
+                  class="tooltip tooltip-end flex size-8 cursor-pointer items-center justify-center rounded-[0.625rem] transition-colors"
+                  :class="layout === 'grid' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'">
+            {% include "app/icons/four-square.svg" with classes="size-4" %}
           </button>
-
-          <div class="absolute z-10 mt-2 py-1 w-48 bg-surface-600 rounded-xl shadow-lg overflow-hidden border border-gray-700"
-               x-cloak
-               x-show="open"
-               @click.outside="open = false"
-               x-transition:enter="transition ease-out duration-100"
-               x-transition:enter-start="transform opacity-0 scale-95"
-               x-transition:enter-end="transform opacity-100 scale-100"
-               x-transition:leave="transition ease-in duration-75"
-               x-transition:leave-start="transform opacity-100 scale-100"
-               x-transition:leave-end="transform opacity-0 scale-95">
-            {% for value, label in sort_choices %}
-              <button hx-get="{% url 'medialist' target_user.username media_type %}"
-                      {% if media_list %} hx-target="{{ layout_class }}" {% else %} hx-target="#empty_list" {% endif %}
-                      hx-include="#filter-form"
-                      hx-indicator="#loading-indicator"
-                      class="block w-full px-4 py-2 text-left text-sm transition-colors cursor-pointer"
-                      :class="sort === '{{ value }}' ? 'bg-indigo-600 text-white font-medium' : 'text-gray-300 hover:bg-surface-500 hover:text-white'"
-                      @click="sort = '{{ value }}'; open = false"
-                      type="button">{{ label }}</button>
-            {% endfor %}
-          </div>
+          <button type="button"
+                  @click="set('layout', 'table')"
+                  :aria-pressed="layout === 'table'"
+                  aria-label="List"
+                  data-tooltip="List"
+                  class="tooltip tooltip-end flex size-8 cursor-pointer items-center justify-center rounded-[0.625rem] transition-colors"
+                  :class="layout === 'table' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'">
+            {% include "app/icons/list.svg" with classes="size-4" %}
+          </button>
         </div>
-
-        <!-- Layout Toggle -->
-        <div class="flex rounded-md overflow-hidden border border-gray-700">
-          <a :href="`{% url 'medialist' target_user.username media_type %}?${search ? 'search=' + search + '&' : ''}${status !== 'all' ? 'status=' + status + '&' : ''}${sort !== 'score' ? 'sort=' + sort + '&' : ''}layout=grid`"
-             class="p-2 cursor-pointer"
-             :class="layout === 'grid' ? 'bg-indigo-600 text-white' : 'bg-surface-600 hover:bg-surface-500'"
-             title="Grid View"
-             @click="layout = 'grid'">{% include "app/icons/four-square.svg" with classes="w-5 h-5" %}</a>
-          <a :href="`{% url 'medialist' target_user.username media_type %}?${search ? 'search=' + search + '&' : ''}${status !== 'all' ? 'status=' + status + '&' : ''}${sort !== 'score' ? 'sort=' + sort + '&' : ''}layout=table`"
-             class="p-2 cursor-pointer"
-             :class="layout === 'table' ? 'bg-indigo-600 text-white' : 'bg-surface-600 hover:bg-surface-500'"
-             title="Table View"
-             @click="layout = 'table'">{% include "app/icons/table.svg" with classes="w-5 h-5" %}</a>
-        </div>
-      </div>
+      </form>
     </div>
 
-    {% if not media_list %}
-      <div id="empty_list"
-           class="flex flex-col items-center justify-center py-16 bg-surface-800 rounded-lg">
-        <div class="text-center max-w-md mx-auto p-6">
-          <div class="bg-surface-600 rounded-full p-4 w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-            {% include "app/icons/edit.svg" with classes="w-8 h-8 text-gray-400" %}
-          </div>
-          <h3 class="text-xl font-semibold mb-2">No {{ media_type|media_type_readable_plural }} Tracked Yet</h3>
-          {% if request.user == target_user %}
-            <p class="text-gray-400 mb-6">
-              Start tracking your {{ media_type_plural }} to keep a record of what you've {{ media_type|media_past_verb }}.
-            </p>
-            <a href="{{ media_type|sample_search }}"
-               class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors">
-              Browse {{ media_type|media_type_readable_plural }}
-            </a>
-          {% endif %}
-        </div>
-      </div>
-    {% elif current_layout == "grid" %}
-      <div class="media-grid">{% include "app/components/media_grid_items.html" %}</div>
-    {% else %}
-      <div class="bg-surface-800 p-4 rounded-lg overflow-hidden max-w-[calc(100svw-4rem)] overflow-x-scroll">
-        <table class="w-full bg-surface-800">
-          <thead class="text-left text-gray-400 text-sm">
-            <tr>
-              <th class="p-2 w-15"></th>
-              <th class="p-2 pe-8 w-2/5">Title</th>
-              <th class="p-2 text-center">Score</th>
-              {% if media_type != MediaTypes.MOVIE.value %}<th class="p-2 text-center">Progress</th>{% endif %}
-              {% if media_type == MediaTypes.TV.value %}<th class="p-2 text-center">Last Watched</th>{% endif %}
-              <th class="p-2 text-center">Status</th>
-              <th class="p-2 text-center">Start Date</th>
-              <th class="p-2 text-center">End Date</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% include "app/components/media_table_items.html" %}
-          </tbody>
-        </table>
-      </div>
-    {% endif %}
-
-    <div id="loading-indicator" class="htmx-indicator text-center pt-8">
-      <div class="inline-flex justify-center items-center">
-        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
-      </div>
-    </div>
+    {% include "app/components/library_results.html" %}
   </div>
 {% endblock content %}
 

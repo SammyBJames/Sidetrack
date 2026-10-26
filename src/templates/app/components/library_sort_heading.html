@@ -1,0 +1,17 @@
+{% load app_tags %}
+
+{# A list column's heading that sorts by `sort`, or flips the direction while it's sorted by #}
+<button type="button"
+        @click="sortBy('{{ sort }}')"
+        class="flex cursor-pointer items-center gap-1 text-left tracking-wide uppercase transition-colors {% if current_sort == sort %}text-white{% else %}hover:text-gray-200{% endif %}">
+  {{ label }}
+  {% if current_sort == sort %}
+    <span class="text-indigo-400">
+      {% if current_order == "asc" %}
+        {% include "app/icons/chevron-up.svg" with classes="size-3.5" %}
+      {% else %}
+        {% include "app/icons/chevron-down.svg" with classes="size-3.5" %}
+      {% endif %}
+    </span>
+  {% endif %}
+</button>

@@ -12,7 +12,7 @@ from unidecode import unidecode
 
 from app import config, helpers, quick_actions
 from app import home as home_helpers
-from app.models import REPEAT_STATUSES, MediaTypes, Sources, Status
+from app.models import REPEAT_STATUSES, MediaTypes, Sources, Status, is_caught_up
 from events.models import SentinelDatetime
 
 register = template.Library()
@@ -274,6 +274,12 @@ def journal_accent(accent):
 def status_config(status):
     """Return the config dict for a status, or None if it is unrecognized."""
     return config.get_status_config(status)
+
+
+@register.filter
+def caught_up(media):
+    """Return whether media is caught up to its latest release, waiting for the next."""
+    return is_caught_up(media)
 
 
 @register.filter

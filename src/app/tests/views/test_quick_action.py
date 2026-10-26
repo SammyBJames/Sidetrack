@@ -534,6 +534,66 @@ class QuickActionViewTests(TestCase):
         self.assertNotIn("HX-Reswap", response)
         self.assertContains(response, "media-card")
 
+    def test_list_row_is_returned_as_a_row(self):
+        """A list row gets its updated row back, dated by the list's sort."""
+        movie = Movie.objects.create(
+            item=self.movie_item,
+            user=self.user,
+            status=Status.PLANNING.value,
+        )
+
+        response = self.post(
+            self.movie_item,
+            quick_actions.COMPLETE,
+            instance_id=movie.id,
+            status="All",
+            sort="added",
+            card="row",
+        )
+
+        self.assertTemplateUsed(response, "app/components/media_row.html")
+        self.assertNotContains(response, "media-card")
+        self.assertEqual(response.context["date_heading"], "Added")
+        self.assertEqual(response.context["media"].list_date, movie.created_at)
+        # The list's status counts change with it
+        self.assertEqual(response["HX-Trigger"], "libraryChanged")
+
+    def test_card_stays_caught_up_while_in_progress(self):
+        """A list of caught up media keeps an entry still in progress."""
+        anime = Anime.objects.create(
+            item=self.anime_item,
+            user=self.user,
+            status=Status.IN_PROGRESS.value,
+            progress=1,
+        )
+
+        response = self.post(
+            self.anime_item,
+            quick_actions.NEXT,
+            instance_id=anime.id,
+            status="caught_up",
+        )
+
+        self.assertNotIn("HX-Reswap", response)
+
+    def test_completed_card_leaves_caught_up_list(self):
+        """Finishing media removes it from a list of caught up media."""
+        movie = Movie.objects.create(
+            item=self.movie_item,
+            user=self.user,
+            status=Status.IN_PROGRESS.value,
+        )
+
+        response = self.post(
+            self.movie_item,
+            quick_actions.COMPLETE,
+            instance_id=movie.id,
+            status="caught_up",
+        )
+
+        self.assertEqual(response["HX-Reswap"], "delete")
+        self.assertEqual(response["HX-Trigger"], "libraryChanged")
+
     def test_second_click_with_an_old_action_changes_nothing(self):
         """A repeated click after the entry moved on is ignored."""
         Anime.objects.create(

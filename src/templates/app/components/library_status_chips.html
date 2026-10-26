@@ -1,0 +1,31 @@
+{% load app_tags %}
+
+{# A media type's list's statuses with how many media each has, refreshed when an action on a card changes them. On phones they scroll sideways in one line, padded so the scroll area doesn't clip their rings #}
+<div id="library-status"
+     hx-get="{% url 'medialist' target_user.username media_type %}?part=counts"
+     hx-include="#filter-form"
+     hx-trigger="libraryChanged from:body"
+     hx-swap="outerHTML"
+     role="group"
+     aria-label="Status"
+     class="-mx-4 -my-1 flex gap-2 overflow-x-auto px-4 py-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
+  {% for choice in status_choices %}
+    {% with active=choice.value|str_equals:current_status %}
+      <button type="button"
+              @click="set('status', '{{ choice.value|escapejs }}')"
+              aria-pressed="{{ active|yesno:'true,false' }}"
+              class="flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-3 text-sm font-medium whitespace-nowrap ring-1 transition-colors {% if active %}bg-white/10 text-white ring-white/25{% else %}bg-surface-800 text-gray-300 ring-white/10 hover:bg-surface-700 hover:text-white{% endif %}">
+        {% if choice.caught_up %}
+          {# Caught up media waits like planned media, so it's in its color #}
+          <span class="{{ Status.PLANNING.value|status_color }}">
+            {% include "app/icons/clock.svg" with classes="size-3.5" %}
+          </span>
+        {% elif not choice.all %}
+          <span class="{{ choice.value|status_color }}">{% include choice.value|status_icon with classes="size-3.5" %}</span>
+        {% endif %}
+        {{ choice.label }}
+        <span class="text-xs tabular-nums {% if active %}text-gray-300{% else %}text-gray-500{% endif %}">{{ choice.count }}</span>
+      </button>
+    {% endwith %}
+  {% endfor %}
+</div>

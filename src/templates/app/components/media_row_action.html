@@ -1,0 +1,23 @@
+{% load app_tags %}
+
+{# A list row's one-click action to the next status, as its icon filling in with that status's color on hover. Its name shows to its left, so it covers none of the row #}
+{% get_quick_action item.media_type media as quick %}
+{% if quick %}
+  <button type="button"
+          aria-label="{{ quick.label }}"
+          data-tooltip="{{ quick.label }}"
+          class="tooltip group/qa relative flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full bg-white/5 text-gray-300 ring-1 ring-white/10 transition after:top-1/2 after:right-full after:left-auto after:mt-0 after:mr-2 after:translate-x-0 after:-translate-y-1/2 hover:text-white hover:ring-white/30 disabled:cursor-wait"
+          hx-post="{% url 'quick_action' %}"
+          hx-vals='{"media_id": "{{ item.media_id|escapejs }}", "source": "{{ item.source }}", "media_type": "{{ item.media_type }}", "season_number": "{{ item.season_number|default_if_none:'' }}", "instance_id": "{{ media.id }}", "action": "{{ quick.key }}", "card": "row"}'
+          hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+          hx-include="#filter-form"
+          hx-target="closest .media-row"
+          hx-swap="outerHTML"
+          hx-disabled-elt="this">
+    <span class="absolute inset-0 rounded-full opacity-0 transition-opacity duration-200 group-hover/qa:opacity-100 {{ quick.target_status|status_button_color }}"></span>
+    <span class="relative [.htmx-request_&]:invisible">{% include quick.icon with classes="size-4" %}</span>
+    <span class="htmx-indicator absolute size-4 animate-spin">
+      {% include "app/icons/circle-spinning-clockwise.svg" with classes="size-4" %}
+    </span>
+  </button>
+{% endif %}

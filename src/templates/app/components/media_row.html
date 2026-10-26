@@ -1,0 +1,96 @@
+{% load app_tags %}
+
+{# A media's row in a list: its poster and title, status, progress, rating and the date the list sorts by or its last activity. On narrower screens all but the title fold under it. The owner gets its quick action #}
+{% card_title item item as heading %}
+{% firstof item|release_year "" as year %}
+{% with user=target_user|default:user caught=media|caught_up %}
+  <div class="media-row hover-tap relative grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-x-4 px-4 py-3 transition-colors hover:bg-white/[0.03] {% if show_progress %}xl:grid-cols-[3rem_minmax(0,1fr)_9rem_10rem_4.5rem_7.5rem_2rem]{% else %}xl:grid-cols-[3rem_minmax(0,1fr)_9rem_4.5rem_7.5rem_2rem]{% endif %}">
+    <a href="{{ item|media_url }}" tabindex="-1" aria-hidden="true">
+      <img alt=""
+           class="lazyload aspect-2/3 w-12 rounded-md bg-surface-700 object-cover shadow-md ring-1 shadow-black/30 ring-white/10"
+           data-src="{{ item.image }}"
+           src="{{ IMG_NONE }}">
+    </a>
+
+    <div class="min-w-0">
+      <a href="{{ item|media_url }}"
+         class="line-clamp-1 font-semibold text-white transition-colors hover:text-indigo-300"
+         title="{{ heading.full }}">{{ heading.title }}</a>
+      <div class="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-gray-400">
+        {% if heading.subtitle %}<span class="shrink-0 font-medium text-gray-300">{{ heading.subtitle }}</span>{% endif %}
+        {% if item.media_type == MediaTypes.TV.value and media.released_seasons %}
+          <span class="@container min-w-0 flex-1 truncate">{% include "app/components/tv_counts.html" %}</span>
+        {% elif year %}
+          <span>{{ year }}</span>
+        {% endif %}
+        {% if media.repeats > 1 %}
+          <span class="flex shrink-0 items-center gap-0.5"
+                title="Repeated {{ media.repeats }} times">
+            {% include "app/icons/repeat.svg" with classes="size-3.5" %}
+            {{ media.repeats }}
+          </span>
+        {% endif %}
+      </div>
+
+      {# The columns, under the title where there's no room for them #}
+      <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs xl:hidden">
+        {% include "app/components/media_row_status.html" %}
+        {% if show_progress and media.progress %}
+          <span class="text-gray-300 tabular-nums">
+            {{ media.formatted_progress }}{% if media.max_progress %} / {{ media.max_progress }}{% endif %}
+          </span>
+        {% endif %}
+        {% if media.score|show_media_score:user %}
+          <span class="flex items-center gap-1 text-gray-200">
+            {% include "app/icons/star.svg" with classes="size-3.5 fill-current text-amber-400" %}
+            {{ media.formatted_score }}
+          </span>
+        {% endif %}
+        {% if media.list_date %}<span class="text-gray-500">{{ media.list_date|date_format:user }}</span>{% endif %}
+      </div>
+    </div>
+
+    <div class="hidden min-w-0 flex-col text-sm xl:flex">{% include "app/components/media_row_status.html" %}</div>
+
+    {% if show_progress %}
+      <div class="hidden xl:block">
+        {% if media.max_progress %}
+          <div class="flex items-center gap-2">
+            <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
+              <div class="h-full max-w-full rounded-full {{ media.status|status_background_color }}"
+                   style="width: {% widthratio media.progress media.max_progress 100 %}%"></div>
+            </div>
+            <span class="text-xs text-gray-300 tabular-nums">{{ media.formatted_progress }}/{{ media.max_progress }}</span>
+          </div>
+        {% elif media.progress %}
+          <span class="text-sm text-gray-300 tabular-nums">{{ media.formatted_progress }}</span>
+        {% else %}
+          <span class="text-gray-600">—</span>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    <div class="hidden items-center gap-1 text-sm xl:flex">
+      {% if media.score|show_media_score:user %}
+        {% include "app/icons/star.svg" with classes="size-4 fill-current text-amber-400" %}
+        <span class="font-medium text-white">{{ media.formatted_score }}</span>
+      {% else %}
+        <span class="text-gray-600">—</span>
+      {% endif %}
+    </div>
+
+    <div class="hidden text-sm text-gray-300 xl:block">
+      {% if media.list_date %}
+        {{ media.list_date|date_format:user }}
+      {% else %}
+        <span class="text-gray-600">—</span>
+      {% endif %}
+    </div>
+
+    <div class="flex justify-end">
+      {% if request.user == user %}
+        {% include "app/components/media_row_action.html" %}
+      {% endif %}
+    </div>
+  </div>
+{% endwith %}

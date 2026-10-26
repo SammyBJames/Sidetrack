@@ -11,6 +11,5 @@
        hx-get="{% url 'medialist' target_user.username media_type %}?page={{ media_list.next_page_number }}"
        hx-trigger="revealed threshold:200px"
        hx-swap="outerHTML"
-       hx-include="#filter-form"
-       hx-indicator="#loading-indicator"></div>
+       hx-include="#filter-form"></div>
 {% endif %}
