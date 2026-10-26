@@ -323,8 +323,7 @@ class MediaManager(models.Manager):
         search=None,
         *,
         sort_order=None,
-        rated=None,
-        rewatched=False,
+        filters=None,
         exclude_caught_up=True,
     ):
         """Get media list based on filters, sorting and search.
@@ -332,9 +331,10 @@ class MediaManager(models.Manager):
         Each media is listed by its latest entry. Filtered to in progress or
         repeating, media caught up to its latest release is left out unless
         `exclude_caught_up` is False, as it waits for the next, and filtered to
-        caught up, it's all that's listed. `rated` is "rated" or "unrated" for
-        media with or without a score, and `rewatched` keeps media finished more
-        than once. The sort goes in `sort_order`, else its usual direction.
+        caught up, it's all that's listed. `filters` are the library's filters by
+        field key, as `library_fields.parse_filters` returns them, applied to
+        each media's latest entry. The sort goes in `sort_order`, else its usual
+        direction.
         """
         model = apps.get_model(app_label="app", model_name=media_type)
         queryset = model.objects.filter(user=user.id)
@@ -365,8 +365,7 @@ class MediaManager(models.Manager):
             queryset,
             media_type,
             statuses,
-            rated=rated,
-            rewatched=rewatched,
+            filters,
         )
 
         queryset = queryset.select_related("item")
@@ -380,11 +379,7 @@ class MediaManager(models.Manager):
                 sort_order,
             )
 
-        # Shows and seasons count their plays through their episodes, so they're
-        # filtered by them once loaded
         media_list = queryset
-        if rewatched and media_type in EPISODIC_MEDIA_TYPES:
-            media_list = [media for media in queryset if media.plays > 1]
 
         # Media caught up to its latest release isn't listed as being gone
         # through, so it's a list of what is instead of a queryset
@@ -397,14 +392,13 @@ class MediaManager(models.Manager):
             return self.without_caught_up(media_list, media_type)
         return media_list
 
-    def _filter_latest_entries(
-        self, queryset, media_type, statuses, *, rated, rewatched
-    ):
+    def _filter_latest_entries(self, queryset, media_type, statuses, filters):
         """Return the latest entry of each media whose entries match the filters.
 
-        Media is filtered by its latest entry's status and score, and annotated
-        with its number of entries as `repeats`, when it was first added as
-        `added_at` and its number of completed entries as `completed_entries`.
+        Media is filtered by its latest entry's status and the library's
+        `filters`, and annotated with its number of entries as `repeats`, when it
+        was first added as `added_at` and its number of completed entries as
+        `completed_entries`.
         """
         latest = {"partition_by": [F("item")], "order_by": F("created_at").desc()}
         queryset = queryset.annotate(
@@ -433,19 +427,14 @@ class MediaManager(models.Manager):
             queryset = queryset.annotate(
                 latest_status=Window(expression=FirstValue("status"), **latest),
             ).filter(latest_status__in=statuses)
-        if rated in ("rated", "unrated"):
-            queryset = queryset.annotate(
-                latest_score=Window(expression=FirstValue("score"), **latest),
-            ).filter(latest_score__isnull=rated == "unrated")
-        # Shows and seasons count their plays through their episodes instead
-        if rewatched and media_type not in EPISODIC_MEDIA_TYPES:
-            queryset = queryset.filter(completed_entries__gt=1)
+        for flt in (filters or {}).values():
+            queryset = flt.field.filter(queryset, media_type, flt)
         return queryset
 
-    def get_status_counts(self, user, media_type, search=None, **filters):
+    def get_status_counts(self, user, media_type, search=None, filters=None):
         """Return how many media of a type the list has in each status.
 
-        Takes the list's search and `rated` and `rewatched` filters. Media caught
+        Takes the list's search and filters. Media caught
         up to its latest release counts as caught up instead of in progress or
         repeating, and "All" counts every media.
         """
@@ -456,7 +445,7 @@ class MediaManager(models.Manager):
             all_status,
             None,
             search,
-            **filters,
+            filters=filters,
         )
         if isinstance(media_list, list):
             statuses = [media.status for media in media_list]
@@ -475,7 +464,7 @@ class MediaManager(models.Manager):
                 users.models.LibraryStatusChoices.CAUGHT_UP,
                 None,
                 search,
-                **filters,
+                filters=filters,
             ):
                 counts[media.status] -= 1
                 counts[users.models.LibraryStatusChoices.CAUGHT_UP] += 1
@@ -527,6 +516,12 @@ class MediaManager(models.Manager):
         if sort_order is None:
             sort_order = field.default_order
         sort_value = field.sort(media_type)
+        # A show's aggregate is annotated once, as the filter did if it has one
+        if (
+            getattr(sort_value, "contains_aggregate", False)
+            and f"filter_{field.key}" in queryset.query.annotations
+        ):
+            sort_value = F(f"filter_{field.key}")
         # Aggregates are ordered by from an annotation, as they group the rows
         if getattr(sort_value, "contains_aggregate", False):
             queryset = queryset.annotate(sort_value=sort_value)

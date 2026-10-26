@@ -2,9 +2,11 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.http import QueryDict
 from django.test import TestCase
 from django.utils import timezone
 
+from app import library_fields
 from app.models import (
     TV,
     Anime,
@@ -52,8 +54,9 @@ class MediaListFilterTests(TestCase):
             )
         return item
 
-    def titles(self, media_type=MediaTypes.MOVIE.value, **kwargs):
-        """Return the titles a list shows, in its order."""
+    def titles(self, media_type=MediaTypes.MOVIE.value, query="", **kwargs):
+        """Return the titles a list shows, in its order, under a query's filters."""
+        kwargs["filters"] = library_fields.parse_filters(media_type, QueryDict(query))
         kwargs.setdefault("status_filter", MediaStatusChoices.ALL)
         kwargs.setdefault("sort_filter", MediaSortChoices.TITLE)
         return [
@@ -134,9 +137,9 @@ class MediaListFilterTests(TestCase):
         )
         self.movie("Rated", (Status.COMPLETED.value, Decimal(7), 3))
 
-        self.assertEqual(self.titles(rated="rated"), ["Rated"])
-        self.assertEqual(self.titles(rated="unrated"), ["Rewatching"])
-        self.assertEqual(self.titles(rated="anything"), ["Rated", "Rewatching"])
+        self.assertEqual(self.titles(query="rated=rated"), ["Rated"])
+        self.assertEqual(self.titles(query="rated=unrated"), ["Rewatching"])
+        self.assertEqual(self.titles(query="rated=anything"), ["Rated", "Rewatching"])
 
     def test_rewatched_is_finished_more_than_once(self):
         """Only media finished at least twice is rewatched."""
@@ -151,7 +154,7 @@ class MediaListFilterTests(TestCase):
             (Status.REPEATING.value, None, 4),
         )
 
-        self.assertEqual(self.titles(rewatched=True), ["Twice"])
+        self.assertEqual(self.titles(query="rewatched=1"), ["Twice"])
 
     def test_rewatched_shows_go_by_their_episodes(self):
         """A show is rewatched once each of its watched episodes is watched twice."""
@@ -175,7 +178,9 @@ class MediaListFilterTests(TestCase):
                 [Episode(item=episode, related_season=season) for _ in range(watches)],
             )
 
-        self.assertEqual(self.titles(MediaTypes.TV.value, rewatched=True), ["Twice"])
+        self.assertEqual(
+            self.titles(MediaTypes.TV.value, query="rewatched=1"), ["Twice"]
+        )
 
     def create_caught_up_anime(self):
         """Create anime in progress up to its latest episode, the next to come."""
@@ -253,7 +258,10 @@ class MediaListFilterTests(TestCase):
             self.user,
             MediaTypes.MOVIE.value,
             "rat",
-            rated="rated",
+            filters=library_fields.parse_filters(
+                MediaTypes.MOVIE.value,
+                QueryDict("rated=rated"),
+            ),
         )
 
         self.assertEqual(counts[MediaStatusChoices.ALL], 1)

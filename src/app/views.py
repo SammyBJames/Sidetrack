@@ -199,12 +199,7 @@ def media_list(request, username, media_type):
     status_filter = preference(f"{media_type}_status", request.GET.get("status"))
 
     search = request.GET.get("search", "").strip()
-    filters = {
-        "rated": request.GET.get("rated")
-        if request.GET.get("rated") in RATED_FILTERS
-        else "",
-        "rewatched": request.GET.get("rewatched") == "1",
-    }
+    filters = library_fields.parse_filters(media_type, request.GET)
 
     if request.GET.get("part") == "counts":
         # The status counts alone, after a card's action changed them
@@ -222,7 +217,7 @@ def media_list(request, username, media_type):
             sort_filter=sort_filter,
             search=search,
             sort_order=sort_order,
-            **filters,
+            filters=filters,
         ),
         LIST_PAGE_SIZE,
     ).get_page(request.GET.get("page", 1))
@@ -232,6 +227,8 @@ def media_list(request, username, media_type):
     context = {
         **_library_context(target_user, media_type, status_filter, search, filters),
         "media_list": media_page,
+        "active_filters": library_fields.describe_filters(filters),
+        "filter_choices": library_fields.present_choices(target_user, media_type),
         "current_layout": layout,
         "current_sort": sort_filter,
         "current_order": sort_order,
@@ -304,6 +301,25 @@ def _annotate_list_dates(media_list, sort_filter):
     return heading
 
 
+def _legacy_rated(filters):
+    """Return "rated" or "unrated" if that's all the rating filter asks, else "".
+
+    It's what the toolbar's rating buttons show as selected.
+    """
+    flt = filters.get(MediaSortChoices.SCORE)
+    if flt is None or flt.max is not None:
+        return ""
+    if flt.unset and flt.min is None:
+        return "unrated"
+    return "rated" if flt.min == 0 and not flt.unset else ""
+
+
+def _legacy_rewatched(filters):
+    """Return whether the filters ask for media finished at least twice."""
+    flt = filters.get(MediaSortChoices.PLAYS)
+    return flt is not None and flt.min == 2 and flt.max is None  # noqa: PLR2004
+
+
 def _library_context(user, media_type, status_filter, search, filters):
     """Return what a media type's list shows of its filters.
 
@@ -315,7 +331,7 @@ def _library_context(user, media_type, status_filter, search, filters):
         user,
         media_type,
         search,
-        **filters,
+        filters=filters,
     )
     return {
         "media_type": media_type,
@@ -323,8 +339,8 @@ def _library_context(user, media_type, status_filter, search, filters):
         "target_user": user,
         "current_status": status_filter,
         "current_search": search,
-        "current_rated": filters["rated"],
-        "current_rewatched": filters["rewatched"],
+        "current_rated": _legacy_rated(filters),
+        "current_rewatched": _legacy_rewatched(filters),
         "rated_choices": [
             ("", "Any"),
             *zip(RATED_FILTERS, ("Rated", "Unrated"), strict=True),

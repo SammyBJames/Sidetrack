@@ -32,13 +32,13 @@
   {% else %}
     <div class="panel flex flex-col items-center px-6 py-16 text-center">
       <div class="mb-4 flex size-14 items-center justify-center rounded-full bg-white/5 text-gray-400 ring-1 ring-white/10">
-        {% if current_search or current_rated or current_rewatched or current_status != "All" %}
+        {% if current_search or active_filters or current_status != "All" %}
           {% include "app/icons/funnel.svg" with classes="size-6" %}
         {% else %}
           {% icon media_type is_active=False extra_classes="size-6" %}
         {% endif %}
       </div>
-      {% if current_search or current_rated or current_rewatched or current_status != "All" %}
+      {% if current_search or active_filters or current_status != "All" %}
         <h2 class="text-lg font-semibold text-white">Nothing matches these filters</h2>
         <p class="mt-1 max-w-sm text-sm text-gray-400">
           {% if current_search %}No {{ media_type_plural }} match “{{ current_search }}” with these filters.{% else %}Try another status or fewer filters.{% endif %}
