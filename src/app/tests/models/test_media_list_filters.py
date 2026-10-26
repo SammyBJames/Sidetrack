@@ -137,9 +137,9 @@ class MediaListFilterTests(TestCase):
         )
         self.movie("Rated", (Status.COMPLETED.value, Decimal(7), 3))
 
-        self.assertEqual(self.titles(query="rated=rated"), ["Rated"])
-        self.assertEqual(self.titles(query="rated=unrated"), ["Rewatching"])
-        self.assertEqual(self.titles(query="rated=anything"), ["Rated", "Rewatching"])
+        self.assertEqual(self.titles(query="score_min=0"), ["Rated"])
+        self.assertEqual(self.titles(query="score=unrated"), ["Rewatching"])
+        self.assertEqual(self.titles(query="score=anything"), ["Rated", "Rewatching"])
 
     def test_rewatched_is_finished_more_than_once(self):
         """Only media finished at least twice is rewatched."""
@@ -154,7 +154,7 @@ class MediaListFilterTests(TestCase):
             (Status.REPEATING.value, None, 4),
         )
 
-        self.assertEqual(self.titles(query="rewatched=1"), ["Twice"])
+        self.assertEqual(self.titles(query="plays_min=2"), ["Twice"])
 
     def test_rewatched_shows_go_by_their_episodes(self):
         """A show is rewatched once each of its watched episodes is watched twice."""
@@ -179,7 +179,7 @@ class MediaListFilterTests(TestCase):
             )
 
         self.assertEqual(
-            self.titles(MediaTypes.TV.value, query="rewatched=1"), ["Twice"]
+            self.titles(MediaTypes.TV.value, query="plays_min=2"), ["Twice"]
         )
 
     def create_caught_up_anime(self):
@@ -260,10 +260,34 @@ class MediaListFilterTests(TestCase):
             "rat",
             filters=library_fields.parse_filters(
                 MediaTypes.MOVIE.value,
-                QueryDict("rated=rated"),
+                QueryDict("score_min=0"),
             ),
         )
 
         self.assertEqual(counts[MediaStatusChoices.ALL], 1)
         self.assertEqual(counts[Status.COMPLETED.value], 1)
         self.assertEqual(counts[Status.PLANNING.value], 0)
+
+    def test_caught_up_counts_take_the_filters(self):
+        """Caught up media the filters leave out isn't moved out of in progress."""
+        self.create_caught_up_anime()  # "Airing", with no provider score
+        behind = Anime(
+            item=self.item("Behind", MediaTypes.ANIME.value),
+            user=self.user,
+            status=Status.IN_PROGRESS.value,
+        )
+        Anime.objects.bulk_create([behind])
+        Item.objects.filter(pk=behind.item_id).update(provider_score=Decimal(8))
+
+        counts = self.manager.get_status_counts(
+            self.user,
+            MediaTypes.ANIME.value,
+            filters=library_fields.parse_filters(
+                MediaTypes.ANIME.value,
+                QueryDict("provider_score_min=7"),
+            ),
+        )
+
+        self.assertEqual(counts[MediaStatusChoices.ALL], 1)
+        self.assertEqual(counts[Status.IN_PROGRESS.value], 1)
+        self.assertEqual(counts[LibraryStatusChoices.CAUGHT_UP], 0)

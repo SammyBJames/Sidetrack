@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -7,10 +8,12 @@ from django.urls import reverse
 from app import library_fields, quick_actions
 from app.models import (
     TV,
+    BasicMedia,
     BoardGame,
     Book,
     Episode,
     Item,
+    MediaManager,
     MediaTypes,
     Movie,
     Season,
@@ -78,6 +81,47 @@ class LibraryPanelViewTests(TestCase):
         self.assertContains(response, 'data-count="1"')
         self.assertContains(response, 'data-filter-count="0"')
 
+    def test_next_pages_skip_the_status_counts(self):
+        """A scrolled-to page lists its media without counting the statuses."""
+        for title in ("Beta", "Gamma", "Delta", "Epsilon"):
+            self.create(Movie, MediaTypes.MOVIE, title)
+        params = {"sort": "title", "order": "asc", "layout": "table"}
+
+        with (
+            patch("app.views.LIST_PAGE_SIZE", 2),
+            patch.object(
+                MediaManager,
+                "get_status_counts",
+                wraps=BasicMedia.objects.get_status_counts,
+            ) as get_status_counts,
+        ):
+            response = self.client.get(
+                self.url,
+                {**params, "page": 2},
+                headers={"hx-request": "true"},
+            )
+            get_status_counts.assert_not_called()
+            self.client.get(self.url, params, headers={"hx-request": "true"})
+            get_status_counts.assert_called_once()
+
+        self.assertTemplateUsed(response, "app/components/media_list_rows.html")
+        self.assertEqual(
+            [media.item.title for media in response.context["media_list"]],
+            ["Delta", "Epsilon"],
+        )
+
+    def test_result_count_is_of_every_page(self):
+        """The count the panel shows is of all results, not of the first page."""
+        for title in ("Beta", "Gamma", "Delta", "Epsilon"):
+            self.create(Movie, MediaTypes.MOVIE, title, genres="|Drama|")
+
+        with patch("app.views.LIST_PAGE_SIZE", 2):
+            response = self.client.get(self.url, {"genre": "Drama"})
+
+        self.assertEqual(len(response.context["media_list"].object_list), 2)
+        self.assertEqual(response.context["result_count"], 5)
+        self.assertContains(response, 'data-count="5"')
+
     def test_inputs_are_filled_from_the_address(self):
         """The panel's inputs hold the filters asked for, even an unlisted genre."""
         response = self.client.get(
@@ -91,15 +135,6 @@ class LibraryPanelViewTests(TestCase):
         self.assertRegex(html, r'name="genre"\s+value="Drama"\s+checked')
         self.assertRegex(html, r'name="genre"\s+value="Horror"\s+checked')
         self.assertNotRegex(html, r'name="imdb_max"\s+value="[^"]')
-
-    def test_legacy_params_fill_the_panel(self):
-        """An old rated link shows as the rating range in the panel."""
-        response = self.client.get(self.url, {"rated": "unrated"})
-
-        self.assertRegex(
-            response.content.decode(),
-            r'name="score"\s+value="unrated"\s+checked',
-        )
 
     def test_rows_show_the_sorted_value(self):
         """A row shows the sorted field's value with its unit."""
@@ -302,6 +337,11 @@ class LibraryPanelViewTests(TestCase):
 
     def test_quick_action_row_counts_the_times_finished(self):
         """The row's times finished count the completed entries."""
+        Movie.objects.create(
+            item=self.movie.item,
+            user=self.user,
+            status=Status.DROPPED.value,
+        )
         response = self.quick_row("plays")
 
         self.assertEqual(response.context["media"].sorted_value, "1")

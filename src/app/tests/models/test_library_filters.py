@@ -13,6 +13,7 @@ from app.models import (
     Item,
     MediaManager,
     MediaTypes,
+    Movie,
     Season,
     Sources,
     Status,
@@ -143,8 +144,6 @@ class LibraryFiltersTests(TestCase):
         self.assertEqual(self.titles("score_min=7"), ["High"])
         self.assertEqual(self.titles("score=unrated"), ["Unrated"])
         self.assertEqual(self.titles("score_min=7&score=unrated"), ["High", "Unrated"])
-        self.assertEqual(self.titles("rated=rated"), ["High", "Low"])
-        self.assertEqual(self.titles("rated=unrated"), ["Unrated"])
 
     def test_times_finished_range(self):
         """Times finished filters by the completed entries, rewatched from two."""
@@ -158,7 +157,6 @@ class LibraryFiltersTests(TestCase):
         )
 
         self.assertEqual(self.titles("plays_min=2"), ["Twice"])
-        self.assertEqual(self.titles("rewatched=1"), ["Twice"])
         self.assertEqual(self.titles("plays_max=0"), ["Never"])
         self.assertEqual(self.titles("plays_min=1&plays_max=1"), [once.item.title])
 
@@ -282,7 +280,7 @@ class LibraryFiltersTests(TestCase):
         self.assertEqual(self.titles("start_date_max=2024-01-01", tv), ["Many"])
         self.assertEqual(self.titles("plays_min=1", tv), ["Few", "Many"])
         self.assertEqual(self.titles("plays_max=0", tv), ["None"])
-        self.assertEqual(self.titles("rewatched=1", tv), [])
+        self.assertEqual(self.titles("plays_min=2", tv), [])
 
     def test_bad_params_are_ignored(self):
         """Invalid values, unknown params and fields the type lacks filter nothing."""
@@ -317,8 +315,8 @@ class LibraryFiltersTests(TestCase):
             "status=Completed",
             "bogus_min=1",
             "score=rated",
-            "rated=anything",
-            "rewatched=0",
+            "rated=rated",
+            "rewatched=1",
         ):
             with self.subTest(query=query):
                 self.assertEqual(self.titles(query), ["One", "Two"])
@@ -403,37 +401,57 @@ class LibraryFiltersTests(TestCase):
         )
 
         pills = {
-            (pill["key"], pill["value"]): pill
+            (pill["params"][0], pill["value"]): pill
             for pill in library_fields.describe_filters(filters)
         }
 
-        self.assertEqual(pills[("imdb", None)]["label"], "IMDb rating ≥ 7")
-        self.assertEqual(pills[("imdb", None)]["params"], ["imdb_min", "imdb_max"])
-        self.assertEqual(pills[("release", None)]["label"], "Released 2000\u20132010")
-        self.assertEqual(pills[("runtime", None)]["label"], "Runtime ≥ 2h 5m")
-        self.assertEqual(pills[("score", None)]["label"], "Unrated")
+        self.assertEqual(pills[("imdb_min", None)]["label"], "IMDb rating ≥ 7")
+        self.assertEqual(pills[("imdb_min", None)]["params"], ["imdb_min", "imdb_max"])
         self.assertEqual(
-            pills[("score", None)]["params"],
-            ["score_min", "score_max", "score", "rated"],
+            pills[("release_min", None)]["label"], "Released 2000\u20132010"
+        )
+        self.assertEqual(pills[("runtime_min", None)]["label"], "Runtime ≥ 2h 5m")
+        self.assertEqual(pills[("score_min", None)]["label"], "Unrated")
+        self.assertEqual(
+            pills[("score_min", None)]["params"],
+            ["score_min", "score_max", "score"],
         )
         self.assertEqual(
-            pills[("plays", None)]["params"],
-            ["plays_min", "plays_max", "rewatched"],
+            pills[("plays_min", None)]["params"],
+            ["plays_min", "plays_max"],
         )
         self.assertEqual(
-            pills[("start_date", None)]["label"], "Start date from Mar 5, 2024"
+            pills[("start_date_min", None)]["label"], "Start date from Mar 5, 2024"
         )
-        self.assertEqual(pills[("plays", None)]["label"], "Times watched ≤ 1")
+        self.assertEqual(pills[("plays_min", None)]["label"], "Times watched ≤ 1")
         self.assertEqual(pills[("genre", "Drama")]["label"], "Drama")
         self.assertEqual(pills[("genre", "Comedy")]["params"], ["genre"])
         self.assertNotIn(("genre", "drama"), pills)
 
     def test_genres_and_platforms_present_with_counts(self):
         """The choices are the library's names, counted by title, most first."""
-        self.entry(MOVIE, "A", {"genres": "|Drama|Comedy|"})
+        rewatched = self.entry(MOVIE, "A", {"genres": "|Drama|Comedy|"})
+        # A second entry of the same title doesn't count it twice
+        Movie.objects.create(
+            item=rewatched.item, user=self.user, status=Status.COMPLETED.value
+        )
         self.entry(MOVIE, "B", {"genres": "|drama|"})
         self.entry(MOVIE, "C", {"genres": "|Horror|"})
         self.entry(MOVIE, "D")
+        # Another user's library has its own genres
+        other = get_user_model().objects.create_user(username="other")
+        Movie.objects.create(
+            item=Item.objects.create(
+                media_id="other",
+                source=Sources.MANUAL.value,
+                media_type=MOVIE,
+                title="Other",
+                image="https://example.com/image.jpg",
+                genres="|Western|",
+            ),
+            user=other,
+            status=Status.COMPLETED.value,
+        )
 
         self.assertEqual(
             library_fields.present_choices(self.user, MOVIE),
@@ -445,12 +463,13 @@ class LibraryFiltersTests(TestCase):
                 ],
             },
         )
+        self.assertEqual(self.titles("genre=Comedy"), ["A"])
         self.entry(MediaTypes.GAME.value, "G", {"platforms": "|PC|", "genres": "|RPG|"})
         game = library_fields.present_choices(self.user, MediaTypes.GAME.value)
         self.assertEqual(game["platform"], [{"value": "PC", "count": 1}])
 
-    def test_view_filters_and_keeps_old_params(self):
-        """The list takes filter params, and the old rated and rewatched ones."""
+    def test_view_takes_the_filter_params(self):
+        """The list takes filter params, and shows when nothing matches them."""
         self.client.login(**self.credentials)
         self.entry(MOVIE, "Good", {"imdb_score": "8.0", "genres": "|Drama|"}, score="9")
         self.entry(MOVIE, "Bad", {"imdb_score": "3.0"})
@@ -464,20 +483,17 @@ class LibraryFiltersTests(TestCase):
             [pill["label"] for pill in response.context["active_filters"]],
             ["IMDb rating ≥ 7"],
         )
+        genre = next(
+            group
+            for group in response.context["filter_groups"]
+            if group["title"] == "Genre"
+        )
         self.assertEqual(
-            response.context["filter_choices"]["genre"],
-            [{"value": "Drama", "count": 1}],
+            [(o["value"], o["count"]) for o in genre["choices"][0]["options"]],
+            [("Drama", 1)],
         )
 
-        response = self.client.get(url, {"rated": "rated"})
-        self.assertEqual(
-            [m.item.title for m in response.context["media_list"]], ["Good"]
-        )
-        response = self.client.get(url, {"rated": "unrated"})
-        self.assertEqual(
-            [m.item.title for m in response.context["media_list"]], ["Bad"]
-        )
-        response = self.client.get(url, {"rewatched": "1"})
+        response = self.client.get(url, {"plays_min": "2"})
         self.assertEqual(list(response.context["media_list"]), [])
         self.assertContains(response, "Nothing matches these filters")
 

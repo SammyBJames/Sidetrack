@@ -30,7 +30,7 @@ from django.db.models.functions import Coalesce, FirstValue, Lower
 from django.utils import timezone
 
 from app import config
-from app.models import STATUS_SORT_ORDER, AiringStatus, Episode, Item, MediaTypes
+from app.models import STATUS_SORT_ORDER, AiringStatus, Episode, MediaTypes
 from users.models import MediaSortChoices, SortOrderChoices, default_sort_order
 
 # The sort a list starts with, and falls back to when its sort doesn't exist for
@@ -97,7 +97,6 @@ class LibraryField:
     key: str
     label: str
     kind: str
-    media_type: str
     sort: Callable | None
     default_order: str
     order_labels: tuple
@@ -105,11 +104,13 @@ class LibraryField:
     # How the field is filtered, or None for a field that isn't: takes the media
     # list, its media type and the parsed `LibraryFilter`, and returns the list
     filter: Callable | None = None
-    # The values a choice filter accepts, empty for any
+    # The values a choice filter accepts with their labels, as (value, label)
+    # pairs, empty for any
     choices: tuple = ()
     # A value of the field's own param that matches media without a value
     unset_choice: str = ""
-    # The item column of delimited text, as genres
+    # The item column a choice filter reads: one value, or delimited text (as
+    # genres) when the field has no `choices`
     column: str = ""
 
     def format(self, value):
@@ -263,8 +264,6 @@ ITEM = "item"  # a column of the item, filtered as a plain `item__` lookup
 ENTRY = "entry"  # a column of the entry, of the latest entry of each media
 DERIVED = "derived"  # of the latest entry, or of a show's watched episodes
 DIRECT = "direct"  # already a value of the media list, as its sort reads it
-OVERLAP = "overlap"  # a range of player counts that a game's must meet
-DELIMITED = "delimited"  # delimited text of the item, as genres
 
 # The most a number filter takes, so a huge value isn't sent to the database
 MAX_FILTER_NUMBER = Decimal(10**9)
@@ -346,14 +345,12 @@ def _year_dates(flt):
     )
 
 
-def _is_integer_column(field, name):
-    """Return whether a number field's value is read from a whole number column."""
-    if field.key in (MediaSortChoices.PLAYS, MediaSortChoices.PROGRESS):
-        return True
-    return name.startswith("item__") and isinstance(
-        Item._meta.get_field(name.removeprefix("item__")),
-        IntegerField,
-    )
+# The fields whose numbers have a fraction, by the step their inputs take
+FRACTION_STEPS = {
+    MediaSortChoices.SCORE: "0.5",
+    MediaSortChoices.PROVIDER_SCORE: "0.1",
+    MediaSortChoices.IMDB: "0.1",
+}
 
 
 def _whole_bounds(flt):
@@ -375,7 +372,7 @@ def _range_filter(scope, *, as_datetime=False, year=False):
 
     def apply(queryset, media_type, flt):
         queryset, name = _value_name(queryset, media_type, flt.field, scope)
-        if flt.field.kind == NUMBER and _is_integer_column(flt.field, name):
+        if flt.field.kind == NUMBER and flt.field.key not in FRACTION_STEPS:
             flt = _whole_bounds(flt)
         if year:
             flt = _year_dates(flt)
@@ -396,8 +393,8 @@ def _overlap_filter(queryset, _media_type, flt):
 
 
 def _choice_filter(queryset, _media_type, flt):
-    """Return the media whose item's airing status is any of the choices."""
-    return queryset.filter(item__airing_status__in=flt.values)
+    """Return the media whose item's value in the field's column is any asked for."""
+    return queryset.filter(**{f"item__{flt.field.column}__in": flt.values})
 
 
 def _delimited_filter(queryset, _media_type, flt):
@@ -592,7 +589,8 @@ _DEFINITIONS = (
         "types": AIRING,
         "sort": _airing_status,
         "filter": _choice_filter,
-        "choices": AiringStatus.values,
+        "column": "airing_status",
+        "choices": tuple(AiringStatus.choices),
         "order_labels": ("Airing first", "Ended first"),
     },
     {
@@ -649,7 +647,6 @@ def _registry():
                 key=key,
                 label=definition["label"](media_type),
                 kind=definition["kind"],
-                media_type=media_type,
                 sort=definition["sort"],
                 default_order=(
                     default_sort_order(key)
@@ -723,25 +720,6 @@ def _parse_year(value):
 
 _PARSERS = {NUMBER: _parse_number, DATE: _parse_date, YEAR: _parse_year}
 
-# Params of older toolbars, as the filters they stand for
-LEGACY_PARAMS = {"score": ["rated"], "plays": ["rewatched"]}
-LEGACY_RATED = {"rated": ("score_min", "0"), "unrated": ("score", "unrated")}
-
-
-def _legacy_params(params):
-    """Return the request's params as lists, with the old `rated` and `rewatched`.
-
-    Rated and unrated are a rating from 0 and no rating, and rewatched is
-    finished at least twice, unless the new params already say.
-    """
-    raw = {name: params.getlist(name) for name in params}
-    if params.get("rated") in LEGACY_RATED:
-        name, value = LEGACY_RATED[params["rated"]]
-        raw.setdefault(name, []).append(value)
-    if params.get("rewatched") == "1":
-        raw.setdefault("plays_min", ["2"])
-    return raw
-
 
 def parse_filters(media_type, params):
     """Return the filters a request asks for on a media type's list, by key.
@@ -752,7 +730,7 @@ def parse_filters(media_type, params):
     field doesn't have, a field the media type lacks or an unknown param, is
     ignored. A minimum above the maximum is kept and leaves no media.
     """
-    raw = _legacy_params(params)
+    raw = {name: params.getlist(name) for name in params}
     filters = {}
     for field in get_filterable_fields(media_type):
         if field.kind in _PARSERS:
@@ -771,7 +749,7 @@ def parse_filters(media_type, params):
             values = []
             for asked in raw.get(field.key, []):
                 value = asked.replace("|", "").strip()[:MAX_NAME_LENGTH]
-                valid = value in field.choices if field.choices else value
+                valid = value in dict(field.choices) if field.choices else value
                 if valid and value.lower() not in {v.lower() for v in values}:
                     values.append(value)
             if values:
@@ -822,19 +800,13 @@ def describe_filters(filters):
     for key, flt in filters.items():
         if flt.values:
             for value in flt.values:
-                label = AiringStatus(value).label if flt.field.choices else value
-                pills.append(
-                    {"key": key, "label": label, "params": [key], "value": value},
-                )
+                label = dict(flt.field.choices).get(value, value)
+                pills.append({"label": label, "params": [key], "value": value})
         else:
             params = [f"{key}_min", f"{key}_max"]
             if flt.field.unset_choice:
                 params.append(key)
-            # The old toolbar's params for the same filters
-            params += LEGACY_PARAMS.get(key, [])
-            pills.append(
-                {"key": key, "label": _label(flt), "params": params, "value": None},
-            )
+            pills.append({"label": _label(flt), "params": params, "value": None})
     return pills
 
 
@@ -847,10 +819,13 @@ def present_choices(user, media_type):
     model = apps.get_model("app", media_type)
     choices = {}
     for field in get_filterable_fields(media_type):
-        if not field.column:
+        if not field.column or field.choices:
             continue
+        # Without the model's ordering, whose columns DISTINCT would keep, so a
+        # title with several entries counts once
         rows = (
             model.objects.filter(user=user)
+            .order_by()
             .values_list("item_id", f"item__{field.column}")
             .distinct()
         )
@@ -877,13 +852,6 @@ ACTIVITY_KEYS = (
     MediaSortChoices.ADDED,
     MediaSortChoices.RECENT,
 )
-
-# The fields whose numbers have a fraction, by the step their inputs take
-FRACTION_STEPS = {
-    MediaSortChoices.SCORE: "0.5",
-    MediaSortChoices.PROVIDER_SCORE: "0.1",
-    MediaSortChoices.IMDB: "0.1",
-}
 
 
 def _input_value(value):
@@ -944,8 +912,8 @@ def panel_filters(media_type, filters, choices):
         asked = {value.lower() for value in flt.values} if flt else set()
         if field.choices:
             options = [
-                {"value": value, "label": AiringStatus(value).label, "count": None}
-                for value in field.choices
+                {"value": value, "label": label, "count": None}
+                for value, label in field.choices
             ]
             group = "about"
         else:
@@ -959,7 +927,7 @@ def panel_filters(media_type, filters, choices):
                 for value in (flt.values if flt else ())
                 if value.lower() not in known
             ]
-            group = field.key if field.key in groups else "about"
+            group = field.key
         for option in options:
             option["checked"] = option["value"].lower() in asked
         groups[group]["choices"].append(

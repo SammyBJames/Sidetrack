@@ -50,7 +50,6 @@ from users.models import (
     MediaSortChoices,
     MediaStatusChoices,
     User,
-    default_sort_order,
 )
 
 logger = logging.getLogger(__name__)
@@ -227,24 +226,10 @@ def media_list(request, username, media_type):
     )
 
     context = {
-        **_library_context(target_user, media_type, status_filter, search, filters),
+        "media_type": media_type,
+        "target_user": target_user,
         "media_list": media_page,
-        "active_filters": library_fields.describe_filters(filters),
-        "filter_count": len(filters),
-        "result_count": media_page.paginator.count,
         "current_layout": layout,
-        "current_sort": sort_filter,
-        "current_order": sort_order,
-        "current_sort_label": sort_field.label,
-        "sort_choices": [
-            {
-                "value": field.key,
-                "label": field.label,
-                "order": field.default_order,
-                "order_labels": field.order_labels,
-            }
-            for field in library_fields.get_sortable_fields(media_type)
-        ],
         "sorted_field": sorted_field,
         "show_progress": media_type not in UNPROGRESSED_MEDIA_TYPES,
     }
@@ -255,26 +240,42 @@ def media_list(request, username, media_type):
         "X-Soft-Navigation",
     ):
         if media_page.number > 1:
+            # A further page is only its cards, so it needs none of the counts,
+            # pills or sorts
             template_name = (
                 "app/components/media_grid_items.html"
                 if layout == LayoutChoices.GRID
                 else "app/components/media_list_rows.html"
             )
-        else:
-            template_name = "app/components/library_results.html"
+            return render(request, template_name, context)
+        template_name = "app/components/library_results.html"
     else:
         template_name = "app/media_list.html"
         # Only the whole page has the panel, which the results reloads leave be
-        context["filter_choices"] = library_fields.present_choices(
-            target_user,
-            media_type,
-        )
         context["filter_groups"] = library_fields.panel_filters(
             media_type,
             filters,
-            context["filter_choices"],
+            library_fields.present_choices(target_user, media_type),
         )
 
+    context.update(
+        _library_context(target_user, media_type, status_filter, search, filters),
+        active_filters=library_fields.describe_filters(filters),
+        filter_count=len(filters),
+        result_count=media_page.paginator.count,
+        current_sort=sort_filter,
+        current_order=sort_order,
+        current_sort_label=sort_field.label,
+        sort_choices=[
+            {
+                "value": field.key,
+                "label": field.label,
+                "order": field.default_order,
+                "order_labels": field.order_labels,
+            }
+            for field in library_fields.get_sortable_fields(media_type)
+        ],
+    )
     return render(request, template_name, context)
 
 
@@ -287,13 +288,10 @@ def _list_sort(user, media_type, params, preference, *, own_list):
     sort = preference(f"{media_type}_sort", params.get("sort"))
     order = params.get("order")
     field = library_fields.get_sort_field(media_type, sort)
-    if field.key != sort:
-        if own_list:
-            user.update_preference(f"{media_type}_sort", field.key)
-        if "sort" not in params:
-            order = field.default_order
-    if order is None and "sort" in params:
-        order = default_sort_order(field.key)
+    if field.key != sort and own_list:
+        user.update_preference(f"{media_type}_sort", field.key)
+    if order is None and ("sort" in params or field.key != sort):
+        order = field.default_order
     return field, preference(f"{media_type}_sort_order", order)
 
 

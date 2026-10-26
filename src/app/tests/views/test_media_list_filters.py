@@ -63,9 +63,9 @@ class MediaListFilterViewTests(TestCase):
         self.user.refresh_from_db()
         self.assertEqual(self.user.movie_sort_order, "desc")
 
-    def test_rated_filter_is_not_saved(self):
-        """The rated filter narrows the list for the request alone."""
-        response = self.client.get(f"{self.url}?rated=unrated")
+    def test_score_filter_is_not_saved(self):
+        """The unrated filter narrows the list for the request alone."""
+        response = self.client.get(f"{self.url}?score=unrated")
         self.assertEqual(self.titles(response), ["Beta"])
 
         response = self.client.get(self.url)
@@ -74,7 +74,7 @@ class MediaListFilterViewTests(TestCase):
     def test_counts_alone_after_a_card_changes(self):
         """The status counts can be asked for alone, under the list's filters."""
         response = self.client.get(
-            f"{self.url}?part=counts&rated=rated",
+            f"{self.url}?part=counts&score_min=0",
             headers={"hx-request": "true"},
         )
 
