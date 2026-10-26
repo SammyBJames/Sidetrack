@@ -2,8 +2,7 @@
 
 {# A home row: one status and media type by recent activity, scrolling sideways, with a link to the full list in the same order. Seasons link to their shows' list, as they have none of their own #}
 <section class="space-y-3"
-         x-data="{ atStart: true, atEnd: true, update() { const track = this.$refs.track; this.atStart = track.scrollLeft <= 1; this.atEnd = track.scrollLeft + track.clientWidth >= track.scrollWidth - 1; }, scroll(direction) { const track = this.$refs.track; track.scrollBy({ left: direction * track.clientWidth * 0.9, behavior: 'smooth' }); }, }"
-         x-init="$nextTick(() => update())"
+         x-data="scrollRow"
          @resize.window.debounce.100ms="update()">
   <div class="flex items-center justify-between gap-3">
     <a href="{% if row.media_type == MediaTypes.SEASON.value %}{% url 'medialist' request.user.username MediaTypes.TV.value %}{% else %}{% url 'medialist' request.user.username row.media_type %}{% endif %}?status={{ row.status|urlencode }}&sort=recent"
@@ -21,30 +20,14 @@
       {% include "app/icons/chevron-right.svg" with classes="size-4 shrink-0 text-gray-400 transition group-hover:translate-x-0.5 group-hover:text-white" %}
     </a>
 
-    {# Only shown when the row is wider than the screen; small screens swipe instead #}
-    <div x-cloak
-         x-show="!(atStart && atEnd)"
-         class="hidden shrink-0 items-center gap-2 sm:flex">
-      {% with button_classes="flex size-8 cursor-pointer items-center justify-center rounded-full bg-surface-800 text-gray-300 ring-1 ring-white/10 transition hover:bg-surface-700 hover:text-white disabled:cursor-default disabled:opacity-40 disabled:hover:bg-surface-800" %}
-        <button type="button"
-                @click="scroll(-1)"
-                :disabled="atStart"
-                aria-label="Scroll left"
-                class="{{ button_classes }}">{% include "app/icons/chevron-left.svg" with classes="size-4" %}</button>
-        <button type="button"
-                @click="scroll(1)"
-                :disabled="atEnd"
-                aria-label="Scroll right"
-                class="{{ button_classes }}">{% include "app/icons/chevron-right.svg" with classes="size-4" %}</button>
-      {% endwith %}
-    </div>
+    {% include "app/components/scroll_buttons.html" %}
   </div>
 
-  {# Cards are direct children, sized here, so removing one leaves no gap #}
+  {# Cards are direct children, sized here, so removing one leaves no gap. Padded for their shadows, which a scrolling track clips, with margins that keep them in place #}
   <div id="media-grid-{{ row.id }}"
        x-ref="track"
        @scroll.debounce.50ms="update()"
-       class="scrollbar-hide -my-2 flex snap-x gap-4 overflow-x-auto py-2 *:w-36 *:shrink-0 *:snap-start sm:*:w-44 xl:*:w-48">
+       class="scrollbar-hide -mx-3 -mt-2 -mb-6 flex snap-x scroll-px-3 gap-4 overflow-x-auto px-3 pt-2 pb-6 *:w-36 *:shrink-0 *:snap-start sm:*:w-44 xl:*:w-48">
     {% include "app/components/home_grid.html" with media_list=row home_status=row.status %}
   </div>
 </section>

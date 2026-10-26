@@ -3,6 +3,7 @@ import datetime
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from app.models import (
     TV,
@@ -146,6 +147,28 @@ class CreateMedia(TestCase):
         )
         self.assertEqual(episode.notes, "Great episode")
 
+    def test_quick_watch_episode(self):
+        """One click marks an episode watched now, without the form's fields."""
+        before = timezone.now().replace(second=0, microsecond=0)
+        self.client.post(
+            reverse("episode_save"),
+            {
+                "media_id": "1668",
+                "season_number": 1,
+                "episode_number": 2,
+                "source": Sources.TMDB.value,
+                "quick": "1",
+            },
+        )
+        episode = Episode.objects.get(
+            item__media_id="1668",
+            related_season__user=self.user,
+            item__episode_number=2,
+        )
+        self.assertGreaterEqual(episode.end_date, before)
+        self.assertLessEqual(episode.end_date, timezone.now())
+        self.assertEqual(episode.notes, "")
+
 
 class EditMedia(TestCase):
     """Test the editing of media objects through views."""
@@ -261,6 +284,71 @@ class EditMedia(TestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+        movie.refresh_from_db()
+        self.assertEqual(movie.score, 9)
+
+
+class ClearMediaScore(TestCase):
+    """Test clearing a score, as choosing the current rating again does."""
+
+    def setUp(self):
+        """Create a user and log in."""
+        self.credentials = {"username": "test", "password": "12345"}
+        self.user = get_user_model().objects.create_user(**self.credentials)
+        self.client.login(**self.credentials)
+
+    def test_empty_score_clears_it(self):
+        """An empty score leaves the media unrated."""
+        item = Item.objects.create(
+            media_id="10494",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.MOVIE.value,
+            title="Perfect Blue",
+            image="http://example.com/image.jpg",
+        )
+        movie = Movie.objects.create(
+            item=item,
+            user=self.user,
+            score=9,
+            status=Status.COMPLETED.value,
+        )
+
+        response = self.client.post(
+            reverse(
+                "update_media_score",
+                kwargs={"media_type": MediaTypes.MOVIE.value, "instance_id": movie.id},
+            ),
+            {"score": ""},
+        )
+
+        self.assertEqual(response.json(), {"success": True, "score": None})
+        movie.refresh_from_db()
+        self.assertIsNone(movie.score)
+
+    def test_scores_outside_the_stars_are_refused(self):
+        """Only numbers from 0 to 10 are saved, and others leave the score."""
+        item = Item.objects.create(
+            media_id="10494",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.MOVIE.value,
+            title="Perfect Blue",
+            image="http://example.com/image.jpg",
+        )
+        movie = Movie.objects.create(
+            item=item,
+            user=self.user,
+            score=9,
+            status=Status.COMPLETED.value,
+        )
+        url = reverse(
+            "update_media_score",
+            kwargs={"media_type": MediaTypes.MOVIE.value, "instance_id": movie.id},
+        )
+
+        for score in ("11", "-1", "nan", "inf", "great"):
+            with self.subTest(score=score):
+                response = self.client.post(url, {"score": score})
+                self.assertEqual(response.status_code, 400)
         movie.refresh_from_db()
         self.assertEqual(movie.score, 9)
 

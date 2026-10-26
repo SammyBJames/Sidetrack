@@ -1,0 +1,55 @@
+{% load app_tags %}
+
+{# The Details panel of a details page: single values two to a row, then lists across the panel, then links. Takes the `label_classes` and `value_classes` of the side panel, whose second column it takes on mid-sized screens #}
+<section class="md:max-xl:[&:not(:only-child)]:col-start-2 md:max-xl:[&:not(:only-child)]:row-span-2 md:max-xl:[&:not(:only-child)]:row-start-1">
+  <h2 class="mb-3 text-xl font-bold text-white">Details</h2>
+  <div class="panel">
+    {% media_details_split media as split %}
+    {% if split.values or split.lists %}
+      <dl class="grid grid-cols-2 gap-4 p-4">
+        {% for key, value in split.values %}
+          <div class="min-w-0 {% if value|stringformat:'s'|length > 20 %}col-span-2{% endif %}">
+            <dt class="{{ label_classes }}">{{ key|no_underscore }}</dt>
+            <dd class="{{ value_classes }}">
+              {{ value|iso_date_format:request.user }}
+            </dd>
+          </div>
+        {% endfor %}
+        {% for key, items in split.lists %}
+          <div class="col-span-2">
+            <dt class="{{ label_classes }}">{{ key|no_underscore }}</dt>
+            <dd class="mt-1.5 flex flex-wrap gap-1.5">
+              {% for item in items %}<span class="rounded-md bg-white/5 px-2 py-0.5 text-xs text-gray-200 ring-1 ring-white/10">{{ item|iso_date_format:request.user }}</span>{% endfor %}
+            </dd>
+          </div>
+        {% endfor %}
+      </dl>
+    {% else %}
+      <p class="p-4 text-sm text-gray-400">No details available</p>
+    {% endif %}
+
+    {# The provider, then other sites #}
+    {% if media.source_url or media.external_links %}
+      <div class="flex flex-wrap gap-2 border-t border-white/5 p-4">
+        {% if media.source_url %}
+          <a href="{{ media.source_url }}"
+             target="_blank"
+             rel="noopener"
+             class="inline-flex items-center gap-1.5 rounded-lg bg-white/5 px-2.5 py-1.5 text-xs font-medium text-gray-200 ring-1 ring-white/10 transition-colors hover:bg-white/10 hover:text-white">
+            {{ media.source|source_readable }}
+            {% include "app/icons/external-link.svg" with classes="size-3.5 text-gray-400" %}
+          </a>
+        {% endif %}
+        {% for name, url in media.external_links.items %}
+          <a href="{{ url }}"
+             target="_blank"
+             rel="noopener"
+             class="inline-flex items-center gap-1.5 rounded-lg bg-white/5 px-2.5 py-1.5 text-xs font-medium text-gray-200 ring-1 ring-white/10 transition-colors hover:bg-white/10 hover:text-white">
+            {{ name }}
+            {% include "app/icons/external-link.svg" with classes="size-3.5 text-gray-400" %}
+          </a>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+</section>

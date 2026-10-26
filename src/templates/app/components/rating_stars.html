@@ -1,0 +1,20 @@
+{% load app_tags %}
+
+{# The user's five rating stars, in a ratingStars parent, `size` across, size-4.5 unless given #}
+<div class="flex"
+     role="group"
+     aria-label="Your rating"
+     @mouseleave="hovered = null">
+  {% for star in 5|get_range %}
+    {% widthratio star 1 2 as full %}
+    <span class="relative {{ size|default:'size-4.5' }}">
+      {% include "app/icons/star.svg" with classes=size|default:"size-4.5"|add:" text-surface-500" %}
+      <span class="pointer-events-none absolute inset-y-0 left-0 overflow-hidden text-yellow-400"
+            :style="`width: ${fill({{ star }})}%`">
+        {% include "app/icons/star.svg" with classes=size|default:"size-4.5"|add:" max-w-none" %}
+      </span>
+      {% include "app/components/rating_star_half.html" with value=full|add:"-1" side="left-0" %}
+      {% include "app/components/rating_star_half.html" with value=full side="right-0" %}
+    </span>
+  {% endfor %}
+</div>

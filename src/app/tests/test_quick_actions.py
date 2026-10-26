@@ -1,9 +1,13 @@
+from datetime import timedelta
 from types import SimpleNamespace
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.utils import timezone
 
 from app import quick_actions
-from app.models import MediaTypes, Status
+from app.models import TV, Episode, Item, MediaTypes, Season, Sources, Status
+from events.models import Event
 
 
 def entry(status):
@@ -57,11 +61,28 @@ class GetQuickActionTests(TestCase):
     def test_in_progress_counted_media_adds_one(self):
         """In progress media counted in parts offers the next part."""
         action = quick_actions.get_quick_action(
-            MediaTypes.ANIME.value,
-            entry(Status.IN_PROGRESS.value),
+            MediaTypes.MANGA.value,
+            SimpleNamespace(status=Status.IN_PROGRESS.value, progress=3),
         )
         self.assertEqual(action.key, quick_actions.NEXT)
-        self.assertEqual(action.label, "+1 episode")
+        self.assertEqual(action.label, "+1 chapter")
+
+    def test_in_progress_watched_media_names_the_next_episode(self):
+        """Seasons and anime offer to mark their next episode watched."""
+        anime = SimpleNamespace(status=Status.IN_PROGRESS.value, progress=3)
+        season = SimpleNamespace(
+            status=Status.IN_PROGRESS.value,
+            progress=0,
+            item=SimpleNamespace(season_number=2),
+        )
+
+        anime_action = quick_actions.get_quick_action(MediaTypes.ANIME.value, anime)
+        season_action = quick_actions.get_quick_action(MediaTypes.SEASON.value, season)
+
+        self.assertEqual(anime_action.label, "Mark E4 watched")
+        self.assertEqual(season_action.label, "Mark S2E1 watched")
+        self.assertEqual(season_action.key, quick_actions.NEXT)
+        self.assertEqual(season_action.icon, "app/icons/states/in-progress.svg")
 
     def test_caught_up_media_has_no_next(self):
         """Media with everything released so far done offers no +1."""
@@ -123,3 +144,74 @@ class GetQuickActionTests(TestCase):
         self.assertIsNone(
             quick_actions.get_quick_action(MediaTypes.EPISODE.value, None),
         )
+
+
+class ShowNextSeasonTests(TestCase):
+    """Test which season a show in progress watches its next episode in."""
+
+    def setUp(self):
+        """Track a show in progress with specials and two seasons in progress.
+
+        Each has two episodes out, and season 1 has both watched.
+        """
+        self.user = get_user_model().objects.create_user(username="test")
+        tv_item = Item.objects.create(
+            media_id="1",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Show",
+        )
+        self.tv = TV(item=tv_item, user=self.user, status=Status.IN_PROGRESS.value)
+        TV.save_base(self.tv)
+        self.seasons = {}
+        aired = timezone.now() - timedelta(days=30)
+        for number in (0, 1, 2):
+            item = Item.objects.create(
+                media_id="1",
+                source=Sources.TMDB.value,
+                media_type=MediaTypes.SEASON.value,
+                title="Show",
+                season_number=number,
+            )
+            season = Season(
+                item=item,
+                user=self.user,
+                related_tv=self.tv,
+                status=Status.IN_PROGRESS.value,
+            )
+            Season.save_base(season)
+            self.seasons[number] = season
+            Event.objects.create(item=item, content_number=2, datetime=aired)
+        self.watch(1, 1)
+        self.watch(1, 2)
+
+    def watch(self, season_number, episode_number):
+        """Watch an episode, without the cascade of its season and show."""
+        item = Item.objects.create(
+            media_id="1",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.EPISODE.value,
+            title="Show",
+            season_number=season_number,
+            episode_number=episode_number,
+        )
+        Episode.objects.bulk_create(
+            [Episode(related_season=self.seasons[season_number], item=item)],
+        )
+
+    def next_season_number(self):
+        """Return the number of the season the show watches next, or None."""
+        season = quick_actions.get_show_next_season(self.tv)
+        return season.item.season_number if season else None
+
+    def test_caught_up_seasons_and_specials_come_last(self):
+        """A caught up season is skipped, and specials wait for the rest."""
+        self.assertEqual(self.next_season_number(), 2)
+
+        self.watch(2, 1)
+        self.watch(2, 2)
+        self.assertEqual(self.next_season_number(), 0)
+
+        self.watch(0, 1)
+        self.watch(0, 2)
+        self.assertIsNone(self.next_season_number())

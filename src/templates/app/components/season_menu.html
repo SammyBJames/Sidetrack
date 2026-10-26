@@ -1,0 +1,52 @@
+{% load app_tags %}
+
+{# A season page's season, as a button that opens a menu of the show's other seasons, specials last #}
+<div class="relative inline-block"
+     x-data="{ open: false }"
+     @click.outside="open = false"
+     @keydown.escape.window="open = false">
+  <button type="button"
+          class="flex h-9 cursor-pointer items-center gap-2 rounded-full bg-surface-800/80 pr-3 pl-4 text-sm font-semibold text-white shadow-lg ring-1 shadow-black/30 ring-white/10 backdrop-blur transition-colors hover:bg-surface-650"
+          aria-haspopup="true"
+          :aria-expanded="open"
+          @click="open = !open">
+    {{ media.season_title }}
+    <span class="text-gray-400 transition-transform duration-200"
+          :class="open && 'rotate-180'">{% include "app/icons/chevron-down.svg" with classes="size-4" %}</span>
+  </button>
+
+  <div x-cloak
+       x-show="open"
+       x-transition:enter="transition ease-out duration-150"
+       x-transition:enter-start="opacity-0 -translate-y-1"
+       x-transition:enter-end="opacity-100 translate-y-0"
+       x-transition:leave="transition ease-in duration-100"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       class="absolute top-full left-1/2 z-30 mt-2 w-72 -translate-x-1/2 text-start md:left-0 md:translate-x-0">
+    <div class="max-h-80 space-y-0.5 overflow-y-auto rounded-2xl bg-surface-800 p-1.5 shadow-2xl ring-1 shadow-black/50 ring-white/10">
+      {% for tv_season in tv.related.seasons|specials_last %}
+        {% with current=tv_season.season_number|str_equals:media.season_number %}
+          <a href="{% url 'season_details' source=media.source media_id=media.media_id title=media.title|slug season_number=tv_season.season_number %}"
+             class="flex items-center gap-3 rounded-xl p-1.5 pr-3 transition-colors {% if current %}bg-white/10{% else %}hover:bg-white/5{% endif %}"
+             {% if current %}aria-current="page"{% endif %}>
+            <img src="{{ tv_season.image }}"
+                 loading="lazy"
+                 alt=""
+                 class="aspect-2/3 w-9 shrink-0 rounded-md bg-surface-600 object-cover">
+            <div class="min-w-0 flex-1">
+              <div class="truncate text-sm font-medium text-white">{{ tv_season.season_title }}</div>
+              <div class="mt-0.5 text-xs text-gray-400">
+                {{ tv_season.max_progress }} episode{{ tv_season.max_progress|pluralize }}
+                {% if tv_season.first_air_date %}· {{ tv_season.first_air_date|slice:":4" }}{% endif %}
+              </div>
+            </div>
+            {% if current %}
+              <span class="shrink-0 text-indigo-400">{% include "app/icons/checkmark.svg" with classes="size-4" %}</span>
+            {% endif %}
+          </a>
+        {% endwith %}
+      {% endfor %}
+    </div>
+  </div>
+</div>

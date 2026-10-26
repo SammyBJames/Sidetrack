@@ -1,0 +1,50 @@
+{% load app_tags %}
+
+{# The details page's tracking button: the one-click action to the next status, in that status's color. It acts on `track_target`'s entry, which for a show in progress is the season whose next episode it watches #}
+{% get_quick_action track_target.media_type track_target.entry as quick %}
+<div class="flex h-10 w-full overflow-hidden rounded-xl shadow-lg ring-1 shadow-black/30 ring-white/10 md:w-auto md:min-w-56">
+  {% if quick %}
+    <button type="button"
+            class="relative flex flex-1 cursor-pointer items-center justify-center gap-2 px-5 text-sm font-semibold text-white transition-colors disabled:cursor-wait {{ quick.target_status|status_button_color }}"
+            hx-post="{% url 'quick_action' %}"
+            hx-vals='{"media_id": "{{ media.media_id|escapejs }}", "source": "{{ media.source }}", "media_type": "{{ track_target.media_type }}", "season_number": "{{ track_target.season_number|default_if_none:'' }}", "instance_id": "{{ track_target.entry.id|default_if_none:'' }}", "action": "{{ quick.key }}", "card": "details"}'
+            hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+            hx-swap="none"
+            hx-disabled-elt="this">
+      <span class="flex items-center gap-2 [.htmx-request_&]:invisible">
+        {% include quick.icon with classes="size-4 shrink-0" %}
+        {{ quick.label }}
+      </span>
+      <span class="htmx-indicator absolute top-1/2 left-1/2 size-4 -translate-1/2 animate-spin">
+        {% include "app/icons/circle-spinning-clockwise.svg" with classes="size-4" %}
+      </span>
+    </button>
+  {% elif media_type == MediaTypes.MOVIE.value and current_instance.status == Status.COMPLETED.value %}
+    {# A watched movie, like a watched episode, logs another watch rather than changing the last one #}
+    <button type="button"
+            class="flex flex-1 cursor-pointer items-center justify-center gap-2 px-5 text-sm font-semibold text-white transition-colors {{ Status.COMPLETED.value|status_button_color }}"
+            hx-get="{% media_view_url 'track_modal' media %}"
+            hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}", "is_create": true}'
+            hx-target="#{% component_id 'track' media current_instance.id %}"
+            @click="trackOpen = true">
+      {% include "app/icons/states/completed.svg" with classes="size-4 shrink-0" %}
+      Watched{% if user_medias|length > 1 %} {{ user_medias|length }} times{% endif %}
+    </button>
+  {% else %}
+    {# Nothing to do in one click, e.g. once completed, so the status opens the form #}
+    <button type="button"
+            class="flex flex-1 cursor-pointer items-center justify-center gap-2 px-5 text-sm font-semibold text-white transition-colors {% if current_instance %}{{ current_instance.status|status_button_color }}{% else %}bg-surface-600 hover:bg-surface-550{% endif %}"
+            hx-get="{% media_view_url 'track_modal' media %}"
+            hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}", "instance_id": "{{ current_instance.id }}"}'
+            hx-target="#{% component_id 'track' media current_instance.id %}"
+            @click="trackOpen = true">
+      {% if current_instance %}
+        {% include current_instance.status|status_icon with classes="size-4 shrink-0" %}
+        {{ current_instance.status|media_status_readable }}
+      {% else %}
+        {% include "app/icons/plus.svg" with classes="size-4 shrink-0" %}
+        Add to tracker
+      {% endif %}
+    </button>
+  {% endif %}
+</div>

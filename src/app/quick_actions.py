@@ -7,7 +7,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from app import config
-from app.models import MediaTypes, Status
+from app.models import BasicMedia, MediaTypes, Status
 
 PLAN = "plan"
 START = "start"
@@ -92,16 +92,26 @@ def get_quick_action(media_type, media):
     if key is None:
         return None
 
-    label, icon, target_status = ACTIONS[key]
+    label, icon = _label_and_icon(key, media_type, media)
+    return QuickAction(key, label, icon, ACTIONS[key][2])
+
+
+def _label_and_icon(key, media_type, media):
+    """Return the label and icon of an action on a media type and entry."""
+    label, icon, _ = ACTIONS[key]
     if key == PLAN and _watched(media_type):
         label = "Watchlist"
+    elif key == NEXT and _watched(media_type):
+        # Watching names the episode, e.g. Mark S1E4 watched
+        label = f"Mark {_next_episode_code(media_type, media)} {{past}}"
+        icon = "app/icons/states/in-progress.svg"
     label = label.format(
         verb=config.get_verb(media_type, past_tense=False),
         past=config.get_verb(media_type, past_tense=True),
         # Only counted media has a unit
         unit=config.get_unit(media_type, short=False).lower() if key == NEXT else "",
     )
-    return QuickAction(key, label, icon, target_status)
+    return label, icon
 
 
 def apply_quick_action(action, media):
@@ -149,6 +159,38 @@ def success_message(action, media):
         NEXT: f"{media.item} progress updated.",
     }
     return messages[action.key]
+
+
+def _next_episode_code(media_type, media):
+    """Return the episode after a season or anime's progress, e.g. S1E4 or E4.
+
+    Episodes are taken to be numbered one after another from 1.
+    """
+    episode = f"E{media.progress + 1}"
+    if media_type == MediaTypes.SEASON.value:
+        return f"S{media.item.season_number}{episode}"
+    return episode
+
+
+def get_show_next_season(tv):
+    """Return the season of a show in progress whose next episode is out, or None.
+
+    That's the first season in progress with released episodes left, by number
+    with specials last. Its `max_progress` is annotated for its quick action.
+    """
+    seasons = list(
+        tv.seasons.filter(status=Status.IN_PROGRESS.value)
+        .select_related("item")
+        .prefetch_related("episodes__item"),
+    )
+    BasicMedia.objects.annotate_max_progress(seasons, MediaTypes.SEASON.value)
+    seasons.sort(
+        key=lambda season: (season.item.season_number == 0, season.item.season_number),
+    )
+    for season in seasons:
+        if get_quick_action(MediaTypes.SEASON.value, season):
+            return season
+    return None
 
 
 def _watched(media_type):

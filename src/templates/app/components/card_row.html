@@ -1,0 +1,29 @@
+{# A titled row of cards that scrolls sideways. The `card` template shows each `entry` of `entries`, sized by `widths`. When the row leaves some out, a last card links to all `more_count` `more_label` at `more_url` #}
+<section class="mb-8 space-y-3"
+         x-data="scrollRow"
+         @resize.window.debounce.100ms="update()">
+  <div class="flex items-center justify-between gap-3">
+    <h2 class="text-xl font-bold">{{ title }}</h2>
+    {% include "app/components/scroll_buttons.html" %}
+  </div>
+  {# Padded for the cards' shadows, which a scrolling track clips, with margins that keep the cards in place #}
+  <div x-ref="track"
+       @scroll.debounce.50ms="update()"
+       class="scrollbar-hide -mx-3 -mt-2 -mb-6 flex snap-x scroll-px-3 gap-4 overflow-x-auto px-3 pt-2 pb-6 *:shrink-0 *:snap-start {{ widths }}">
+    {% for entry in entries %}
+      {% include card %}
+    {% endfor %}
+    {% if more_url and more_count > entries|length %}
+      <a href="{{ more_url }}"
+         target="_blank"
+         rel="noopener"
+         class="flex aspect-2/3 flex-col items-center justify-center rounded-xl bg-surface-800 ring-1 ring-white/10 transition duration-300 hover:bg-surface-650 hover:ring-white/30">
+        <div class="mb-3 rounded-full bg-indigo-600 p-2.5 text-white">
+          {% include "app/icons/external-link.svg" with classes="w-5 h-5" %}
+        </div>
+        <span class="text-sm font-semibold text-white">View all</span>
+        <span class="mt-1 text-xs text-gray-400">{{ more_count }} {{ more_label }}</span>
+      </a>
+    {% endif %}
+  </div>
+</section>

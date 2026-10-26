@@ -43,6 +43,9 @@ from users.models import (
 
 logger = logging.getLogger(__name__)
 
+# The highest score, matching the stars' ten half points
+MAX_SCORE = 10
+
 
 @require_GET
 def home(request):
@@ -296,6 +299,15 @@ def media_details(request, source, media_type, media_id, title):  # noqa: ARG001
                     )
                 )
 
+    # A show in progress offers its next episode, which is watched in its season
+    next_season = None
+    if (
+        media_type == MediaTypes.TV.value
+        and current_instance is not None
+        and current_instance.status == Status.IN_PROGRESS.value
+    ):
+        next_season = quick_actions.get_show_next_season(current_instance)
+
     if media_type in ["tv", "movie"]:
         watch_providers = tmdb.filter_providers(
             media_metadata.get("providers"), request.user.watch_provider_region
@@ -310,6 +322,16 @@ def media_details(request, source, media_type, media_id, title):  # noqa: ARG001
         "current_instance": current_instance,
         "watch_providers": watch_providers,
         "watch_provider_region": request.user.watch_provider_region,
+        # The entry the tracking button acts on
+        "track_target": {
+            "entry": next_season or current_instance,
+            "media_type": MediaTypes.SEASON.value if next_season else media_type,
+            "season_number": (next_season.item.season_number if next_season else None),
+        },
+        "ratings": helpers.get_media_ratings(media_metadata),
+        "certification": helpers.get_certification(
+            media_metadata, request.user.watch_provider_region
+        ),
     }
     return render(request, "app/media_details.html", context)
 
@@ -352,6 +374,15 @@ def season_details(request, source, media_id, title, season_number):  # noqa: AR
             episodes_in_db,
         )
 
+    # A season shares its show's recommendations
+    season_metadata["related"] = {
+        **season_metadata.get("related", {}),
+        "recommendations": tv_with_seasons_metadata.get("related", {}).get(
+            "recommendations",
+            [],
+        ),
+    }
+
     # Enrich related items with user tracking data
     if season_metadata.get("related"):
         for section_name, related_items in season_metadata["related"].items():
@@ -370,20 +401,42 @@ def season_details(request, source, media_id, title, season_number):  # noqa: AR
         "media_type": MediaTypes.SEASON.value,
         "user_medias": user_medias,
         "current_instance": current_instance,
+        # The entry the tracking button acts on
+        "track_target": {
+            "entry": current_instance,
+            "media_type": MediaTypes.SEASON.value,
+            "season_number": season_number,
+        },
         "watch_providers": tmdb.filter_providers(
             season_metadata.get("providers"), request.user.watch_provider_region
         ),
         "watch_provider_region": request.user.watch_provider_region,
+        "ratings": helpers.get_media_ratings(season_metadata),
+        "certification": helpers.get_certification(
+            season_metadata, request.user.watch_provider_region
+        ),
     }
     return render(request, "app/media_details.html", context)
 
 
 @require_POST
 def update_media_score(request, media_type, instance_id):
-    """Update the user's score for a media item."""
+    """Update the user's score for a media item, clearing it when it's empty.
+
+    A score that isn't a number from 0 to 10 is refused.
+    """
     media = helpers.get_owned_media_or_404(request, media_type, instance_id)
 
-    score = float(request.POST.get("score"))
+    score = request.POST.get("score")
+    if score:
+        try:
+            score = float(score)
+        except ValueError:
+            score = None
+        if score is None or not 0 <= score <= MAX_SCORE:
+            return HttpResponseBadRequest("Score must be a number from 0 to 10")
+    else:
+        score = None
     media.score = score
     media.save()
     logger.info(
@@ -648,7 +701,8 @@ def quick_action(request):
     The entry is the one given by `instance_id`, else the user's entry for the
     media, which is created if missing. `action` is the key the card showed. If
     it no longer matches, nothing is changed. Removes the card instead of
-    updating it when the entry left the section or status filter it was shown in.
+    updating it when the entry left the section or status filter it was shown in,
+    and reloads the page when the action came from a details page.
     """
     media_id = request.POST["media_id"]
     source = request.POST["source"]
@@ -683,6 +737,12 @@ def quick_action(request):
     quick_actions.apply_quick_action(action, media)
     logger.info("Applied quick action %s to %s", action.key, media)
     messages.success(request, quick_actions.success_message(action, media))
+
+    if request.POST.get("card") == "details":
+        # The details page shows the entry in many places, so reload all of it
+        response = HttpResponse()
+        response["HX-Refresh"] = "true"
+        return response
 
     if request.POST.get("card") == "home":
         # Home actions change the status, so the card moves to another section
@@ -799,10 +859,17 @@ def episode_save(request):
     episode_number = int(request.POST["episode_number"])
     source = request.POST["source"]
 
-    form = EpisodeForm(request.POST)
-    if not form.is_valid():
-        logger.error("Form validation failed: %s", form.errors)
-        return HttpResponseBadRequest("Invalid form data")
+    if request.POST.get("quick"):
+        # One click marks it watched now, like a season's next episode action
+        end_date = timezone.now().replace(second=0, microsecond=0)
+        notes = ""
+    else:
+        form = EpisodeForm(request.POST)
+        if not form.is_valid():
+            logger.error("Form validation failed: %s", form.errors)
+            return HttpResponseBadRequest("Invalid form data")
+        end_date = form.cleaned_data["end_date"]
+        notes = form.cleaned_data["notes"]
 
     try:
         related_season = Season.objects.get(
@@ -841,11 +908,14 @@ def episode_save(request):
 
         logger.info("%s did not exist, it was created successfully.", related_season)
 
-    related_season.watch(
-        episode_number,
-        form.cleaned_data["end_date"],
-        form.cleaned_data["notes"],
-    )
+    # One click is only offered for an unwatched episode, so a second one, e.g.
+    # while the page reloads, doesn't add another watch
+    already_watched = Episode.objects.filter(
+        related_season=related_season,
+        item__episode_number=episode_number,
+    ).exists()
+    if not (request.POST.get("quick") and already_watched):
+        related_season.watch(episode_number, end_date, notes)
 
     return helpers.redirect_back(request)
 

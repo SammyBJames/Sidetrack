@@ -1,0 +1,39 @@
+{% load app_tags %}
+
+{# One entry or watch: when it ended, its rating to change with the stars, and its notes. Takes the `entry` and its `status`, the `score_url` its stars save to, the `actions` template of its buttons, which also read `entry`, and whether to `show_progress` #}
+<div class="panel flex flex-col gap-3 p-4"
+     x-data="ratingStars({{ entry.score|default_if_none:'null' }}, '{{ score_url }}', '{{ csrf_token }}')">
+  <div class="flex items-start justify-between gap-3">
+    <div class="min-w-0">
+      <div class="flex items-center gap-1.5 text-sm font-semibold text-white">
+        <span class="shrink-0 {{ status|status_color }}"
+              title="{{ status|media_status_readable }}">{% include status|status_icon with classes="size-4" %}</span>
+        <span class="truncate">
+          {% if status != Status.COMPLETED.value %}{{ status|media_status_readable }}{% if entry.end_date %} ·{% endif %}{% endif %}
+          {% if entry.end_date %}
+            {{ entry.end_date|human_date }}
+          {% elif status == Status.COMPLETED.value %}
+            No date
+          {% endif %}
+        </span>
+      </div>
+      {% if show_progress and entry.progress %}
+        <div class="mt-0.5 text-xs text-gray-400">
+          {{ entry.formatted_progress }}
+          {% if media_type != MediaTypes.GAME.value %}{{ media_type|long_unit|lower }}{{ entry.progress|pluralize }}{% endif %}
+        </div>
+      {% endif %}
+    </div>
+    <div class="flex shrink-0 gap-2">{% include actions %}</div>
+  </div>
+
+  <div class="tooltip w-fit"
+       :data-tooltip="(hovered ?? rating) ? `Rating · ${hovered ?? rating}/10` : 'Rate it'">
+    {% include "app/components/rating_stars.html" with size="size-4" %}
+  </div>
+
+  {% if entry.notes %}
+    <p class="line-clamp-2 border-t border-white/5 pt-3 text-sm text-gray-300 italic"
+       title="{{ entry.notes }}">"{{ entry.notes|linebreaksbr }}"</p>
+  {% endif %}
+</div>

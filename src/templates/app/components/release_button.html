@@ -1,24 +1,18 @@
 {% load app_tags %}
 
-{# The upcoming release of a home card, which reveals its date on hover and adds it to a calendar when clicked. Takes event, home_status and clock_color from the including card #}
-{% with label=event|release_label:user %}
-  <div class="relative size-7 shrink-0">
+{# An upcoming release on a card, which reveals its date on hover. With an `event` it adds that to a calendar when clicked; without one it shows `label`. Takes home_status and clock_color from the including card #}
+{% firstof event|release_label:user label as label %}
+<div class="relative size-7 shrink-0">
+  {% if event %}
     <a href="{% url 'download_event' event.id %}"
        download
        class="card-chip group/qa pointer-events-auto absolute top-0 right-0 flex h-7 items-center overflow-hidden text-white transition-all duration-200 hover:ring-white/40{% if user.clickable_media_cards %} pointer-coarse:pointer-events-none{% endif %}"
        title="Add to calendar"
-       aria-label="Add to calendar: {{ label }}">
-      <span class="absolute inset-0 opacity-0 transition-opacity duration-200 group-hover/qa:opacity-100 {{ home_status|status_button_color }}"></span>
-      {# Without a mouse there is no hover, so the date is always shown #}
-      <span class="relative max-w-[min(10rem,calc(100cqw-2.5rem))] overflow-hidden pl-2.5 text-xs font-semibold text-ellipsis whitespace-nowrap transition-all duration-300 can-hover:max-w-0 can-hover:pl-0 can-hover:group-hover/qa:max-w-[min(10rem,calc(100cqw-2.5rem))] can-hover:group-hover/qa:pl-2.5">{{ label }}</span>
-      <span class="relative flex size-7 shrink-0 items-center justify-center">
-        <span class="size-3.5 group-hover/qa:hidden {{ clock_color }}">
-          {% include "app/icons/clock.svg" with classes="size-3.5" %}
-        </span>
-        <span class="hidden size-3.5 group-hover/qa:block">
-          {% include "app/icons/calendar.svg" with classes="size-3.5" %}
-        </span>
-      </span>
-    </a>
-  </div>
-{% endwith %}
+       aria-label="Add to calendar: {{ label }}">{% include "app/components/release_button_content.html" %}</a>
+  {% else %}
+    <span class="card-chip group/qa pointer-events-auto absolute top-0 right-0 flex h-7 items-center overflow-hidden text-white"
+          tabindex="0"
+          title="Not released yet"
+          aria-label="Not released yet: {{ label }}">{% include "app/components/release_button_content.html" %}</span>
+  {% endif %}
+</div>

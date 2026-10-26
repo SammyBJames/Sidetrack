@@ -1,3 +1,5 @@
+import re
+from datetime import datetime
 from pathlib import Path
 
 from django import template
@@ -12,7 +14,6 @@ from app import config, helpers, quick_actions
 from app import home as home_helpers
 from app.models import MediaTypes, Sources, Status
 from events.models import SentinelDatetime
-from users.models import WATCH_PROVIDER_REGION_UNSET
 
 register = template.Library()
 
@@ -40,6 +41,18 @@ def absolute_app_url(context, path):
 def no_underscore(arg1):
     """Return the title case of the string."""
     return arg1.replace("_", " ")
+
+
+@register.filter
+def related_title(name):
+    """Return the heading of a related media row, e.g. Related Anime.
+
+    Rows are named by a key like related_anime, made readable here, or by
+    their source, like a movie's Spider-Man (MCU) Collection, kept as it is.
+    """
+    if name.islower():
+        return name.replace("_", " ").title()
+    return name
 
 
 @register.filter
@@ -305,22 +318,69 @@ def release_day(event, user):
         return ""
 
     local_dt = timezone.localtime(event.datetime)
-    today = timezone.localdate()
-    days = (local_dt.date() - today).days
-
-    if days == 0:
-        day = "Today"
-    elif days == 1:
-        day = "Tomorrow"
-    elif local_dt.year == today.year:
-        day = formats.date_format(local_dt, "F j")
-    else:
-        day = formats.date_format(local_dt, "F j, Y")
+    days = (local_dt.date() - timezone.localdate()).days
+    day = _day_words(local_dt.date())
 
     # Releases without a known time are stored at a placeholder time
     if days in (0, 1) and not event.is_sentinel_time:
         return f"{day} {formats.time_format(local_dt, user.time_format)}"
     return day
+
+
+def _day_words(day):
+    """Return a date in words, e.g. Today, Tomorrow, October 6 or October 6, 2027."""
+    today = timezone.localdate()
+    days = (day - today).days
+    if days == 0:
+        return "Today"
+    if days == 1:
+        return "Tomorrow"
+    if day.year == today.year:
+        return formats.date_format(day, "F j")
+    return formats.date_format(day, "F j, Y")
+
+
+@register.filter
+def human_date(value):
+    """Return when something happened in words, e.g. Yesterday or October 6, 2024.
+
+    `value` is a date or datetime, shown in the current time zone.
+    """
+    if not value:
+        return ""
+    day = value
+    if isinstance(value, datetime):
+        day = (
+            timezone.localtime(value).date()
+            if timezone.is_aware(value)
+            else value.date()
+        )
+    if (timezone.localdate() - day).days == 1:
+        return "Yesterday"
+    return _day_words(day)
+
+
+@register.filter
+def air_date_label(air_date, episode_number=None):
+    """Return when an episode airs, e.g. E4 · October 6, or TBA when it isn't known.
+
+    `air_date` is an ISO date like 2027-10-06, as metadata gives it. Without an
+    `episode_number` it's only the day.
+    """
+    try:
+        day = parse_date(str(air_date or ""))
+    except ValueError:
+        day = None
+    day = _day_words(day) if day else "TBA"
+    if episode_number is None:
+        return day
+    return f"E{episode_number} \u00b7 {day}"
+
+
+@register.filter
+def unreleased(air_date):
+    """Return whether something with this air date, or none, isn't out yet."""
+    return not helpers.is_released_date(air_date)
 
 
 @register.filter
@@ -590,34 +650,73 @@ def show_media_score(rating, user):
     return rating is not None and (not user.hide_zero_rating or rating > 0)
 
 
-@register.simple_tag
-def media_section_count(
-    media,
-    user_medias,
-    watch_providers=None,
-    watch_provider_region=None,
-):
-    """Return the number of content sections on the media details page."""
-    count = 0
-    if media.get("cast"):
-        count += 1
-    related = media.get("related") or {}
-    count += sum(1 for related_items in related.values() if related_items)
-    if len(user_medias) > 1:
-        count += 1
-    if media.get("episodes"):
-        count += 1
-    has_streaming = (
-        watch_provider_region == WATCH_PROVIDER_REGION_UNSET or watch_providers
+# The details holding when media came out, in order of preference
+RELEASE_DETAILS = ("release_date", "first_air_date", "start_date", "publish_date")
+
+# The details counting how long media is, with their singular and plural units
+LENGTH_DETAILS = (
+    ("seasons", "season", "seasons"),
+    ("episodes", "episode", "episodes"),
+    ("number_of_chapters", "chapter", "chapters"),
+    ("number_of_pages", "page", "pages"),
+)
+
+
+@register.filter
+def specials_last(seasons):
+    """Return a show's seasons with its specials, season 0, moved to the end.
+
+    Each season is its metadata, or a dict of it as `item` with the user's entry.
+    """
+    return sorted(
+        seasons or [],
+        key=lambda season: season.get("item", season).get("season_number") == 0,
     )
-    if (
-        media.get("media_type") in (MediaTypes.MOVIE.value, MediaTypes.TV.value)
-        and has_streaming
-    ):
-        count += 1
-    if media.get("time_to_beat"):
-        count += 1
-    return count
+
+
+@register.simple_tag
+def media_facts(media):
+    """Return the short facts under a details page's title, as a list of strings.
+
+    These are the year it came out, how many seasons, episodes, chapters or
+    pages it has, and a movie's runtime, each only when known.
+    """
+    details = media.get("details") or {}
+    facts = []
+
+    for key in RELEASE_DETAILS:
+        year = re.search(r"\b\d{4}\b", str(details.get(key) or ""))
+        if year:
+            facts.append(year.group())
+            break
+
+    for key, singular, plural in LENGTH_DETAILS:
+        count = details.get(key)
+        if isinstance(count, int) and count > 0:
+            facts.append(f"{count} {singular if count == 1 else plural}")
+            break
+
+    if media.get("media_type") == MediaTypes.MOVIE.value and details.get("runtime"):
+        facts.append(details["runtime"])
+    return facts
+
+
+@register.simple_tag
+def media_details_split(media):
+    """Return a details page's facts as `values` and `lists` of (key, value) pairs.
+
+    Single values are listed apart from lists, which start with the genres, so
+    each can be laid out to suit it. Unknown and empty values are left out.
+    """
+    values = []
+    lists = [("genres", media["genres"])] if media.get("genres") else []
+    for key, value in (media.get("details") or {}).items():
+        if isinstance(value, list):
+            if value:
+                lists.append((key, value))
+        elif value is not None and value != "":
+            values.append((key, value))
+    return {"values": values, "lists": lists}
 
 
 @register.filter

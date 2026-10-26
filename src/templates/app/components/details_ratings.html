@@ -1,0 +1,23 @@
+{% load humanize %}
+
+{# The ratings from the sources in the side panel of a details page, sharing one row #}
+{% if ratings %}
+  <section>
+    <h2 class="mb-3 text-xl font-bold text-white">Ratings</h2>
+    <div class="flex gap-2">
+      {% for rating in ratings %}
+        <div class="tooltip flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg bg-surface-800/80 px-2 shadow-md ring-1 shadow-black/30 ring-white/10 backdrop-blur"
+             tabindex="0"
+             data-tooltip="{{ rating.label }}{% if rating.votes %} · {{ rating.votes|intcomma }} vote{{ rating.votes|pluralize }}{% endif %}"
+             aria-label="{{ rating.label }}: {{ rating.score|default_if_none:'no rating' }}{{ rating.scale }}">
+          <span class="shrink-0 {{ rating.color }}">{% include rating.icon with classes=rating.size %}</span>
+          {% if rating.score is not None %}
+            <span class="text-sm font-semibold whitespace-nowrap text-white">{{ rating.score }}<span class="text-[0.6875rem] font-medium text-gray-400">{{ rating.scale }}</span></span>
+          {% else %}
+            <span class="text-sm font-semibold text-gray-400">-</span>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}

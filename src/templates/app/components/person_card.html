@@ -1,0 +1,24 @@
+{% load app_tags %}
+
+{# A cast or crew member's photo, linking to their TMDB page, with their name and role over it #}
+<a href="https://www.themoviedb.org/person/{{ entry.id }}"
+   target="_blank"
+   rel="noopener"
+   title="{{ entry.name }}{% if entry.role %} · {{ entry.role }}{% endif %}"
+   class="hover-tap relative block overflow-hidden rounded-xl bg-surface-800 shadow-lg ring-1 shadow-black/30 ring-white/10 transition duration-300 hover:shadow-black/60 hover:ring-white/30">
+  <img alt="{{ entry.name }}"
+       class="lazyload aspect-2/3 w-full bg-surface-600 transition duration-500 ease-out parent-hover-tap:scale-105 {% if entry.image != IMG_NONE %}object-cover{% else %}object-contain p-[30%] opacity-30{% endif %}"
+       data-src="{{ entry.image }}"
+       src="{{ IMG_NONE }}">
+
+  <div class="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-linear-to-t from-black/95 via-black/60 to-transparent">
+  </div>
+  <span class="card-chip hover-reveal absolute top-2 right-2 flex size-7 items-center justify-center text-white">
+    {% include "app/icons/external-link.svg" with classes="size-3.5" %}
+  </span>
+
+  <div class="absolute inset-x-0 bottom-0 px-3 pt-3 pb-3">
+    <div class="line-clamp-2 text-sm leading-snug font-semibold text-white drop-shadow-md">{{ entry.name }}</div>
+    {% if entry.role %}<div class="mt-0.5 line-clamp-1 text-xs text-gray-300">{{ entry.role }}</div>{% endif %}
+  </div>
+</a>

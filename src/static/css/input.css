@@ -73,6 +73,16 @@
   @apply transition-opacity duration-300 can-hover:opacity-0 can-hover:parent-hover-tap:opacity-100 can-hover:[.hover-tap:focus-within_&]:opacity-100;
 }
 
+/* The raised boxes holding content on details pages. No blur or transform, which would trap the fixed modals some of them hold */
+@utility panel {
+  @apply rounded-xl bg-surface-800/80 shadow-lg ring-1 shadow-black/30 ring-white/10;
+}
+
+/* A label under a button, from its data-tooltip, shown on hover or keyboard focus */
+@utility tooltip {
+  @apply relative after:pointer-events-none after:absolute after:top-full after:left-1/2 after:z-20 after:mt-2 after:-translate-x-1/2 after:rounded-lg after:bg-surface-950 after:px-2.5 after:py-1 after:text-xs after:font-medium after:whitespace-nowrap after:text-gray-100 after:opacity-0 after:shadow-lg after:ring-1 after:ring-white/10 after:transition-opacity after:content-[attr(data-tooltip)] can-hover:hover:after:opacity-100 focus-visible:after:opacity-100;
+}
+
 .toast-error {
   @apply bg-red-700/95 border-red-600;
 }

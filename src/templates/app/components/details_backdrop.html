@@ -1,0 +1,12 @@
+{# The backdrop fills the top of a details page behind the header and fades into the background. Small screens show all of it, as a banner in place of the poster #}
+{% if media.backdrop %}
+  <div class="pointer-events-none absolute inset-x-0 top-0 aspect-video max-h-[26rem] overflow-hidden md:aspect-auto md:h-[34rem] md:max-h-none"
+       aria-hidden="true">
+    <img src="{{ media.backdrop }}"
+         alt=""
+         class="size-full object-cover object-top opacity-75 md:opacity-50">
+    <div class="absolute inset-0 bg-linear-to-t from-surface-900 via-surface-900/40 to-transparent md:via-surface-900/75 md:to-surface-900/25">
+    </div>
+    <div class="absolute inset-0 bg-linear-to-r from-surface-900/60 to-transparent"></div>
+  </div>
+{% endif %}

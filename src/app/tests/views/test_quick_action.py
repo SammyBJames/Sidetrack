@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.contrib.messages import get_messages
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -190,6 +191,30 @@ class QuickActionViewTests(TestCase):
 
         self.assertEqual(response["HX-Reswap"], "delete")
         self.assertEqual(response["HX-Trigger"], "mediaChanged")
+
+    def test_details_page_reloads(self):
+        """On a details page the action reloads the page, keeping its message."""
+        movie = Movie.objects.create(
+            item=self.movie_item,
+            user=self.user,
+            status=Status.PLANNING.value,
+        )
+
+        response = self.post(
+            self.movie_item,
+            quick_actions.COMPLETE,
+            instance_id=movie.id,
+            card="details",
+        )
+
+        self.assertEqual(response["HX-Refresh"], "true")
+        movie.refresh_from_db()
+        self.assertEqual(movie.status, Status.COMPLETED.value)
+        # Shown by the reloaded page, so not consumed by this response
+        self.assertEqual(
+            [str(message) for message in get_messages(response.wsgi_request)],
+            ["Test Movie marked as watched."],
+        )
 
     @patch("app.models.Item.fetch_releases")
     @patch("app.providers.services.get_media_metadata")

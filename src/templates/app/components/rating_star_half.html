@@ -1,0 +1,8 @@
+{# One half of a rating star, which sets the user's score to `value` out of ten, or clears it when it's already that #}
+<button type="button"
+        class="absolute inset-y-0 {{ side }} w-1/2 cursor-pointer rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+        aria-label="Rate {{ value }} out of 10"
+        @mouseenter="hovered = {{ value }}"
+        @focus="hovered = {{ value }}"
+        @blur="hovered = null"
+        @click="setRating({{ value }})"></button>

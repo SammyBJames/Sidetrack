@@ -1,9 +1,7 @@
 import os
-from datetime import date
 
 from django.contrib.auth import get_user_model
 from django.contrib.staticfiles.testing import StaticLiveServerTestCase
-from django.utils import timezone
 from playwright.sync_api import expect, sync_playwright
 
 
@@ -49,30 +47,19 @@ class IntegrationTest(StaticLiveServerTestCase):
         expect(self.page.get_by_role("main")).to_contain_text("Breaking Bad")
         self.page.get_by_title("Season 1").click()
         expect(self.page.get_by_role("main")).to_contain_text("Season 1")
-        self.page.get_by_role("button", name="Track Episode").first.click()
-        expect(self.page.get_by_role("main")).to_contain_text("Track Episode")
-        self.page.get_by_role("button", name="More date options").first.click()
-        self.page.get_by_role("button", name="Fill in air date").click()
-        self.page.get_by_role("button", name="Add watch").click()
+        # The season's episodes are marked watched in one click
+        self.page.get_by_role("button", name="Mark watched", exact=True).first.click()
+        expect(self.page.get_by_label("Watched", exact=True)).to_have_count(1)
 
-        datetime_format = "%Y-%m-%d"
-
-        # Episode 1 air date is 2008-01-20
-        fixed_date = date(2008, 1, 20)
-
-        expect(self.page.get_by_role("main")).to_contain_text(
-            f"Last watched: {fixed_date.strftime(datetime_format)}",
-        )
+        # The home card watches the next episode, which it names
         self.page.get_by_role("link", name="Home").click()
         expect(self.page.get_by_title("Breaking Bad \u2013 Season 1")).to_be_visible()
         self.page.locator("#media-grid-in-progress-season").get_by_role(
             "button",
-            name="+1 episode",
+            name="Mark S1E2 watched",
         ).first.click()
         self.page.get_by_title("Breaking Bad \u2013 Season 1").click()
-
-        today = timezone.localtime().strftime(datetime_format)
-        expect(self.page.get_by_role("main")).to_contain_text(f"Last watched: {today}")
+        expect(self.page.get_by_label("Watched", exact=True)).to_have_count(2)
 
     def test_tv_completed(self):
         """Test the completed status of a TV show."""
@@ -82,7 +69,7 @@ class IntegrationTest(StaticLiveServerTestCase):
         expect(self.page.locator("h2")).to_contain_text("Search Results")
         self.page.get_by_title("Breaking Bad", exact=True).click()
         expect(self.page.get_by_role("main")).to_contain_text("Breaking Bad")
-        self.page.locator("button").filter(has_text="Add to tracker").click()
+        self.page.get_by_role("button", name="Add to tracker").click()
         expect(self.page.locator("#track-tv-1396")).to_contain_text("Score")
         self.page.get_by_label("Status").select_option("Completed")
         self.page.get_by_role("button", name="Add", exact=True).click()
@@ -103,8 +90,9 @@ class IntegrationTest(StaticLiveServerTestCase):
         expect(self.page.locator("#track-season-1396-1")).to_contain_text("Score")
         self.page.get_by_role("button", name="Add", exact=True).click()
         # Seasons have no list of their own, so their page shows the entry
+        expect(self.page.get_by_role("main")).to_contain_text("Your History")
         expect(self.page.get_by_role("button", name="Completed")).to_be_visible()
-        expect(self.page.get_by_role("main")).to_contain_text("Progress:")
+        expect(self.page.get_by_role("main")).to_contain_text("Progress\n7")
 
     def test_tv_manual(self):
         """Test the manual creation of a TV show."""
@@ -167,9 +155,7 @@ class IntegrationTest(StaticLiveServerTestCase):
         expect(self.page.get_by_role("main")).to_contain_text("Season 1")
         self.page.get_by_title("Season 1").click()
         expect(self.page.get_by_role("main")).to_contain_text("Season 1")
-        expect(self.page.get_by_role("main")).to_contain_text(
-            "Episode 1 • Unknown air date",
-        )
+        expect(self.page.get_by_role("main")).to_contain_text("Episode 1")
 
     def test_obfuscate_unseen_episodes_enabled(self):
         """Test that obfuscate_unseen_episodes setting is accessible and functional."""

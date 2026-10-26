@@ -1,3 +1,4 @@
+from datetime import UTC
 from unittest.mock import MagicMock, patch
 
 from django.test import TestCase, override_settings
@@ -417,3 +418,115 @@ class AppTagsTests(TestCase):
         for seconds, expected in cases:
             with self.subTest(seconds=seconds):
                 self.assertEqual(app_tags.seconds_to_duration(seconds), expected)
+
+    def test_air_date_label(self):
+        """Air dates read in words, and unknown ones as TBA."""
+        today = timezone.localdate()
+        cases = [
+            (today.isoformat(), "Today"),
+            ((today + timezone.timedelta(days=1)).isoformat(), "Tomorrow"),
+            ("2099-01-01", "January 1, 2099"),
+            (None, "TBA"),
+            ("", "TBA"),
+            ("2024-13-45", "TBA"),
+        ]
+        for air_date, expected in cases:
+            with self.subTest(air_date=air_date):
+                self.assertEqual(app_tags.air_date_label(air_date), expected)
+
+    def test_human_date(self):
+        """Dates read in words, with yesterday named and other years shown."""
+        now = timezone.now()
+        cases = [
+            (now, "Today"),
+            (now - timezone.timedelta(days=1), "Yesterday"),
+            (
+                timezone.datetime(2024, 10, 6, 12, tzinfo=UTC),
+                "October 6, 2024",
+            ),
+            (None, ""),
+        ]
+        for value, expected in cases:
+            with self.subTest(value=value):
+                self.assertEqual(app_tags.human_date(value), expected)
+
+    def test_unreleased(self):
+        """Media is unreleased until its air date, or while it has none."""
+        self.assertTrue(app_tags.unreleased("2099-01-01"))
+        self.assertTrue(app_tags.unreleased(None))
+        self.assertFalse(app_tags.unreleased("2008-01-20"))
+
+    def test_related_title(self):
+        """Row keys read as titles, and names from the source keep their case."""
+        cases = [
+            ("related_anime", "Related Anime"),
+            ("recommendations", "Recommendations"),
+            ("collection", "Collection"),
+            ("Spider-Man (MCU) Collection", "Spider-Man (MCU) Collection"),
+            ("The Lord of the Rings Collection", "The Lord of the Rings Collection"),
+        ]
+        for name, expected in cases:
+            with self.subTest(name=name):
+                self.assertEqual(app_tags.related_title(name), expected)
+
+    def test_specials_last(self):
+        """A show's specials, season 0, come after its numbered seasons."""
+        seasons = [{"season_number": 0}, {"season_number": 1}, {"season_number": 2}]
+        enriched = [{"item": season, "media": None} for season in seasons]
+
+        self.assertEqual(
+            [season["season_number"] for season in app_tags.specials_last(seasons)],
+            [1, 2, 0],
+        )
+        self.assertEqual(
+            [
+                entry["item"]["season_number"]
+                for entry in app_tags.specials_last(enriched)
+            ],
+            [1, 2, 0],
+        )
+        self.assertEqual(app_tags.specials_last(None), [])
+
+    def test_media_facts(self):
+        """The facts are the release year, the length and a movie's runtime."""
+        movie = {
+            "media_type": MediaTypes.MOVIE.value,
+            "details": {"release_date": "1999-03-31", "runtime": "2h 16m"},
+        }
+        tv = {
+            "media_type": MediaTypes.TV.value,
+            "details": {
+                "first_air_date": "2022-02-18",
+                "seasons": 2,
+                "episodes": 19,
+                "runtime": "50m",
+            },
+        }
+        book = {"media_type": MediaTypes.BOOK.value, "details": {"number_of_pages": 1}}
+
+        self.assertEqual(app_tags.media_facts(movie), ["1999", "2h 16m"])
+        self.assertEqual(app_tags.media_facts(tv), ["2022", "2 seasons"])
+        self.assertEqual(app_tags.media_facts(book), ["1 page"])
+        self.assertEqual(app_tags.media_facts({"details": None}), [])
+
+    def test_media_details_split(self):
+        """Single values are apart from lists, which start with the genres."""
+        media = {
+            "genres": ["Action"],
+            "details": {
+                "format": "Movie",
+                "runtime": None,
+                "status": "",
+                "studios": ["A", "B"],
+                "languages": [],
+                "episodes": 0,
+            },
+        }
+
+        split = app_tags.media_details_split(media)
+
+        self.assertEqual(split["values"], [("format", "Movie"), ("episodes", 0)])
+        self.assertEqual(
+            split["lists"],
+            [("genres", ["Action"]), ("studios", ["A", "B"])],
+        )

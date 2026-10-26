@@ -1,0 +1,64 @@
+{% load app_tags %}
+
+{# The details page actions after the tracking ones: lists, activity history and syncing the metadata from `sync_url`. Takes the buttons' `action_classes` #}
+{# Custom Lists #}
+<div x-data="{ listsOpen: false }"
+     @keydown.escape.window="listsOpen = false">
+  <button class="{{ action_classes }}"
+          data-tooltip="Add to lists"
+          aria-label="Add to lists"
+          hx-get="{% media_view_url 'lists_modal' media %}"
+          hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}"}'
+          hx-target="#{% component_id 'lists' media %}"
+          hx-trigger="click once"
+          @click="listsOpen = true">{% include "app/icons/list-add.svg" with classes="size-4" %}</button>
+
+  <div x-cloak
+       x-show="listsOpen"
+       class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div class="relative z-60 max-h-[90vh] w-96 px-4 md:px-0"
+         @click.outside="listsOpen = false">
+      <div id="{% component_id 'lists' media %}"></div>
+    </div>
+  </div>
+</div>
+
+{# Activity History #}
+<div x-data="{ historyOpen: false }"
+     @keydown.escape.window="historyOpen = false">
+  <button class="{{ action_classes }}"
+          data-tooltip="Activity history"
+          aria-label="Activity history"
+          hx-get="{% media_view_url 'history_modal' media %}"
+          hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}"}'
+          hx-target="#{% component_id 'history' media %}"
+          hx-trigger="click once"
+          @click="historyOpen = true">{% include "app/icons/history.svg" with classes="size-4" %}</button>
+
+  <div x-cloak
+       x-show="historyOpen"
+       class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div class="relative z-60 max-h-[90vh] w-96 px-4 md:px-0"
+         @click.outside="historyOpen = false">
+      <div id="{% component_id 'history' media %}"></div>
+    </div>
+  </div>
+</div>
+
+{# Sync metadata, from `sync_url` #}
+<button type="button"
+        class="{{ action_classes }}"
+        data-tooltip="Sync metadata"
+        aria-label="Sync metadata"
+        hx-post="{{ sync_url }}"
+        hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+        hx-vals='{"next": "{{ request.get_full_path|urlencode }}"}'
+        hx-target="body"
+        hx-swap="none"
+        x-data="{ loading: false }"
+        @click="loading = true"
+        :disabled="loading">
+  <span class="flex" :class="{ 'animate-spin': loading }">
+    {% include "app/icons/circle-spinning-clockwise.svg" with classes="size-4" %}
+  </span>
+</button>
