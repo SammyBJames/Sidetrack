@@ -163,18 +163,25 @@ class RefreshLibraryDetailsTests(TestCase):
         failing = self.movie("failing")
         self.movie("working")
 
+        url = "https://api.themoviedb.org/3/movie/failing?api_key=SECRETKEY"
+
         def metadata(_media_type, media_id, _source):
             """Raise for the "failing" item, else return the usual metadata."""
             if media_id == "failing":
-                raise services.ProviderAPIError(Sources.TMDB.value, Exception("down"))
+                error = requests.exceptions.HTTPError(f"404 for url: {url}")
+                raise services.ProviderAPIError(Sources.TMDB.value, error) from error
             return METADATA
 
         self.get_metadata.side_effect = metadata
 
-        with self.assertLogs("app.item_details", "ERROR"):
+        with self.assertLogs("app.item_details", "WARNING") as logs:
             result = item_details.refresh_library_details()
 
         self.assertEqual(result, (1, 1))
+        # One line naming the item and the error, without the URL and its key
+        line = f"Failed to refresh the details of {failing}: ProviderAPIError"
+        self.assertEqual(logs.output, [f"WARNING:app.item_details:{line}"])
+        self.assertIsNone(logs.records[0].exc_info)
         failing.refresh_from_db()
         self.assertIsNotNone(failing.details_updated_at)
         self.assertIsNone(failing.runtime)
@@ -208,7 +215,7 @@ class RefreshLibraryDetailsTests(TestCase):
         self.movie("1")
         self.get_metadata.side_effect = requests.exceptions.ConnectionError
 
-        with self.assertLogs("app.item_details", "ERROR"):
+        with self.assertLogs("app.item_details", "WARNING"):
             self.assertEqual(item_details.refresh_library_details(), (0, 1))
 
     @override_settings(LIBRARY_DETAILS_BATCH=2)

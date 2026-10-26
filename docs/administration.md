@@ -72,4 +72,4 @@ Yamtrack stores details of the items in your libraries (release date, length, ra
 docker exec -it yamtrack python manage.py refresh_library_details
 ```
 
-Add `--all` to ignore the daily limit and refresh every item that needs it. This can take a while and uses provider requests, including OMDb's daily limit.
+Add `--all` to ignore the daily limit and refresh every item that needs it. This can take a while and uses provider requests, including OMDb's daily limit. With an OMDb key, `--all` on more than about 1,000 movies and shows uses up the free key's 1,000 requests a day, and the titles past that go without IMDb, Rotten Tomatoes and Metacritic ratings until their next refresh, about a week later.

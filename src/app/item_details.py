@@ -10,6 +10,7 @@ import re
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
+import requests
 from django.apps import apps
 from django.db.models import Exists, F, OuterRef, Q
 from django.utils import timezone
@@ -57,6 +58,10 @@ LENGTH_KEYS = {
     MediaTypes.COMIC.value: "issues_count",
 }
 
+# The largest value an integer and a small integer column hold on Postgres
+MAX_INTEGER = 2**31 - 1
+MAX_SMALL_INTEGER = 2**15 - 1
+
 # The column and top score of each OMDb rating source
 OMDB_COLUMNS = {
     "imdb": ("imdb_score", 10),
@@ -77,6 +82,9 @@ def parse_date(value):
             return date(year, month, day)
         except ValueError:
             return None
+    # A negative year is BCE (e.g. BoardGameGeek's "-2200"), which a date can't hold
+    if str(value).strip().startswith("-"):
+        return None
     # Text like "May 2001" or "[2001]" has a year to go by
     year = re.search(r"\b(\d{4})\b", str(value))
     return date(int(year.group(1)), 1, 1) if year and int(year.group(1)) else None
@@ -90,28 +98,32 @@ def parse_minutes(value):
     if not match or not any(match.groups()):
         return None
     hours, minutes = (int(part or 0) for part in match.groups())
-    return hours * 60 + minutes or None
+    return _count(hours * 60 + minutes)
 
 
 def parse_players(value):
     """Return the fewest and most players in "2-4 players" or "2 players".
 
-    Returns (None, None) when no count can be read.
+    Returns (None, None) when no count can be read. A count too large for a
+    small integer column is None.
     """
     match = re.match(r"\s*(\d+)(?:\s*-\s*(\d+))?", value) if value else None
     if not match:
         return None, None
-    fewest = _count(match.group(1))
-    return fewest, _count(match.group(2) or fewest)
+    fewest = _count(match.group(1), MAX_SMALL_INTEGER)
+    return fewest, _count(match.group(2) or fewest, MAX_SMALL_INTEGER)
 
 
-def _count(value):
-    """Return a positive whole number from a count, or None."""
+def _count(value, top=MAX_INTEGER):
+    """Return a whole number from 1 up to `top` from a count, or None.
+
+    The default `top` is the most an integer column holds on Postgres.
+    """
     try:
         number = int(value)
     except (TypeError, ValueError):
         return None
-    return number if number > 0 else None
+    return number if 0 < number <= top else None
 
 
 def _score(value, top):
@@ -273,7 +285,9 @@ def refresh_library_details(limit=None):
     never fetched come first, then the oldest, up to `limit` (all when None). An
     item that fails, on a provider error or odd metadata, is logged and stamped as
     looked at, so it waits a week instead of heading the queue every day, and the
-    run continues. Returns the number of items refreshed and of failures.
+    run continues. Provider and request errors are logged by type only, without
+    their message, which can hold an API key. Returns the number of items
+    refreshed and of failures.
     """
     tracked = Q()
     for media_type in MediaTypes.values:
@@ -296,8 +310,18 @@ def refresh_library_details(limit=None):
     for item in items:
         try:
             refresh_item_details(item)
-        except Exception:
-            logger.exception("Failed to refresh the details of %s", item)
+        except Exception as error:
+            if isinstance(
+                error, (services.ProviderAPIError, requests.RequestException)
+            ):
+                # Its message and cause can hold the request URL, and in it an API key
+                logger.warning(
+                    "Failed to refresh the details of %s: %s",
+                    item,
+                    type(error).__name__,
+                )
+            else:
+                logger.exception("Failed to refresh the details of %s", item)
             Item.objects.filter(pk=item.pk).update(details_updated_at=timezone.now())
             failed += 1
         else:

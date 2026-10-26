@@ -33,6 +33,12 @@ class ParsingTests(SimpleTestCase):
             with self.subTest(value=value):
                 self.assertIsNone(item_details.parse_date(value))
 
+    def test_negative_years_are_none(self):
+        """A BCE year like BoardGameGeek's "-2200" isn't read as 2200."""
+        for value in ("-2200", " -2200", -2200):
+            with self.subTest(value=value):
+                self.assertIsNone(item_details.parse_date(value))
+
     def test_durations_are_minutes(self):
         """Durations in every provider's wording are minutes."""
         for value, minutes in (
@@ -58,6 +64,21 @@ class ParsingTests(SimpleTestCase):
         self.assertEqual(item_details.parse_players(None), (None, None))
         self.assertEqual(item_details.parse_players("many"), (None, None))
         self.assertEqual(item_details.parse_players("0 players"), (None, None))
+
+    def test_counts_too_large_for_their_column_are_none(self):
+        """Counts past a Postgres integer or small integer column are unknown."""
+        self.assertEqual(item_details.parse_players("2-40000 players"), (2, None))
+        self.assertEqual(item_details.parse_players("32767 players"), (32767, 32767))
+        self.assertIsNone(item_details.parse_minutes("40000000h"))
+        details = item_details.details_from_metadata(
+            MediaTypes.BOOK.value,
+            Sources.HARDCOVER.value,
+            {
+                "score_count": 2**31,
+                "details": {"number_of_pages": 2**31 - 1},
+            },
+        )
+        self.assertEqual(details, {"length": 2**31 - 1})
 
 
 class DetailsFromMetadataTests(SimpleTestCase):
