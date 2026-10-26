@@ -114,15 +114,6 @@ class GetQuickActionTests(TestCase):
         self.assertEqual(action.key, quick_actions.COMPLETE)
         self.assertEqual(action.label, "Mark read")
 
-    def test_in_progress_tv_has_no_action(self):
-        """A show in progress is tracked through its seasons."""
-        self.assertIsNone(
-            quick_actions.get_quick_action(
-                MediaTypes.TV.value,
-                entry(Status.IN_PROGRESS.value),
-            ),
-        )
-
     def test_paused_media_is_resumed(self):
         """Paused media offers to resume it."""
         action = quick_actions.get_quick_action(
@@ -131,6 +122,37 @@ class GetQuickActionTests(TestCase):
         )
         self.assertEqual(action.key, quick_actions.RESUME)
         self.assertEqual(action.target_status, Status.IN_PROGRESS.value)
+
+    def test_shows_and_seasons_can_be_finished_at_once(self):
+        """Shows and seasons with episodes to watch can be marked watched whole."""
+        cases = {
+            (MediaTypes.TV.value, Status.IN_PROGRESS.value): (
+                quick_actions.COMPLETE,
+                "Mark show watched",
+            ),
+            (MediaTypes.SEASON.value, Status.PLANNING.value): (
+                quick_actions.COMPLETE,
+                "Mark season watched",
+            ),
+            (MediaTypes.SEASON.value, Status.REPEATING.value): (
+                quick_actions.REPEAT,
+                "Mark season rewatched",
+            ),
+        }
+        for (media_type, status), expected in cases.items():
+            action = quick_actions.get_finish_action(media_type, entry(status))
+            self.assertEqual((action.key, action.label), expected)
+            self.assertEqual(action.target_status, Status.COMPLETED.value)
+
+        for media_type, status in (
+            (MediaTypes.TV.value, Status.COMPLETED.value),
+            (MediaTypes.SEASON.value, Status.DROPPED.value),
+            (MediaTypes.MOVIE.value, Status.IN_PROGRESS.value),
+        ):
+            self.assertIsNone(
+                quick_actions.get_finish_action(media_type, entry(status)),
+            )
+        self.assertIsNone(quick_actions.get_finish_action(MediaTypes.TV.value, None))
 
     def test_dropped_media_has_no_action(self):
         """Dropped media offers nothing."""
@@ -258,3 +280,29 @@ class ShowNextSeasonTests(TestCase):
         self.watch(0, 1)
         self.watch(0, 2)
         self.assertIsNone(self.next_season_number())
+
+    def test_show_card_watches_its_next_episode(self):
+        """A show's own action watches the next episode of its season."""
+        action = quick_actions.get_quick_action(MediaTypes.TV.value, self.tv)
+
+        self.assertEqual(
+            (action.key, action.label, action.target_status),
+            (quick_actions.NEXT, "Mark S2E1 watched", Status.IN_PROGRESS.value),
+        )
+
+    def test_planned_seasons_follow_started_ones(self):
+        """A planned show starts its first planned season with released episodes."""
+        self.tv.status = Status.PLANNING.value
+        TV.save_base(self.tv)
+        for season in self.seasons.values():
+            season.status = Status.PLANNING.value
+            Season.save_base(season)
+
+        action = quick_actions.get_quick_action(MediaTypes.TV.value, self.tv)
+
+        self.assertEqual(action.label, "Mark S2E1 watched")
+
+        # A started season comes before the planned ones
+        self.seasons[0].status = Status.IN_PROGRESS.value
+        Season.save_base(self.seasons[0])
+        self.assertEqual(self.next_season_number(), 0)

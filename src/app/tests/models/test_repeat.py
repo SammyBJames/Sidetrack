@@ -262,6 +262,23 @@ class ShowRewatchTests(TestCase):
         self.assertEqual(self.seasons[2].episodes.count(), 4)
         self.assertEqual(self.seasons[0].episodes.count(), 1)
 
+    def test_planned_show_watches_its_next_episode(self, _):
+        """A show planned to be rewatched starts with its first episode in one click."""
+        self.plan_rewatch()
+        self.tv = TV.objects.get(pk=self.tv.pk)
+
+        action = quick_actions.get_quick_action(MediaTypes.TV.value, self.tv)
+        self.assertEqual(
+            (action.key, action.label, action.target_status),
+            (quick_actions.NEXT, "Mark S1E1 watched", Status.REPEATING.value),
+        )
+        quick_actions.apply_quick_action(action, self.tv)
+
+        self.assertEqual(self.statuses()[0], Status.REPEATING.value)
+        self.tv = TV.objects.get(pk=self.tv.pk)
+        action = quick_actions.get_quick_action(MediaTypes.TV.value, self.tv)
+        self.assertEqual(action.label, "Mark S1E2 watched")
+
     def test_one_episode_again_leaves_a_finished_season(self, _):
         """Watching a finished season's episode again doesn't reopen it."""
         self.watch(1, 2)

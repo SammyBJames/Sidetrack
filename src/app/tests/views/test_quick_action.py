@@ -219,7 +219,7 @@ class QuickActionViewTests(TestCase):
     @patch("app.models.Item.fetch_releases")
     @patch("app.providers.services.get_media_metadata")
     def test_start_planned_tv(self, mock_metadata, _):
-        """Starting a planned show works although its dates come from episodes."""
+        """A planned show with no seasons to plan is started instead."""
         mock_metadata.return_value = {
             "title": "Test Show",
             "image": "http://example.com/show.jpg",
@@ -235,7 +235,7 @@ class QuickActionViewTests(TestCase):
         )
         tv = TV.objects.create(item=item, user=self.user, status=Status.PLANNING.value)
 
-        response = self.post(item, quick_actions.START, instance_id=tv.id)
+        response = self.post(item, quick_actions.NEXT, instance_id=tv.id)
 
         self.assertEqual(response.status_code, 200)
         tv.refresh_from_db()
@@ -273,6 +273,59 @@ class QuickActionViewTests(TestCase):
                 for season in tv.seasons.select_related("item")
             ),
             [(1, Status.PLANNING.value), (2, Status.PLANNING.value)],
+        )
+
+    @patch("app.models.Item.fetch_releases")
+    @patch("app.providers.services.get_media_metadata")
+    def test_show_planned_without_seasons_watches_its_first_episode(
+        self,
+        mock_metadata,
+        _,
+    ):
+        """A show planned before its seasons were starts with its first episode."""
+        mock_metadata.return_value = {
+            "title": "Test Show",
+            "image": "http://example.com/show.jpg",
+            "max_progress": 4,
+            "related": {
+                "seasons": [
+                    {"season_number": number, "image": "http://example.com/s.jpg"}
+                    for number in (0, 1, 2)
+                ],
+            },
+            # Each season, when one is asked for
+            "season/1": {"episodes": [{"episode_number": 1}, {"episode_number": 2}]},
+            "episodes": [{"episode_number": 1}, {"episode_number": 2}],
+        }
+        item = Item.objects.create(
+            media_id="3",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Test Show",
+            image="http://example.com/show.jpg",
+        )
+        tv = TV(item=item, user=self.user, status=Status.PLANNING.value)
+        TV.save_base(tv)
+
+        action = quick_actions.get_quick_action(MediaTypes.TV.value, tv)
+        self.assertEqual(
+            (action.key, action.label),
+            (quick_actions.NEXT, "Mark S1E1 watched"),
+        )
+
+        self.post(item, quick_actions.NEXT, instance_id=tv.id)
+
+        tv.refresh_from_db()
+        self.assertEqual(tv.status, Status.IN_PROGRESS.value)
+        season = tv.seasons.get(item__season_number=1)
+        self.assertEqual(season.status, Status.IN_PROGRESS.value)
+        self.assertEqual(
+            list(season.episodes.values_list("item__episode_number", flat=True)),
+            [1],
+        )
+        self.assertEqual(
+            tv.seasons.get(item__season_number=2).status,
+            Status.PLANNING.value,
         )
 
     @patch("app.models.Item.fetch_releases")

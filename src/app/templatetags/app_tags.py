@@ -216,6 +216,12 @@ def sources(media_type):
 
 
 @register.simple_tag
+def get_finish_action(media_type, media):
+    """Return the action that marks a whole show or season watched, or None."""
+    return quick_actions.get_finish_action(media_type, media)
+
+
+@register.simple_tag
 def get_quick_action(media_type, media):
     """Return the one-click action of a media card, or None."""
     return quick_actions.get_quick_action(media_type, media)

@@ -430,6 +430,40 @@ class EpisodeDetailsViewTests(TestCase):
         self.assertEqual(season.planned_repeat_episodes, [])
         self.assertEqual(season.status, Status.COMPLETED.value)
 
+    def test_season_can_be_marked_watched_at_once(self, _):
+        """Beside its next episode, a season offers to mark all of it watched."""
+        first = self.watch(1)
+
+        response = self.client.get(self.season_url())
+
+        self.assertContains(response, 'aria-label="Mark season watched"')
+        self.assertContains(response, '"action": "complete", "finish": "1"')
+
+        self.client.post(
+            reverse("quick_action"),
+            {
+                "media_id": "1396",
+                "source": Sources.TMDB.value,
+                "media_type": MediaTypes.SEASON.value,
+                "season_number": 1,
+                "instance_id": first.related_season.id,
+                "action": "complete",
+                "finish": "1",
+                "card": "details",
+            },
+        )
+
+        # The released episodes are watched, and the unaired one is left
+        self.assertEqual(
+            sorted(
+                first.related_season.episodes.values_list(
+                    "item__episode_number",
+                    flat=True,
+                ),
+            ),
+            [1, 2],
+        )
+
     def test_breadcrumb_ends_at_the_current_page(self, _):
         """The breadcrumb links up to the show and season, and names the page."""
         response = self.client.get(self.episode_url(1))

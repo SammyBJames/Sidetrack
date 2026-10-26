@@ -28,6 +28,13 @@ COUNTED_TYPES = {
     MediaTypes.COMIC.value,
 }
 
+# Statuses of shows and seasons whose action watches their next episode
+EPISODE_STATUSES = (
+    Status.PLANNING.value,
+    Status.IN_PROGRESS.value,
+    *REPEAT_STATUSES,
+)
+
 # Media whose start and end dates come from its watched episodes
 DERIVED_DATE_TYPES = {MediaTypes.TV.value, MediaTypes.SEASON.value}
 
@@ -78,14 +85,30 @@ def get_quick_action(media_type, media):
     """Return the most likely next action for a media type and tracked entry.
 
     `media` is the user's entry, or None when they don't track it yet. Returns
-    None when there is nothing sensible to offer, e.g. for episodes, shows, or
-    entries that are dropped. Finished media is planned to be repeated, which
-    then marks a new play.
+    None when there is nothing sensible to offer, e.g. for episodes, caught up
+    entries, or entries that are dropped. Finished media is planned to be
+    repeated, which then marks a new play. Shows and seasons, planned or not,
+    watch their next episode.
     """
     if media_type == MediaTypes.EPISODE.value:
         return None
 
     status = media.status if media else None
+    if media_type == MediaTypes.TV.value and status in EPISODE_STATUSES:
+        # A show's progress comes from its seasons, so it acts on the next one
+        season = get_show_next_season(media)
+        if season:
+            return get_quick_action(MediaTypes.SEASON.value, season)
+        if status == Status.PLANNING.value and not media.seasons.all():
+            # Planned before its seasons were, which are planned when it starts
+            past = config.get_verb(media_type, past_tense=True)
+            return QuickAction(
+                NEXT,
+                f"Mark S1E1 {past}",
+                config.get_status_icon(Status.IN_PROGRESS.value),
+                Status.IN_PROGRESS.value,
+            )
+
     key = _action_key(media_type, media)
     if key is None:
         return None
@@ -97,13 +120,37 @@ def get_quick_action(media_type, media):
     return QuickAction(key, label, icon, target_status)
 
 
+def get_finish_action(media_type, media):
+    """Return the action that marks a whole show or season watched, or None.
+
+    It's offered beside watching the next episode, so for shows and seasons
+    planned, in progress or repeated, which it finishes as a new play.
+    """
+    if (
+        media_type not in EPISODIC_TYPES
+        or media is None
+        or media.status not in EPISODE_STATUSES
+    ):
+        return None
+
+    key = REPEAT if media.status in REPEAT_STATUSES else COMPLETE
+    noun = "show" if media_type == MediaTypes.TV.value else "season"
+    again = "re" if key == REPEAT else ""
+    past = config.get_verb(media_type, past_tense=True)
+    return QuickAction(
+        key,
+        f"Mark {noun} {again}{past}",
+        "app/icons/states/completed.svg",
+        Status.COMPLETED.value,
+    )
+
+
 def _action_key(media_type, media):
     """Return the key of the action for a media type and tracked entry, or None."""
     status = media.status if media else None
     if status is None:
         return PLAN
-    if media_type == MediaTypes.SEASON.value and status in REPEAT_STATUSES:
-        # A season's rewatch watches its next episode, planned or not
+    if media_type == MediaTypes.SEASON.value and status in EPISODE_STATUSES:
         return _progress_action_key(media_type, media)
     if status in (Status.IN_PROGRESS.value, Status.REPEATING.value):
         return _progress_action_key(media_type, media)
@@ -163,7 +210,10 @@ def apply_quick_action(action, media):
     from its episodes. Planning a show plans its seasons too.
     """
     if action.key == NEXT:
-        media.increase_progress()
+        if media.item.media_type == MediaTypes.TV.value:
+            _watch_show_next_episode(media)
+        else:
+            media.increase_progress()
         return media
 
     if action.key == PLAN_REPEAT and media.item.media_type not in EPISODIC_TYPES:
@@ -189,6 +239,25 @@ def apply_quick_action(action, media):
         if action.key == PLAN and media.item.media_type == MediaTypes.TV.value:
             media.plan_seasons()
     return media
+
+
+def _watch_show_next_episode(tv):
+    """Watch the next episode of a show, planning its seasons if it has none.
+
+    A show with no seasons to plan is started instead.
+    """
+    with transaction.atomic():
+        season = get_show_next_season(tv)
+        if season is None:
+            tv.plan_seasons()
+            # Drops any seasons prefetched before they were planned
+            tv.refresh_from_db()
+            season = get_show_next_season(tv)
+        if season is None:
+            tv.status = Status.IN_PROGRESS.value
+            tv.save()
+            return
+        season.increase_progress()
 
 
 def success_message(action, media):
@@ -230,20 +299,19 @@ def _next_episode_code(media_type, media):
 def get_show_next_season(tv):
     """Return the season of a show whose next episode is out, or None.
 
-    That's the first season in progress with released episodes left, by number
-    with specials last. While the show is rewatched, it's the first season
-    being rewatched, else the first planned to be. Its `max_progress` is
-    annotated for its quick action.
+    That's the first season started, else the first planned, with released
+    episodes left, by number with specials last. While the show is rewatched,
+    only seasons being rewatched count. Its `max_progress` is annotated for its
+    quick action.
     """
     if tv.status in REPEAT_STATUSES:
         started, planned = Status.REPEATING.value, Status.PLANNING_REPEAT.value
     else:
-        started = planned = Status.IN_PROGRESS.value
-    seasons = list(
-        tv.seasons.filter(status__in=(started, planned))
-        .select_related("item")
-        .prefetch_related("episodes__item"),
-    )
+        started, planned = Status.IN_PROGRESS.value, Status.PLANNING.value
+    # From the show's prefetched seasons when it has them, as in lists
+    seasons = [
+        season for season in tv.seasons.all() if season.status in (started, planned)
+    ]
     BasicMedia.objects.annotate_max_progress(seasons, MediaTypes.SEASON.value)
     seasons.sort(
         key=lambda season: (

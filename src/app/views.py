@@ -309,13 +309,13 @@ def media_details(request, source, media_type, media_id, title):  # noqa: ARG001
                     )
                 )
 
-    # A show in progress or rewatched offers its next episode, which is watched
-    # in its season
+    # A show planned, in progress or rewatched offers its next episode, which is
+    # watched in its season
     next_season = None
     if (
         media_type == MediaTypes.TV.value
         and current_instance is not None
-        and current_instance.status in (Status.IN_PROGRESS.value, *REPEAT_STATUSES)
+        and current_instance.status in quick_actions.EPISODE_STATUSES
     ):
         next_season = quick_actions.get_show_next_season(current_instance)
 
@@ -792,7 +792,8 @@ def quick_action(request):
     """Apply the one-click action of a media card and return the updated card.
 
     The entry is the one given by `instance_id`, else the user's entry for the
-    media, which is created if missing. `action` is the key the card showed. If
+    media, which is created if missing. `action` is the key the card showed, or
+    with `finish`, that of the button marking a whole show or season watched. If
     it no longer matches, nothing is changed. Removes the card instead of
     updating it when the entry left the section or status filter it was shown in,
     and reloads the page when the action came from a details page.
@@ -815,7 +816,11 @@ def quick_action(request):
             season_number=season_number,
         ).first()
 
-    action = quick_actions.get_quick_action(media_type, media)
+    # A show or season's second button marks all of it watched
+    if request.POST.get("finish"):
+        action = quick_actions.get_finish_action(media_type, media)
+    else:
+        action = quick_actions.get_quick_action(media_type, media)
     # Planning a repeat adds a newer entry, which leaves the older one's cards stale
     if (
         action is not None
