@@ -17,6 +17,56 @@ base_params = {
     "language": settings.TMDB_LANG,
 }
 
+# Limits the appended images to those in the user's language, to pick a logo from
+image_language = settings.TMDB_LANG.split("-")[0]
+images_params = {"include_image_language": image_language}
+
+# The most items TMDB adds to one response with append_to_response
+MAX_APPENDS = 20
+
+# The most cast and crew members shown, with a link to the rest on TMDB
+MAX_PEOPLE = 30
+
+# The crew jobs worth showing, most important first
+CREW_JOBS = (
+    "Creator",
+    "Director",
+    "Screenplay",
+    "Writer",
+    "Story",
+    "Novel",
+    "Characters",
+    "Producer",
+    "Executive Producer",
+    "Original Music Composer",
+    "Director of Photography",
+    "Editor",
+)
+
+# The kinds of videos shown, trailers first
+VIDEO_TYPES = (
+    "Trailer",
+    "Teaser",
+    "Clip",
+    "Featurette",
+    "Behind the Scenes",
+    "Opening Credits",
+    "Bloopers",
+)
+
+# The most videos shown
+MAX_VIDEOS = 20
+
+# What a show's details add to its response, before any seasons
+TV_APPENDS = (
+    "recommendations,external_ids,watch/providers,images,content_ratings,"
+    "aggregate_credits,videos"
+)
+
+# TMDB's release types, in the order their age rating is preferred: theatrical,
+# limited theatrical, premiere, digital, physical and TV
+RELEASE_TYPE_ORDER = (3, 2, 1, 4, 5, 6)
+
 
 def handle_error(error):
     """Handle TMDB API errors."""
@@ -159,9 +209,18 @@ def movie(media_id):
 
     if data is None:
         url = f"{base_url}/movie/{media_id}"
-        appends = ["recommendations", "external_ids", "credits", "watch/providers"]
+        appends = [
+            "recommendations",
+            "external_ids",
+            "credits",
+            "watch/providers",
+            "images",
+            "release_dates",
+            "videos",
+        ]
         params = {
             **base_params,
+            **images_params,
             "append_to_response": ",".join(appends),
         }
 
@@ -199,17 +258,6 @@ def movie(media_id):
             item for item in recommended_items if item["id"] not in collection_ids
         ]
 
-        cast = response.get("credits", {}).get("cast", [])
-        filtered_cast = [
-            {
-                "id": member.get("id"),
-                "name": member.get("name"),
-                "character": member.get("character"),
-                "image": get_image_url(member.get("profile_path")),
-            }
-            for member in cast[:30]
-        ]
-
         data = {
             "media_id": media_id,
             "source": Sources.TMDB.value,
@@ -218,6 +266,9 @@ def movie(media_id):
             "title": response["title"],
             "max_progress": 1,
             "image": get_image_url(response["poster_path"]),
+            "backdrop": get_backdrop_url(response.get("backdrop_path")),
+            "logo": get_logo_url(response.get("images")),
+            "certifications": get_movie_certifications(response.get("release_dates")),
             "synopsis": get_synopsis(response["overview"]),
             "genres": get_genres(response["genres"]),
             "score": get_score(response["vote_average"]),
@@ -231,8 +282,8 @@ def movie(media_id):
                 "country": get_country(response["production_countries"]),
                 "languages": get_languages(response["spoken_languages"]),
             },
-            "cast": filtered_cast,
-            "total_cast_count": len(cast),
+            **get_people(response.get("credits")),
+            "videos": get_videos(response.get("videos")),
             "related": {
                 collection_response.get("name", "collection"): collection_items,
                 "recommendations": get_related(
@@ -279,6 +330,10 @@ def enrich_season_with_tv_data(season_data, tv_data, media_id, season_number):
     season_data["tvdb_id"] = tv_data["tvdb_id"]
     season_data["external_links"] = tv_data["external_links"]
     season_data["genres"] = tv_data["genres"]
+    # seasons have no backdrop or logo of their own
+    season_data["backdrop"] = tv_data.get("backdrop")
+    season_data["logo"] = tv_data.get("logo")
+    season_data["certifications"] = tv_data.get("certifications", {})
     if season_data["synopsis"] == "No synopsis available.":
         season_data["synopsis"] = tv_data["synopsis"]
     # seasons often have no poster of their own, use the show's instead
@@ -290,23 +345,32 @@ def enrich_season_with_tv_data(season_data, tv_data, media_id, season_number):
 def fetch_and_cache_seasons(media_id, season_numbers, tv_data):
     """Fetch uncached seasons from API and cache them."""
     url = f"{base_url}/tv/{media_id}"
-    base_append = "recommendations,external_ids,watch/providers"
-    max_seasons_per_request = 8
+    season_appends = ("", "/watch/providers", "/aggregate_credits", "/videos")
     fetched_tv_data = tv_data
     result_data = {}
 
-    for i in range(0, len(season_numbers), max_seasons_per_request):
-        season_subset = season_numbers[i : i + max_seasons_per_request]
+    remaining = list(season_numbers)
+    while remaining:
+        # The show's own appends only come along until it's fetched. TMDB
+        # appends at most 20 items, and each season takes one of each above
+        show_appends = TV_APPENDS.split(",") if fetched_tv_data is None else []
+        batch_size = (MAX_APPENDS - len(show_appends)) // len(season_appends)
+        season_subset, remaining = remaining[:batch_size], remaining[batch_size:]
         append_text = ",".join(
             [
-                f"season/{season},season/{season}/watch/providers"
-                for season in season_subset
-            ]
+                *show_appends,
+                *(
+                    f"season/{season}{append}"
+                    for season in season_subset
+                    for append in season_appends
+                ),
+            ],
         )
 
         params = {
             **base_params,
-            "append_to_response": f"{base_append},{append_text}",
+            **images_params,
+            "append_to_response": append_text,
         }
 
         try:
@@ -339,7 +403,10 @@ def fetch_and_cache_seasons(media_id, season_numbers, tv_data):
                 raise services.ProviderAPIError(msg, error=not_found_error, details=msg)
 
             season_data = process_season(
-                response[season_key], response[f"{season_key}/watch/providers"]
+                response[season_key],
+                response[f"{season_key}/watch/providers"],
+                response.get(f"{season_key}/aggregate_credits"),
+                response.get(f"{season_key}/videos"),
             )
             season_data = enrich_season_with_tv_data(
                 season_data,
@@ -394,7 +461,8 @@ def tv(media_id):
         url = f"{base_url}/tv/{media_id}"
         params = {
             **base_params,
-            "append_to_response": "recommendations,external_ids,watch/providers",
+            **images_params,
+            "append_to_response": TV_APPENDS,
         }
 
         try:
@@ -426,6 +494,11 @@ def process_tv(response):
         "title": response["name"],
         "max_progress": num_episodes,
         "image": get_image_url(response["poster_path"]),
+        "backdrop": get_backdrop_url(response.get("backdrop_path")),
+        "logo": get_logo_url(response.get("images")),
+        "certifications": get_tv_certifications(response.get("content_ratings")),
+        **get_people(response.get("aggregate_credits"), response.get("created_by")),
+        "videos": get_videos(response.get("videos")),
         "synopsis": get_synopsis(response["overview"]),
         "genres": get_genres(response["genres"]),
         "score": get_score(response["vote_average"]),
@@ -461,8 +534,11 @@ def process_tv(response):
     }
 
 
-def process_season(response, providers_response):
-    """Process the metadata for the selected season from The Movie Database."""
+def process_season(response, providers_response, credit_list, videos):
+    """Process the metadata for the selected season from The Movie Database.
+
+    `credit_list` and `videos` are the season's own, appended to the request.
+    """
     episodes = response["episodes"]
     num_episodes = len(episodes)
 
@@ -500,6 +576,8 @@ def process_season(response, providers_response):
         },
         "episodes": response["episodes"],
         "providers": providers_response.get("results", {}),
+        **get_people(credit_list),
+        "videos": get_videos(videos),
     }
 
 
@@ -517,6 +595,156 @@ def get_image_url(path):
     if path:
         return f"https://image.tmdb.org/t/p/w500{path}"
     return settings.IMG_NONE
+
+
+def get_backdrop_url(path):
+    """Return the URL of the wide backdrop image, or None when there is none."""
+    if path:
+        return f"https://image.tmdb.org/t/p/w1280{path}"
+    return None
+
+
+def get_logo_url(images):
+    """Return the URL of the best voted title logo, or None when there is none.
+
+    `images` is the appended images response, already limited to the user's
+    language.
+    """
+    logos = [
+        logo
+        for logo in (images or {}).get("logos", [])
+        if logo.get("iso_639_1") == image_language
+    ]
+    if not logos:
+        return None
+    best = max(logos, key=lambda logo: logo.get("vote_average", 0))
+    return get_image_url(best["file_path"])
+
+
+def get_movie_certifications(release_dates):
+    """Return a movie's age rating in each country, e.g. {"US": "R"}.
+
+    Countries rate each release, so the theatrical one is preferred.
+    """
+    certifications = {}
+    for country in (release_dates or {}).get("results", []):
+        rated = {
+            release.get("type"): release["certification"]
+            for release in country.get("release_dates", [])
+            if release.get("certification")
+        }
+        for release_type in RELEASE_TYPE_ORDER:
+            if release_type in rated:
+                certifications[country["iso_3166_1"]] = rated[release_type]
+                break
+    return certifications
+
+
+def get_tv_certifications(content_ratings):
+    """Return a show's age rating in each country, e.g. {"US": "TV-MA"}."""
+    return {
+        country["iso_3166_1"]: country["rating"]
+        for country in (content_ratings or {}).get("results", [])
+        if country.get("rating")
+    }
+
+
+def get_people(credit_list, created_by=None):
+    """Return the `cast` and `crew` of a movie, show or season, with their totals.
+
+    `credit_list` is a movie's credits or a show or season's aggregate credits,
+    whose people have several roles or jobs over their episodes. Shows also pass
+    their creators. Each person is a dict of `id`, `name`, `role` and `image`.
+    """
+    credit_list = credit_list or {}
+    cast = credit_list.get("cast", [])
+    crew = get_crew(credit_list.get("crew", []), created_by or [])
+    return {
+        "cast": [
+            {
+                "id": member.get("id"),
+                "name": member.get("name"),
+                "role": get_character(member),
+                "image": get_image_url(member.get("profile_path")),
+            }
+            for member in cast[:MAX_PEOPLE]
+        ],
+        "total_cast_count": len(cast),
+        "crew": crew[:MAX_PEOPLE],
+        "total_crew_count": len(crew),
+    }
+
+
+def get_character(member):
+    """Return who a cast member plays, the main one first for shows."""
+    if "roles" in member:
+        return ", ".join(
+            role["character"] for role in member["roles"][:2] if role.get("character")
+        )
+    return member.get("character")
+
+
+def get_crew(crew, created_by):
+    """Return the crew in the jobs worth showing, each person once with all of them.
+
+    Creators come first, then people in most episodes, then the most important
+    jobs; for movies that's only the jobs.
+    """
+    people = {}
+    for member in created_by:
+        people[member["id"]] = {
+            "member": member,
+            "jobs": ["Creator"],
+            "episodes": float("inf"),
+        }
+    for member in crew:
+        # Shows and seasons list each person's jobs, and movies one job per credit
+        jobs = [job["job"] for job in member.get("jobs", [])] or [member.get("job")]
+        jobs = [job for job in jobs if job in CREW_JOBS]
+        if not jobs:
+            continue
+        person = people.setdefault(
+            member["id"],
+            {"member": member, "jobs": [], "episodes": 0},
+        )
+        person["jobs"] += [job for job in jobs if job not in person["jobs"]]
+        person["episodes"] = max(
+            person["episodes"],
+            member.get("total_episode_count", 0),
+        )
+
+    def rank(person):
+        return (-person["episodes"], min(CREW_JOBS.index(j) for j in person["jobs"]))
+
+    return [
+        {
+            "id": person["member"]["id"],
+            "name": person["member"].get("name"),
+            "role": ", ".join(sorted(person["jobs"], key=CREW_JOBS.index)),
+            "image": get_image_url(person["member"].get("profile_path")),
+        }
+        for person in sorted(people.values(), key=rank)
+    ]
+
+
+def get_videos(videos):
+    """Return the YouTube videos to show, trailers first, then official, then newest.
+
+    Each is a dict of `key`, the YouTube video ID, `name` and `type`.
+    """
+    results = [
+        video
+        for video in (videos or {}).get("results", [])
+        if video.get("site") == "YouTube" and video.get("type") in VIDEO_TYPES
+    ]
+    results.sort(key=lambda video: video.get("published_at", ""), reverse=True)
+    results.sort(
+        key=lambda video: (VIDEO_TYPES.index(video["type"]), not video.get("official")),
+    )
+    return [
+        {"key": video["key"], "name": video["name"], "type": video["type"]}
+        for video in results[:MAX_VIDEOS]
+    ]
 
 
 def get_title(response):
@@ -654,6 +882,8 @@ def get_related(related_medias, media_type, parent_response=None):
         else:
             data["media_id"] = media["id"]
             data["title"] = get_title(media)
+            if media_type == MediaTypes.MOVIE.value:
+                data["release_year"] = get_release_year(media)
         related.append(data)
     return related
 
@@ -677,6 +907,7 @@ def get_collection(collection_response):
             "image": get_image_url(media["poster_path"]),
             "media_id": media["id"],
             "title": get_title(media),
+            "release_year": get_release_year(media),
         }
         for media in parts
     ]
@@ -739,6 +970,18 @@ def process_episodes(season_metadata, episodes_in_db):
             },
         )
     return episodes_metadata
+
+
+def process_episode_details(episode):
+    """Return the rating, guest stars and crew of one of a season's episodes.
+
+    `episode` is the episode as the season's response lists it.
+    """
+    return {
+        "score": get_score(episode.get("vote_average") or 0),
+        "score_count": episode.get("vote_count", 0),
+        **get_people({"cast": episode.get("guest_stars"), "crew": episode.get("crew")}),
+    }
 
 
 def find_next_episode(episode_number, episodes_metadata):

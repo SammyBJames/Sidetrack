@@ -345,6 +345,7 @@ def game(media_id):
             "title": game_response["name"],
             "max_progress": None,
             "image": get_image_url(game_response),
+            "backdrop": get_backdrop_url(game_response),
             "synopsis": game_response.get("summary", "No synopsis available."),
             "genres": get_list(game_response, "genres"),
             "score": get_score(game_response),
@@ -382,6 +383,14 @@ def get_image_url(response):
         return f"https://images.igdb.com/igdb/image/upload/t_original/{response['cover']['image_id']}.jpg"
     except KeyError:
         return settings.IMG_NONE
+
+
+def get_backdrop_url(response):
+    """Return the URL of the game's first artwork, or None when there is none."""
+    artworks = response.get("artworks")
+    if not artworks:
+        return None
+    return f"https://images.igdb.com/igdb/image/upload/t_1080p/{artworks[0]['image_id']}.jpg"
 
 
 def get_game_type(game_type_id):

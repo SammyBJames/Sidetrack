@@ -407,6 +407,221 @@ class Metadata(TestCase):
         self.assertEqual(response["details"]["release_date"], "1998-02-28")
         self.assertEqual(response["details"]["status"], "Released")
 
+    def test_logo_is_the_best_voted_in_the_users_language(self):
+        """The logo is the best voted one in the user's language, if any."""
+        images = {
+            "logos": [
+                {"file_path": "/fr.png", "iso_639_1": "fr", "vote_average": 9},
+                {"file_path": "/low.png", "iso_639_1": "en", "vote_average": 2},
+                {"file_path": "/best.svg", "iso_639_1": "en", "vote_average": 5},
+            ],
+        }
+
+        with patch("app.providers.tmdb.image_language", "en"):
+            self.assertEqual(
+                tmdb.get_logo_url(images),
+                "https://image.tmdb.org/t/p/w500/best.svg",
+            )
+            self.assertIsNone(tmdb.get_logo_url({"logos": images["logos"][:1]}))
+        self.assertIsNone(tmdb.get_logo_url(None))
+
+    def test_movie_certification_prefers_the_theatrical_release(self):
+        """Each country's movie rating is its theatrical one, if it has one."""
+        release_dates = {
+            "results": [
+                {
+                    "iso_3166_1": "US",
+                    "release_dates": [
+                        {"certification": "NR", "type": 4},
+                        {"certification": "R", "type": 3},
+                    ],
+                },
+                {
+                    "iso_3166_1": "DE",
+                    "release_dates": [
+                        {"certification": "", "type": 3},
+                        {"certification": "16", "type": 5},
+                    ],
+                },
+                {"iso_3166_1": "FR", "release_dates": [{"certification": ""}]},
+            ],
+        }
+
+        self.assertEqual(
+            tmdb.get_movie_certifications(release_dates),
+            {"US": "R", "DE": "16"},
+        )
+        self.assertEqual(tmdb.get_movie_certifications(None), {})
+
+    def test_tv_certifications(self):
+        """A show's ratings are read per country, leaving out empty ones."""
+        content_ratings = {
+            "results": [
+                {"iso_3166_1": "US", "rating": "TV-MA"},
+                {"iso_3166_1": "DE", "rating": ""},
+            ],
+        }
+
+        self.assertEqual(tmdb.get_tv_certifications(content_ratings), {"US": "TV-MA"})
+
+    @patch("app.providers.tmdb.services.api_request")
+    def test_season_requests_stay_within_the_append_limit(self, mock_request):
+        """Seasons are fetched in batches within TMDB's 20 appends.
+
+        The show's own appends only come with a request while the show is
+        unknown, so later batches fit more seasons.
+        """
+        # Stops at the first request, which is all this checks
+        mock_request.side_effect = RuntimeError
+
+        def appends(tv_data):
+            with self.assertRaises(RuntimeError):
+                tmdb.fetch_and_cache_seasons("1", list(range(1, 11)), tv_data)
+            return mock_request.call_args.kwargs["params"]["append_to_response"].split(
+                ","
+            )
+
+        with_show = appends(None)
+        without_show = appends({"title": "Known Show"})
+
+        self.assertLessEqual(len(with_show), 20)
+        self.assertIn("aggregate_credits", with_show)
+        self.assertEqual(len(without_show), 20)
+        self.assertNotIn("aggregate_credits", without_show)
+        self.assertIn("season/5/videos", without_show)
+
+    def test_crew_combines_each_persons_jobs(self):
+        """Each person shows once, with their jobs worth showing in order."""
+        crew = [
+            {"id": 1, "name": "Editor Person", "job": "Editor"},
+            {"id": 2, "name": "Lana", "job": "Writer"},
+            {"id": 2, "name": "Lana", "job": "Director"},
+            {"id": 3, "name": "Grip Person", "job": "Dolly Grip"},
+        ]
+
+        people = tmdb.get_people({"cast": [], "crew": crew})
+
+        self.assertEqual(
+            [(person["name"], person["role"]) for person in people["crew"]],
+            [("Lana", "Director, Writer"), ("Editor Person", "Editor")],
+        )
+        self.assertEqual(people["total_crew_count"], 2)
+
+    def test_show_people_lead_with_creators_and_main_roles(self):
+        """Shows list creators first, then by episodes, with each actor's roles."""
+        credit_list = {
+            "cast": [
+                {
+                    "id": 1,
+                    "name": "Adam Scott",
+                    "roles": [{"character": "Mark Scout"}, {"character": "Mark S."}],
+                },
+            ],
+            "crew": [
+                {
+                    "id": 2,
+                    "name": "Guest",
+                    "jobs": [{"job": "Director"}],
+                    "total_episode_count": 1,
+                },
+                {
+                    "id": 3,
+                    "name": "Regular",
+                    "jobs": [{"job": "Writer"}],
+                    "total_episode_count": 9,
+                },
+            ],
+        }
+
+        people = tmdb.get_people(credit_list, [{"id": 4, "name": "Dan Erickson"}])
+
+        self.assertEqual(people["cast"][0]["role"], "Mark Scout, Mark S.")
+        self.assertEqual(
+            [person["name"] for person in people["crew"]],
+            ["Dan Erickson", "Regular", "Guest"],
+        )
+        self.assertEqual(people["crew"][0]["role"], "Creator")
+
+    def test_episode_details_are_its_rating_and_people(self):
+        """An episode has its rating, its guest stars as cast, and its crew."""
+        episode = {
+            "vote_average": 8.46,
+            "vote_count": 12,
+            "guest_stars": [{"id": 1, "name": "Guest Star", "character": "Tuco"}],
+            "crew": [
+                {"id": 2, "name": "Director Person", "job": "Director"},
+                {"id": 3, "name": "Grip Person", "job": "Grip"},
+            ],
+        }
+
+        details = tmdb.process_episode_details(episode)
+
+        self.assertEqual((details["score"], details["score_count"]), (8.5, 12))
+        self.assertEqual(
+            [(person["name"], person["role"]) for person in details["cast"]],
+            [("Guest Star", "Tuco")],
+        )
+        self.assertEqual(
+            [(person["name"], person["role"]) for person in details["crew"]],
+            [("Director Person", "Director")],
+        )
+
+    def test_videos_are_youtube_trailers_first(self):
+        """Videos are YouTube's, trailers before others, official ones first."""
+        videos = {
+            "results": [
+                {"site": "YouTube", "type": "Featurette", "key": "f", "name": "F"},
+                {"site": "Vimeo", "type": "Trailer", "key": "v", "name": "V"},
+                {
+                    "site": "YouTube",
+                    "type": "Trailer",
+                    "key": "fan",
+                    "name": "Fan",
+                    "official": False,
+                },
+                {
+                    "site": "YouTube",
+                    "type": "Trailer",
+                    "key": "t",
+                    "name": "T",
+                    "official": True,
+                },
+                {"site": "YouTube", "type": "Unknown", "key": "u", "name": "U"},
+            ],
+        }
+
+        self.assertEqual(
+            [video["key"] for video in tmdb.get_videos(videos)],
+            ["t", "fan", "f"],
+        )
+        self.assertEqual(tmdb.get_videos(None), [])
+
+    def test_game_backdrop_is_its_first_artwork(self):
+        """A game's backdrop is its first artwork, if it has any."""
+        self.assertEqual(
+            igdb.get_backdrop_url({"artworks": [{"image_id": "a"}, {"image_id": "b"}]}),
+            "https://images.igdb.com/igdb/image/upload/t_1080p/a.jpg",
+        )
+        self.assertIsNone(igdb.get_backdrop_url({}))
+
+    def test_related_movies_have_their_release_year(self):
+        """Related and collection movies carry the year their cards show."""
+        movie = {
+            "id": 1,
+            "title": "Movie",
+            "poster_path": None,
+            "release_date": "2003-05-15",
+        }
+
+        self.assertEqual(
+            tmdb.get_related([movie], MediaTypes.MOVIE.value)[0]["release_year"],
+            2003,
+        )
+        self.assertEqual(
+            tmdb.get_collection({"parts": [movie]})[0]["release_year"],
+            2003,
+        )
+
     @patch("requests.Session.get")
     def test_movie_unknown(self, mock_data):
         """Test the metadata method for movies with mostly unknown data."""
