@@ -22,6 +22,11 @@ urlpatterns = [
         name="season_details",
     ),
     path(
+        "details/<source:source>/tv/<str:media_id>/<str:title>/season/<int:season_number>/episode/<int:episode_number>",
+        views.episode_details,
+        name="episode_details",
+    ),
+    path(
         "update-score/<media_type:media_type>/<int:instance_id>",
         views.update_media_score,
         name="update_media_score",

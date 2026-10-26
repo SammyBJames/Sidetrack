@@ -246,7 +246,7 @@
                 </button>
 
                 {# Define search type from current media type (if it exists) or last search type #}
-                {% if media_type == MediaTypes.SEASON.value %}
+                {% if media_type == MediaTypes.SEASON.value or media_type == MediaTypes.EPISODE.value %}
                   {% firstof MediaTypes.TV.value as search_type %}
                 {% else %}
                   {% firstof media_type user.last_search_type as search_type %}

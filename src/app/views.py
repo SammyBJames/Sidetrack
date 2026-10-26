@@ -419,6 +419,88 @@ def season_details(request, source, media_id, title, season_number):  # noqa: AR
     return render(request, "app/media_details.html", context)
 
 
+@require_GET
+def episode_details(
+    request,
+    source,
+    media_id,
+    title,  # noqa: ARG001 For URL
+    season_number,
+    episode_number,
+):
+    """Return the details page for an episode, with the user's watches of it."""
+    tv_with_seasons_metadata = services.get_media_metadata(
+        "tv_with_seasons",
+        media_id,
+        source,
+        [season_number],
+    )
+    season_metadata = tv_with_seasons_metadata[f"season/{season_number}"]
+
+    # With its episodes and how many are out, for its progress
+    season_instances = BasicMedia.objects.filter_media_prefetch(
+        request.user,
+        media_id,
+        MediaTypes.SEASON.value,
+        source,
+        season_number=season_number,
+    )
+    season_instance = season_instances[0] if season_instances else None
+    episodes_in_db = season_instance.episodes.all() if season_instance else []
+
+    if source == Sources.MANUAL.value:
+        episodes = manual.process_episodes(season_metadata, episodes_in_db)
+    else:
+        episodes = tmdb.process_episodes(season_metadata, episodes_in_db)
+
+    index = next(
+        (
+            index
+            for index, episode in enumerate(episodes)
+            if episode["episode_number"] == episode_number
+        ),
+        None,
+    )
+    if index is None:
+        msg = "Episode not found"
+        raise Http404(msg)
+    episode = episodes[index]
+
+    # The show's title, as on season pages, with the episode's own beside it
+    media = {
+        **episode,
+        "title": tv_with_seasons_metadata["title"],
+        "episode_title": episode["title"],
+        "season_title": season_metadata["season_title"],
+        "synopsis": episode["overview"] or "No synopsis available.",
+        "backdrop": season_metadata.get("backdrop"),
+        "certifications": season_metadata.get("certifications"),
+        "details": {
+            "air_date": episode["air_date"],
+            "runtime": episode.get("runtime"),
+        },
+    }
+    if source == Sources.TMDB.value:
+        media.update(tmdb.process_episode_details(season_metadata["episodes"][index]))
+        media["source_url"] = (
+            f"{season_metadata['source_url']}/episode/{episode_number}"
+        )
+
+    context = {
+        "media": media,
+        "media_type": MediaTypes.EPISODE.value,
+        "season_instance": season_instance,
+        "episodes": episodes,
+        "previous_episode": episodes[index - 1] if index > 0 else None,
+        "next_episode": episodes[index + 1] if index + 1 < len(episodes) else None,
+        "ratings": helpers.get_media_ratings(media),
+        "certification": helpers.get_certification(
+            media, request.user.watch_provider_region
+        ),
+    }
+    return render(request, "app/episode_details.html", context)
+
+
 @require_POST
 def update_media_score(request, media_type, instance_id):
     """Update the user's score for a media item, clearing it when it's empty.

@@ -1,4 +1,5 @@
 import os
+from datetime import date
 
 from django.contrib.auth import get_user_model
 from django.contrib.staticfiles.testing import StaticLiveServerTestCase
@@ -47,8 +48,23 @@ class IntegrationTest(StaticLiveServerTestCase):
         expect(self.page.get_by_role("main")).to_contain_text("Breaking Bad")
         self.page.get_by_title("Season 1").click()
         expect(self.page.get_by_role("main")).to_contain_text("Season 1")
-        # The season's episodes are marked watched in one click
-        self.page.get_by_role("button", name="Mark watched", exact=True).first.click()
+        # The episode's own page has the form, and leads back to the season
+        self.page.get_by_role("link", name="Pilot", exact=True).click()
+        self.page.get_by_role("button", name="Track episode").click()
+        expect(self.page.get_by_role("main")).to_contain_text("Track Episode")
+        self.page.get_by_role("button", name="More date options").first.click()
+        self.page.get_by_role("button", name="Fill in air date").click()
+        self.page.get_by_role("button", name="Add watch").click()
+        expect(self.page.get_by_role("main")).to_contain_text("Your Watches\n1")
+
+        # Episode 1 air date is 2008-01-20
+        fixed_date = date(2008, 1, 20)
+        expect(self.page.get_by_role("main")).to_contain_text(
+            fixed_date.strftime("%Y-%m-%d"),
+        )
+        self.page.get_by_label("Breadcrumb").get_by_role(
+            "link", name="Season 1"
+        ).click()
         expect(self.page.get_by_label("Watched", exact=True)).to_have_count(1)
 
         # The home card watches the next episode, which it names

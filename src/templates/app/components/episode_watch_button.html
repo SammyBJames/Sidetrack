@@ -1,0 +1,29 @@
+{% load app_tags %}
+
+{# An episode page's tracking button: marks it watched now in one click, or once it is, opens the form to watch it again #}
+<div class="flex h-10 w-full overflow-hidden rounded-xl shadow-lg ring-1 shadow-black/30 ring-white/10 md:w-auto md:min-w-56">
+  {% if media.history %}
+    <button type="button"
+            class="flex flex-1 cursor-pointer items-center justify-center gap-2 px-5 text-sm font-semibold text-white transition-colors {{ Status.COMPLETED.value|status_button_color }}"
+            @click="trackOpen = true">
+      {% include "app/icons/states/completed.svg" with classes="size-4 shrink-0" %}
+      Watched{% if media.history|length > 1 %} {{ media.history|length }} times{% endif %}
+    </button>
+  {% else %}
+    <button type="button"
+            class="relative flex flex-1 cursor-pointer items-center justify-center gap-2 px-5 text-sm font-semibold text-white transition-colors disabled:cursor-wait {{ Status.COMPLETED.value|status_button_color }}"
+            hx-post="{% url 'episode_save' %}?next={{ request.get_full_path|urlencode }}"
+            hx-vals='{"media_id": "{{ media.media_id|escapejs }}", "source": "{{ media.source }}", "season_number": "{{ media.season_number }}", "episode_number": "{{ media.episode_number }}", "quick": "1"}'
+            hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+            hx-swap="none"
+            hx-disabled-elt="this">
+      <span class="flex items-center gap-2 [.htmx-request_&]:invisible">
+        {% include "app/icons/states/completed.svg" with classes="size-4 shrink-0" %}
+        Mark watched
+      </span>
+      <span class="htmx-indicator absolute top-1/2 left-1/2 size-4 -translate-1/2 animate-spin">
+        {% include "app/icons/circle-spinning-clockwise.svg" with classes="size-4" %}
+      </span>
+    </button>
+  {% endif %}
+</div>

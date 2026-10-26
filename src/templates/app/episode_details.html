@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% load app_tags %}
+
+{% block title %}
+  {{ media.title }} S{{ media.season_number }}E{{ media.episode_number }} - Sidetrack
+{% endblock title %}
+
+{% block content %}
+  {% include "app/components/details_backdrop.html" %}
+
+  {# Unseen episodes can be blurred until they're clicked #}
+  <div class="relative"
+       x-data="{ obfuscated: {% if user.obfuscate_unseen_episodes and not media.history %}true{% else %}false{% endif %} }">
+    {# The way back to the show and season. Small screens show the banner below it #}
+    {% include "app/components/details_breadcrumb.html" %}
+
+    {# Header #}
+    <div class="flex flex-col items-center gap-6 md:flex-row md:items-end md:gap-8 {% if media.backdrop %}max-md:pt-[calc(34vw-2.75rem)]{% endif %}">
+      <img alt="{{ media.episode_title }}"
+           class="{% if media.backdrop %}max-md:hidden{% endif %} aspect-video w-72 shrink-0 rounded-xl bg-surface-800 object-cover shadow-2xl ring-1 shadow-black/50 ring-white/10 md:w-80 lg:w-96 {% if user.obfuscate_unseen_episodes and not media.history and media.image != IMG_NONE %}blur cursor-pointer{% endif %}"
+           :class="{ 'blur': obfuscated && {{ media.image|str_equals:IMG_NONE|yesno:'false,true' }}, 'cursor-pointer': obfuscated }"
+           @click="obfuscated = false"
+           src="{{ media.image }}">
+
+      <div class="flex w-full min-w-0 flex-1 flex-col items-center gap-4 text-center md:w-auto md:items-start md:text-start xl:flex-row xl:items-end xl:justify-between"
+           x-data="{ trackOpen: false }"
+           @keydown.escape.window="trackOpen = false">
+        <div class="w-full min-w-0 space-y-3 md:w-auto">
+          <h1 class="text-3xl font-bold text-white md:text-4xl {% if user.obfuscate_unseen_episodes and not media.history %}blur cursor-pointer{% endif %}"
+              :class="{ 'blur': obfuscated, 'cursor-pointer': obfuscated }"
+              @click="obfuscated = false">{{ media.episode_title }}</h1>
+
+          {# Age rating, then the season and episode, when it aired and how long it is #}
+          <div class="flex flex-wrap items-center justify-center gap-2 pt-2 text-[0.9375rem] text-gray-300 md:justify-start">
+            {% if certification %}
+              <span class="mr-1.5 rounded-md px-1.5 py-px text-xs font-semibold text-gray-200 ring-1 ring-gray-400/70"
+                    title="Rated {{ certification }}">{{ certification }}</span>
+            {% endif %}
+            <span>S{{ media.season_number }} · E{{ media.episode_number }}</span>
+            {% if media.air_date %}
+              <span class="text-gray-500">•</span>
+              <span>{{ media.air_date|iso_date_format:request.user }}</span>
+            {% endif %}
+            {% if media.runtime %}
+              <span class="text-gray-500">•</span>
+              <span>{{ media.runtime }}</span>
+            {% endif %}
+          </div>
+
+          {# The episode, as a menu of the season's others #}
+          <div class="pt-1">{% include "app/components/episode_menu.html" %}</div>
+
+          <div class="flex justify-center pt-2 md:justify-start">{% include "app/components/episode_watch_button.html" %}</div>
+        </div>
+
+        {# The other actions as icon buttons, starting with the tracking form #}
+        <div class="flex shrink-0 flex-wrap items-center justify-center gap-2">
+          {% with action_classes="tooltip flex size-10 cursor-pointer items-center justify-center rounded-xl bg-surface-800/80 text-gray-200 shadow-lg ring-1 shadow-black/30 ring-white/10 backdrop-blur transition-colors hover:bg-surface-650 hover:text-white disabled:cursor-wait" %}
+            {# Tracking form, to add a watch with its date and notes #}
+            <button type="button"
+                    class="{{ action_classes }}"
+                    data-tooltip="Track episode"
+                    aria-label="Track episode"
+                    @click="trackOpen = true">{% include "app/icons/edit.svg" with classes="size-4" %}</button>
+            {% include "app/components/fill_track_episode.html" with request=request media=media episode=media episode_title=media.episode_title csrf_token=csrf_token TRACK_TIME=TRACK_TIME only %}
+
+            {# Its metadata comes with the season #}
+            {% url 'sync_metadata' media.source MediaTypes.SEASON.value media.media_id media.season_number as sync_url %}
+            {% include "app/components/details_actions.html" %}
+          {% endwith %}
+        </div>
+      </div>
+    </div>
+
+    {# The overview, the side panel and the sections. The panel sits beside them on wide screens, and between them on narrower ones #}
+    <div class="mt-10 grid gap-10 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
+      <div class="contents xl:col-start-1 xl:row-start-1 xl:flex xl:min-w-0 xl:flex-col xl:gap-10">
+        {# Overview #}
+        <div class="min-w-0">
+          <h2 class="mb-3 text-xl font-bold text-white">Overview</h2>
+          <p class="max-w-4xl text-pretty text-gray-300 {% if user.obfuscate_unseen_episodes and not media.history %}blur cursor-pointer{% endif %}"
+             :class="{ 'blur': obfuscated, 'cursor-pointer': obfuscated }"
+             @click="obfuscated = false">{{ media.synopsis|linebreaksbr }}</p>
+        </div>
+
+        {# Sections, after the side panel on narrower screens #}
+        <div class="order-1 min-w-0 xl:order-none">
+          {# Your watches, each with its rating to change #}
+          {% if media.history %}
+            <section class="mb-8">
+              {% include "app/components/section_heading.html" with title="Your Watches" count=media.history|length %}
+              <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+                {% for watch in media.history %}
+                  {% url 'update_media_score' MediaTypes.EPISODE.value watch.id as score_url %}
+                  {% include "app/components/entry_tile.html" with entry=watch status=Status.COMPLETED.value score_url=score_url actions="app/components/watch_actions.html" %}
+                {% endfor %}
+              </div>
+            </section>
+          {% endif %}
+
+          {% with people_widths="*:w-32 sm:*:w-36 xl:*:w-40" %}
+            {% if media.cast %}
+              {% include "app/components/card_row.html" with title="Guest Stars" entries=media.cast card="app/components/person_card.html" widths=people_widths more_url=media.source_url|add:"/cast" more_count=media.total_cast_count more_label="guest stars" %}
+            {% endif %}
+
+            {% if media.crew %}
+              {% include "app/components/card_row.html" with title="Crew" entries=media.crew card="app/components/person_card.html" widths=people_widths more_url=media.source_url|add:"/cast" more_count=media.total_crew_count more_label="crew members" %}
+            {% endif %}
+          {% endwith %}
+
+          {# The season's other episodes #}
+          {% include "app/components/card_row.html" with title=media.season_title entries=episodes card="app/components/episode_card.html" widths="*:w-64 sm:*:w-72" %}
+        </div>
+      </div>
+
+      {# Side panel: one column on wide and small screens, and between them the Details beside the rest #}
+      <aside class="grid items-start gap-6 md:max-xl:grid-cols-2 md:max-xl:grid-rows-[auto_1fr] md:max-xl:[&:has(>:only-child)]:grid-cols-1 xl:col-start-2 xl:row-start-1">
+        {% include "app/components/details_ratings.html" %}
+
+        {% with label_classes="text-[0.6875rem] font-semibold tracking-wide text-gray-400 uppercase" value_classes="mt-0.5 text-sm font-medium break-words text-white" %}
+          {# Your History #}
+          {% if media.history %}
+            <section>
+              <h2 class="mb-3 text-xl font-bold text-white">Your History</h2>
+              <div class="panel">
+                <dl class="grid grid-cols-2 gap-4 p-4">
+                  <div class="min-w-0">
+                    <dt class="{{ label_classes }}">Watched</dt>
+                    <dd class="{{ value_classes }}">
+                      {{ media.history|length }} time{{ media.history|length|pluralize }}
+                    </dd>
+                  </div>
+                  {% with last=media.history.0 %}
+                    {% if last.end_date %}
+                      <div class="min-w-0">
+                        <dt class="{{ label_classes }}">Last watched</dt>
+                        <dd class="{{ value_classes }}">
+                          {{ last.end_date|datetime_format:user }}
+                        </dd>
+                      </div>
+                    {% endif %}
+                  {% endwith %}
+                  {% if season_instance %}
+                    <div class="min-w-0">
+                      <dt class="{{ label_classes }}">Season progress</dt>
+                      <dd class="{{ value_classes }}">
+                        {{ season_instance.formatted_progress }}
+                        {% if season_instance.max_progress %}/ {{ season_instance.max_progress }}{% endif %}
+                      </dd>
+                    </div>
+                  {% endif %}
+                </dl>
+              </div>
+            </section>
+          {% endif %}
+
+          {% include "app/components/details_info.html" %}
+        {% endwith %}
+      </aside>
+    </div>
+  </div>
+{% endblock content %}
