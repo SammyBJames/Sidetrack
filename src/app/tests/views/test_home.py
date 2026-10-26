@@ -169,9 +169,15 @@ class HomeViewTests(TestCase):
             user=self.user,
             status=Status.PLANNING.value,
         )
+        # Episode 6 is out to watch, and episode 7 comes out tomorrow
         Event.objects.create(
             item=season_item,
             content_number=6,
+            datetime=timezone.now() - timezone.timedelta(days=1),
+        )
+        Event.objects.create(
+            item=season_item,
+            content_number=7,
             datetime=timezone.now() + timezone.timedelta(days=1),
         )
 

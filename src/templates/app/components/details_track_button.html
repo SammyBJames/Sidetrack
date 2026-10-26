@@ -29,14 +29,17 @@
         </button>
       {% endwith %}
     {% else %}
-      {# Nothing to do in one click, e.g. once dropped, so the status opens the form #}
+      {# Nothing to do in one click, e.g. once dropped or caught up to the latest episode, so the status, or when the next episode airs, opens the form #}
       <button type="button"
               class="flex flex-1 cursor-pointer items-center justify-center gap-2 px-5 text-sm font-semibold text-white transition-colors {% if current_instance %}{{ current_instance.status|status_button_color }}{% else %}bg-surface-600 hover:bg-surface-550{% endif %}"
               hx-get="{% media_view_url 'track_modal' media %}"
               hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}", "instance_id": "{{ current_instance.id }}"}'
               hx-target="#{% component_id 'track' media current_instance.id %}"
               @click="trackOpen = true">
-        {% if current_instance %}
+        {% if next_release %}
+          {% include "app/icons/clock.svg" with classes="size-4 shrink-0" %}
+          <span title="Next episode">{{ next_release|season_release_label:user }}</span>
+        {% elif current_instance %}
           {% include current_instance.status|status_icon with classes="size-4 shrink-0" %}
           {{ current_instance.status|media_status_readable:media_type }}
         {% else %}

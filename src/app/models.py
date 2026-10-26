@@ -217,6 +217,46 @@ class Item(CalendarTriggerMixin, models.Model):
             events.tasks.reload_calendar(items_to_process=items_to_process)
 
 
+def is_caught_up(media):
+    """Return whether media has nothing released left to go through, only more to come.
+
+    Takes media annotated with its `max_progress` and `next_event`, like a show
+    airing weekly whose latest episode is watched.
+    """
+    next_event = getattr(media, "next_event", None)
+    if not next_event or next_event.is_max_datetime:
+        return False
+    max_progress = getattr(media, "max_progress", None)
+    return max_progress is None or media.progress >= max_progress
+
+
+def _seasons_of_watched_shows(seasons):
+    """Return the seasons whose shows have another season finished.
+
+    Those of shows not started yet are left out.
+    """
+    if not seasons:
+        return []
+    watched_show_ids = set(
+        Season.objects.filter(
+            related_tv_id__in={season.related_tv_id for season in seasons},
+            status__in=(Status.COMPLETED.value, *REPEAT_STATUSES),
+        ).values_list("related_tv_id", flat=True),
+    )
+    return [season for season in seasons if season.related_tv_id in watched_show_ids]
+
+
+def _first_season_of_each_show(seasons):
+    """Return the lowest numbered of each show's seasons, specials last."""
+    first = {}
+    for season in seasons:
+        order = (season.item.season_number == 0, season.item.season_number)
+        current = first.get(season.related_tv_id)
+        if current is None or order < current[0]:
+            first[season.related_tv_id] = (order, season)
+    return [season for _, season in first.values()]
+
+
 class MediaManager(models.Manager):
     """Custom manager for media models."""
 
@@ -224,8 +264,22 @@ class MediaManager(models.Manager):
         """Return list of historical model names."""
         return [f"historical{media_type}" for media_type in MediaTypes.values]
 
-    def get_media_list(self, user, media_type, status_filter, sort_filter, search=None):
-        """Get media list based on filters, sorting and search."""
+    def get_media_list(
+        self,
+        user,
+        media_type,
+        status_filter,
+        sort_filter,
+        search=None,
+        *,
+        exclude_caught_up=True,
+    ):
+        """Get media list based on filters, sorting and search.
+
+        Filtered to in progress or repeating, media caught up to its latest
+        release is left out unless `exclude_caught_up` is False, as it waits for
+        the next.
+        """
         model = apps.get_model(app_label="app", model_name=media_type)
         queryset = model.objects.filter(user=user.id)
 
@@ -234,6 +288,15 @@ class MediaManager(models.Manager):
             if any(field.name == "notes" for field in model._meta.get_fields()):
                 search_filter |= Q(notes__icontains=search)
             queryset = queryset.filter(search_filter)
+
+        if status_filter != users.models.MediaStatusChoices.ALL:
+            # Only items with an entry in that status, so the windows scan fewer rows
+            queryset = queryset.filter(
+                item__in=model.objects.filter(
+                    user=user.id,
+                    status=status_filter,
+                ).values("item"),
+            )
 
         queryset = queryset.annotate(
             repeats=Window(
@@ -262,9 +325,17 @@ class MediaManager(models.Manager):
         queryset = self._apply_prefetch_related(queryset, media_type)
 
         if sort_filter == users.models.MediaSortChoices.RECENT:
-            return self._sort_recent_media_list(queryset, media_type)
-        if sort_filter:
-            return self._sort_media_list(queryset, sort_filter, media_type)
+            queryset = self._sort_recent_media_list(queryset, media_type)
+        elif sort_filter:
+            queryset = self._sort_media_list(queryset, sort_filter, media_type)
+
+        # Media caught up to its latest release isn't listed as being gone
+        # through, so it's a list of what is instead of a queryset
+        if exclude_caught_up and status_filter in (
+            Status.IN_PROGRESS.value,
+            Status.REPEATING.value,
+        ):
+            return self.without_caught_up(queryset, media_type)
         return queryset
 
     def _apply_prefetch_related(self, queryset, media_type):
@@ -502,6 +573,15 @@ class MediaManager(models.Manager):
             for media_type in user.get_active_media_types()
             if media_type != MediaTypes.TV.value
         ]
+
+    def without_caught_up(self, media_list, media_type):
+        """Return media from a list that isn't caught up to its latest release."""
+        media_list = list(media_list)
+        self.annotate_max_progress(media_list, media_type)
+        # Shows get their next releases from their seasons with max_progress
+        if media_type != MediaTypes.TV.value:
+            self._annotate_next_event(media_list)
+        return [media for media in media_list if not is_caught_up(media)]
 
     def _annotate_next_event(self, media_list):
         """Annotate next_event for media items."""

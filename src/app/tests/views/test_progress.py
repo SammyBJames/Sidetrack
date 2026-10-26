@@ -107,8 +107,8 @@ class ProgressEditSeason(TestCase):
             0,
         )
 
-    def test_progress_increase_keeps_caught_up_card(self):
-        """Catching up on a season keeps its card, even with the old hide setting."""
+    def test_progress_increase_moves_caught_up_card(self):
+        """Catching up on a season moves its card out of the in progress row."""
         Event.objects.create(
             item=self.item_season,
             content_number=1,
@@ -137,11 +137,13 @@ class ProgressEditSeason(TestCase):
             headers={"HX-Request": "true"},
         )
 
+        # The card moves to the caught up row, which the refresh shows
         self.assertEqual(response.status_code, 200)
-        self.assertNotIn("HX-Reswap", response.headers)
-        self.assertContains(
-            response,
-            f'id="home-media-{MediaTypes.SEASON.value}-{self.season.id}"',
+        self.assertEqual(response.headers["HX-Reswap"], "delete")
+        self.assertEqual(response.headers["HX-Trigger"], "mediaChanged")
+        self.assertEqual(
+            response.headers["HX-Retarget"],
+            f"#home-media-{MediaTypes.SEASON.value}-{self.season.id}",
         )
 
 
@@ -206,8 +208,8 @@ class ProgressEditAnime(TestCase):
 
         self.assertEqual(Anime.objects.get(item__media_id="1").progress, 1)
 
-    def test_progress_increase_keeps_caught_up_card(self):
-        """Catching up keeps the card, which then shows its next release."""
+    def test_progress_increase_moves_caught_up_card(self):
+        """Catching up moves the card out of the in progress row."""
         Event.objects.create(
             item=self.item,
             content_number=3,
@@ -236,11 +238,13 @@ class ProgressEditAnime(TestCase):
             headers={"HX-Request": "true"},
         )
 
+        # The card moves to the caught up row, which the refresh shows
         self.assertEqual(response.status_code, 200)
-        self.assertNotIn("HX-Reswap", response.headers)
-        self.assertContains(
-            response,
-            f'id="home-media-{MediaTypes.ANIME.value}-{self.anime.id}"',
+        self.assertEqual(response.headers["HX-Reswap"], "delete")
+        self.assertEqual(response.headers["HX-Trigger"], "mediaChanged")
+        self.assertEqual(
+            response.headers["HX-Retarget"],
+            f"#home-media-{MediaTypes.ANIME.value}-{self.anime.id}",
         )
 
     def test_cannot_edit_another_users_progress(self):

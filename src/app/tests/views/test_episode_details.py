@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from app import config
 from app.models import Episode, Item, MediaTypes, Season, Sources, Status
+from events.models import Event
 
 
 def raw_episode(number, **fields):
@@ -497,6 +498,34 @@ class EpisodeDetailsViewTests(TestCase):
         # The unreleased season shows when it comes out instead of an action
         self.assertIn('aria-label="Not released yet: E1 · January 1, 2099"', content)
         self.assertEqual(content.count("Not released yet:"), 1)
+
+    def test_caught_up_season_and_show_show_the_next_release(self, _):
+        """With every released episode watched, both pages show the next one's date."""
+        first = self.watch(1)
+        self.watch(2)
+        season = first.related_season
+        season.related_tv.status = Status.IN_PROGRESS.value
+        season.related_tv.save_base()
+        for number, aired in ((1, True), (2, True), (3, False)):
+            Event.objects.create(
+                item=season.item,
+                content_number=number,
+                datetime=timezone.now() + timezone.timedelta(days=-30 if aired else 30),
+            )
+        show_url = reverse(
+            "media_details",
+            kwargs={
+                "source": Sources.TMDB.value,
+                "media_type": MediaTypes.TV.value,
+                "media_id": "1396",
+                "title": "breaking-bad",
+            },
+        )
+
+        for url in (self.season_url(), show_url):
+            content = self.client.get(url).content.decode()
+            self.assertRegex(content, r'<span title="Next episode">S1E3 · ')
+            self.assertNotIn("Mark S1E3 watched", content)
 
     def test_show_in_progress_watches_its_next_episode(self, _):
         """A show in progress offers its next episode, watched in its season."""

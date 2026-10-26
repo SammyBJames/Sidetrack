@@ -226,6 +226,13 @@ class MediaManagerTests(TestCase):
                     end_date=datetime(2023, 6, i, 0, 0, tzinfo=UTC),
                 )
 
+        # Episode 14 is out to watch, and more follow
+        Event.objects.create(
+            item=self.anime_item,
+            content_number=14,
+            datetime=timezone.now() - timedelta(days=1),
+            notification_sent=True,
+        )
         for i in range(4, 7):
             Event.objects.create(
                 item=self.anime_item,
@@ -575,6 +582,64 @@ class MediaManagerTests(TestCase):
         self.assertNotIn(MediaTypes.MANGA.value, media_types)
         self.assertIn(MediaTypes.MOVIE.value, media_types)
 
+    def test_caught_up_media_waits_outside_in_progress(self):
+        """Anime watched up to its latest episode leaves in progress lists and rows."""
+        manager = MediaManager()
+        Anime.objects.filter(pk=self.anime.pk).update(progress=14)
+
+        def in_progress():
+            """Return the ids of anime the manager lists as in progress."""
+            return [
+                media.id
+                for media in manager.get_media_list(
+                    user=self.user,
+                    media_type=MediaTypes.ANIME.value,
+                    status_filter=Status.IN_PROGRESS.value,
+                    sort_filter="score",
+                )
+            ]
+
+        self.assertEqual(in_progress(), [])
+        self.assertEqual(
+            len(
+                manager.get_media_list(
+                    user=self.user,
+                    media_type=MediaTypes.ANIME.value,
+                    status_filter=MediaStatusChoices.ALL,
+                    sort_filter="score",
+                ),
+            ),
+            1,
+        )
+        home = manager.get_home_status(
+            user=self.user,
+            status=Status.IN_PROGRESS.value,
+            sort_by=HomeSortChoices.RECENT,
+        )
+        self.assertNotIn(MediaTypes.ANIME.value, home)
+
+        # Once the next episode is out, it's back
+        Event.objects.filter(item=self.anime_item, content_number=17).update(
+            datetime=timezone.now() - timedelta(hours=1),
+        )
+        self.assertEqual(in_progress(), [self.anime.id])
+
+    def test_caught_up_repeat_waits_outside_repeating(self):
+        """Anime rewatched up to its latest episode leaves the repeating list."""
+        Anime.objects.filter(pk=self.anime.pk).update(
+            progress=14,
+            status=Status.REPEATING.value,
+        )
+
+        repeating = MediaManager().get_media_list(
+            user=self.user,
+            media_type=MediaTypes.ANIME.value,
+            status_filter=Status.REPEATING.value,
+            sort_filter="score",
+        )
+
+        self.assertEqual(list(repeating), [])
+
     def test_get_home_status_groups_media_and_annotates_home_fields(self):
         """Test get_home_status groups media and annotates max_progress/events."""
         manager = MediaManager()
@@ -590,13 +655,6 @@ class MediaManagerTests(TestCase):
             item=movie_item,
             user=self.user,
             status=Status.IN_PROGRESS.value,
-        )
-
-        Event.objects.create(
-            item=self.anime_item,
-            content_number=14,
-            datetime=timezone.now() - timedelta(days=1),
-            notification_sent=True,
         )
 
         home_status = manager.get_home_status(

@@ -31,6 +31,7 @@ from app.models import (
     Sources,
     Status,
     UserMessage,
+    is_caught_up,
 )
 from app.providers import manual, services, tmdb
 from app.templatetags import app_tags
@@ -94,8 +95,9 @@ def progress_edit(request, media_type, instance_id):
     BasicMedia.objects._annotate_next_event([media])
 
     # The card leaves its section when the entry is no longer in it, e.g. after
-    # reaching the last episode marks it completed
-    if home_status is not None and media.status != home_status:
+    # reaching the last episode marks it completed, or the latest released one
+    # leaves it caught up
+    if home_status is not None and (media.status != home_status or is_caught_up(media)):
         response = render(request, "app/components/messages/messages_oob.html")
         response["HX-Retarget"] = f"#home-media-{media.item.media_type}-{media.id}"
         response["HX-Reswap"] = "delete"
@@ -333,6 +335,7 @@ def media_details(request, source, media_type, media_id, title):  # noqa: ARG001
         "current_instance": current_instance,
         "watch_providers": watch_providers,
         "watch_provider_region": request.user.watch_provider_region,
+        "next_release": _next_release(current_instance),
         # The entry the tracking button acts on
         "track_target": {
             "entry": next_season or current_instance,
@@ -412,6 +415,7 @@ def season_details(request, source, media_id, title, season_number):  # noqa: AR
         "media_type": MediaTypes.SEASON.value,
         "user_medias": user_medias,
         "current_instance": current_instance,
+        "next_release": _next_release(current_instance),
         # The entry the tracking button acts on
         "track_target": {
             "entry": current_instance,
@@ -428,6 +432,20 @@ def season_details(request, source, media_id, title, season_number):  # noqa: AR
         ),
     }
     return render(request, "app/media_details.html", context)
+
+
+def _next_release(entry):
+    """Return the next release of a show or season with episodes to watch, or None.
+
+    Its tracking button shows it once there's nothing out to watch.
+    """
+    if (
+        entry is None
+        or entry.item.media_type not in quick_actions.EPISODIC_TYPES
+        or entry.status not in quick_actions.EPISODE_STATUSES
+    ):
+        return None
+    return helpers.get_next_release(entry)
 
 
 @require_GET

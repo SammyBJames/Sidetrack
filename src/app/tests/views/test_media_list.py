@@ -7,6 +7,7 @@ from django.utils import timezone
 
 from app.models import (
     TV,
+    Episode,
     Item,
     MediaTypes,
     Movie,
@@ -312,6 +313,46 @@ class TVCardCountsTests(TestCase):
         TV.save_base(self.tv)
 
         self.assertIn(">2 Seasons • 5 Episodes<", self.card_text())
+
+    def test_caught_up_show_waits_outside_in_progress(self):
+        """A show in progress with every released episode watched isn't listed so."""
+        self.tv.status = Status.IN_PROGRESS.value
+        TV.save_base(self.tv)
+        for number, episodes in ((1, 3), (2, 2)):
+            season = Season(
+                item=Item.objects.get(
+                    media_type=MediaTypes.SEASON.value,
+                    season_number=number,
+                ),
+                user=self.user,
+                related_tv=self.tv,
+                status=Status.COMPLETED.value,
+            )
+            Season.save_base(season)
+            Episode.objects.bulk_create(
+                Episode(
+                    related_season=season,
+                    item=Item.objects.create(
+                        media_id="1",
+                        source=Sources.TMDB.value,
+                        media_type=MediaTypes.EPISODE.value,
+                        title="Show",
+                        season_number=number,
+                        episode_number=episode_number,
+                    ),
+                    end_date=timezone.now(),
+                )
+                for episode_number in range(1, episodes + 1)
+            )
+        url = reverse("medialist", args=[self.user.username, MediaTypes.TV.value])
+
+        def listed(status):
+            """Return the ids of the TV shows listed for a status filter."""
+            response = self.client.get(url, {"status": status})
+            return [media.id for media in response.context["media_list"]]
+
+        self.assertEqual(listed(Status.IN_PROGRESS.value), [])
+        self.assertEqual(listed("All"), [self.tv.id])
 
     def test_show_waiting_on_its_new_season_shows_when_it_airs(self):
         """A planned show with only unaired seasons left offers its release date."""
