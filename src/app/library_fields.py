@@ -374,6 +374,7 @@ def _range_filter(scope, *, as_datetime=False, year=False):
     """Return the filter of a field's range, read the way its scope says."""
 
     def apply(queryset, media_type, flt):
+        """Return the queryset narrowed to the range, unchanged if it has no bounds."""
         queryset, name = _value_name(queryset, media_type, flt.field, scope)
         if flt.field.kind == NUMBER and flt.field.key not in FRACTION_STEPS:
             flt = _whole_bounds(flt)
