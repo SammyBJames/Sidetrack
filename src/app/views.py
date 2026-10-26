@@ -256,6 +256,7 @@ def media_list(request, username, media_type):
             media_type,
             filters,
             library_fields.present_choices(target_user, media_type),
+            library_fields.range_bounds(target_user, media_type),
         )
 
     context.update(

@@ -5,8 +5,9 @@ Each media type has its own fields, named in its words, e.g. "Times watched" and
 in SQL.
 """
 
+import math
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal, InvalidOperation
 from functools import lru_cache
@@ -283,6 +284,8 @@ class LibraryFilter:
     max: Decimal | date | int | None = None
     values: tuple = ()
     unset: bool = False
+    # The date preset a date range was asked for by, e.g. "30d", already in `min`
+    within: str = ""
 
 
 def _latest_entry_value(expression):
@@ -720,6 +723,31 @@ def _parse_year(value):
 
 _PARSERS = {NUMBER: _parse_number, DATE: _parse_date, YEAR: _parse_year}
 
+# The date presets a `<key>_within` param takes, as (days back or None for the
+# start of this year, how a pill says it, the preset's name in the panel)
+WITHIN = {
+    "7d": (7, "in the past week", "Past week"),
+    "30d": (30, "in the past month", "Past month"),
+    "90d": (90, "in the past 3 months", "Past 3 months"),
+    "365d": (365, "in the past year", "Past year"),
+    "year": (None, "this year", "This year"),
+}
+# What a date field's pill says was done in the preset's time
+DATE_VERBS = {
+    MediaSortChoices.RECENT: "Active",
+    MediaSortChoices.ADDED: "Added",
+    MediaSortChoices.START_DATE: "Started",
+    MediaSortChoices.END_DATE: "Ended",
+}
+PLAYER_CHIPS = 6
+
+
+def _within_start(preset):
+    """Return the first day a date preset covers, as of today."""
+    days = WITHIN[preset][0]
+    today = timezone.localdate()
+    return date(today.year, 1, 1) if days is None else today - timedelta(days=days)
+
 
 def parse_filters(media_type, params):
     """Return the filters a request asks for on a media type's list, by key.
@@ -728,7 +756,9 @@ def parse_filters(media_type, params):
     years, and `<key>` repeated for choices, with `score=unrated` for media with
     no rating. What isn't valid, such as other text in a number, a choice the
     field doesn't have, a field the media type lacks or an unknown param, is
-    ignored. A minimum above the maximum is kept and leaves no media.
+    ignored. A minimum above the maximum is kept and leaves no media. A date
+    field also takes `<key>_within`, a preset counted back from today that
+    replaces its minimum.
     """
     raw = {name: params.getlist(name) for name in params}
     filters = {}
@@ -743,6 +773,9 @@ def parse_filters(media_type, params):
                 max=parse(high) if high is not None else None,
                 unset=field.unset_choice in raw.get(field.key, []),
             )
+            preset = next(iter(raw.get(f"{field.key}_within", [])), None)
+            if field.kind == DATE and preset in WITHIN:
+                flt = replace(flt, min=_within_start(preset), within=preset)
             if flt.min is not None or flt.max is not None or flt.unset:
                 filters[field.key] = flt
         else:
@@ -771,6 +804,13 @@ def _plain(value):
 def _label(flt):
     """Return the label of a range filter, e.g. "IMDb ≥ 7" or "Released 2000-2010"."""
     field = flt.field
+    if flt.within:
+        return f"{DATE_VERBS[field.key]} {WITHIN[flt.within][1]}"
+    if field.key == MediaSortChoices.PLAYERS and flt.min is not None:
+        if flt.min == flt.max and flt.min <= PLAYER_CHIPS:
+            return f"Fits {flt.min:g} player{'' if flt.min == 1 else 's'}"
+        if flt.min == PLAYER_CHIPS and flt.max is None:
+            return f"Fits {PLAYER_CHIPS}+ players"
     name = "Released" if field.kind == YEAR else field.label
     low, high = (
         None if bound is None else field.format(_plain(bound))
@@ -804,6 +844,8 @@ def describe_filters(filters):
                 pills.append({"label": label, "params": [key], "value": value})
         else:
             params = [f"{key}_min", f"{key}_max"]
+            if flt.field.kind == DATE:
+                params.append(f"{key}_within")
             if flt.field.unset_choice:
                 params.append(key)
             pills.append({"label": _label(flt), "params": params, "value": None})
@@ -863,13 +905,177 @@ def _input_value(value):
     return str(_plain(value))
 
 
-def panel_filters(media_type, filters, choices):
+# The scales of the rating fields, the same for every library
+FIXED_BOUNDS = {
+    MediaSortChoices.SCORE: (0, 10),
+    MediaSortChoices.PROVIDER_SCORE: (0, 10),
+    MediaSortChoices.IMDB: (0, 10),
+    MediaSortChoices.ROTTEN_TOMATOES: (0, 100),
+    MediaSortChoices.METACRITIC: (0, 100),
+}
+
+
+def _most_plays(user, model, media_type):
+    """Return the most times any of a user's media was finished, or None.
+
+    Shows and seasons read it by the same expression their sort and filter do.
+    """
+    if media_type in SHOWS:
+        shows = model.objects.filter(user=user).annotate(plays=_plays(media_type))
+        return shows.aggregate(Max("plays"))["plays__max"]
+    watches = model.objects.filter(user=user).values("item")
+    return (
+        watches.order_by()
+        .annotate(count=Count("id"))
+        .aggregate(Max("count"))["count__max"]
+    )
+
+
+def _bound_columns(field, media_type):
+    """Return the item or entry columns whose lowest and highest value bound a field.
+
+    The low one is None for a field that starts at 0, and the whole result is None
+    for a field that is bound some other way.
+    """
+    if field.key == MediaSortChoices.PROGRESS:
+        # A show's progress is its episodes watched, up to its length
+        return (None, "item__length" if media_type in SHOWS else "progress")
+    expression = field.sort(media_type)
+    if isinstance(expression, F) and field.key != MediaSortChoices.PLAYS:
+        return (expression.name, expression.name)
+    return None
+
+
+def range_bounds(user, media_type):
+    """Return the lowest and highest value of each number and year field.
+
+    By field key, as `(low, high)`: the fixed scale of a rating field, or what
+    the user's library holds in the field, from 0 for times finished and
+    progress. Fields the library has no value for are left out. Costs two queries.
+    """
+    model = apps.get_model("app", media_type)
+    fields = [
+        field
+        for field in get_filterable_fields(media_type)
+        if field.kind in (NUMBER, YEAR) and field.key != MediaSortChoices.PLAYERS
+    ]
+    bounds = {k: FIXED_BOUNDS[k] for k in (f.key for f in fields) if k in FIXED_BOUNDS}
+    if MediaSortChoices.PLAYS in (field.key for field in fields):
+        most = _most_plays(user, model, media_type)
+        if most:
+            bounds[MediaSortChoices.PLAYS] = (0, most)
+    columns = {
+        field.key: _bound_columns(field, media_type)
+        for field in fields
+        if field.key not in bounds
+    }
+    columns = {key: pair for key, pair in columns.items() if pair}
+    aggregates = {}
+    for key, (low, high) in columns.items():
+        aggregates[f"{key}_high"] = Max(high)
+        if low:
+            aggregates[f"{key}_low"] = Min(low)
+    found = model.objects.filter(user=user).aggregate(**aggregates)
+    for key in columns:
+        low, high = found.get(f"{key}_low") or 0, found[f"{key}_high"]
+        if high is None:
+            continue
+        if key == MediaSortChoices.RELEASE:
+            low, high = low.year, high.year
+        bounds[key] = (math.floor(low), math.ceil(high))
+    return bounds
+
+
+def _slider(field, flt, bounds):
+    """Return a number or year field's slider, or None without a range to slide.
+
+    Its scale is the library's `bounds` of the field, widened to take what the
+    address asks for. `min` and `max` are the values chosen, the ends of the
+    scale (`floor` and `ceiling`) for a bound not asked for, which is no filter.
+    """
+    step = FRACTION_STEPS.get(field.key, "1")
+    asked = [b for b in (flt.min, flt.max) if b is not None] if flt else []
+    values = [*bounds.get(field.key, ()), *asked]
+    if not values:
+        return None
+    low, high = min(values), max(values)
+    if field.key not in FRACTION_STEPS:
+        low, high = math.floor(low), math.ceil(high)
+    if low == high and not asked:
+        return None
+    high = max(high, low + Decimal(step))
+    if field.unit == "min":
+        number_format = "minutes"
+    elif field.kind == YEAR:
+        number_format = "year"
+    else:
+        number_format = "decimal" if field.key in FRACTION_STEPS else "count"
+    return {
+        "key": field.key,
+        "label": field.label,
+        "unit": field.unit,
+        "control": "slider",
+        "format": number_format,
+        "step": step,
+        "floor": _input_value(low),
+        "ceiling": _input_value(high),
+        # A bound asked for at the end of the scale is kept until it is moved
+        "min_asked": bool(flt and flt.min is not None),
+        "max_asked": bool(flt and flt.max is not None),
+        "min": _input_value(flt.min if flt and flt.min is not None else low),
+        "max": _input_value(flt.max if flt and flt.max is not None else high),
+        "unset": field.unset_choice,
+        "unset_checked": bool(flt and flt.unset),
+    }
+
+
+def _date_presets(field, flt):
+    """Return a date field's preset chips and date inputs with their current values."""
+    within = flt.within if flt else ""
+    custom = bool(flt and not within and (flt.min or flt.max))
+    return {
+        "key": field.key,
+        "label": field.label,
+        "control": "dates",
+        "mode": within or ("custom" if custom else ""),
+        "presets": [
+            {"value": value, "label": label} for value, (_, _, label) in WITHIN.items()
+        ],
+        "inputs": [
+            {
+                "name": f"{field.key}_{bound}",
+                "value": _input_value(None if within else getattr(flt, bound, None)),
+                "label": f"{field.label}, {words}",
+            }
+            for bound, words in (("min", "from"), ("max", "up to"))
+        ],
+    }
+
+
+def _player_chips(field, flt):
+    """Return the players chips, 1 to 6+, with the counts asked for."""
+    return {
+        "key": field.key,
+        "label": "Players",
+        "control": "players",
+        "min": _input_value(flt.min if flt else None),
+        "max": _input_value(flt.max if flt else None),
+        "chips": [
+            {"value": str(count), "label": str(count)}
+            for count in range(1, PLAYER_CHIPS)
+        ]
+        + [{"value": str(PLAYER_CHIPS), "label": f"{PLAYER_CHIPS}+"}],
+    }
+
+
+def panel_filters(media_type, filters, choices, bounds):
     """Return the filters the panel offers, in groups with their current values.
 
     Each group has a `title`, its `ranges` and its `choices`. A range is a
-    number, date or year field with its min and max `inputs`, of a `type` and
-    `step`. A choice is a field of toggles, each option with its `value`,
-    `label`, `count` and whether it is `checked`. Groups left empty are
+    field's control: a `slider` for numbers and years within the library's
+    `bounds` (from `range_bounds`), preset chips with date inputs for `dates`,
+    or chips for `players`. A choice is a field of toggles, each option with its
+    `value`, `label`, `count` and whether it is `checked`. Groups left empty are
     dropped. Genres and platforms are those of the user's library, plus any
     asked for that it lacks, so no filter in the address is lost.
     """
@@ -882,32 +1088,15 @@ def panel_filters(media_type, filters, choices):
     for field in get_filterable_fields(media_type):
         flt = filters.get(field.key)
         if field.kind in _PARSERS:
-            group = "activity" if field.key in ACTIVITY_KEYS else "about"
-            groups[group]["ranges"].append(
-                {
-                    "key": field.key,
-                    "label": field.label,
-                    "unit": field.unit,
-                    "type": {NUMBER: "number", DATE: "date", YEAR: "number"}[
-                        field.kind
-                    ],
-                    "step": FRACTION_STEPS.get(field.key, "1"),
-                    "inputs": [
-                        {
-                            "name": f"{field.key}_{bound}",
-                            "value": _input_value(getattr(flt, bound) if flt else None),
-                            "label": f"{field.label}, {words}",
-                            "placeholder": placeholder if field.kind != DATE else "",
-                        }
-                        for bound, words, placeholder in (
-                            ("min", "from", "Min" if field.kind != YEAR else "From"),
-                            ("max", "up to", "Max" if field.kind != YEAR else "To"),
-                        )
-                    ],
-                    "unset": field.unset_choice,
-                    "unset_checked": bool(flt and flt.unset),
-                },
-            )
+            if field.kind == DATE:
+                control = _date_presets(field, flt)
+            elif field.key == MediaSortChoices.PLAYERS:
+                control = _player_chips(field, flt)
+            else:
+                control = _slider(field, flt, bounds)
+            if control:
+                group = "activity" if field.key in ACTIVITY_KEYS else "about"
+                groups[group]["ranges"].append(control)
             continue
         asked = {value.lower() for value in flt.values} if flt else set()
         if field.choices:

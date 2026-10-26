@@ -80,40 +80,190 @@
               <h4 class="mb-2 text-sm font-medium text-white">{{ group.title }}</h4>
               <div class="space-y-3">
                 {% for range in group.ranges %}
-                  <div>
-                    <div class="mb-1 flex items-baseline justify-between gap-2 text-xs">
-                      <span class="text-gray-300">{{ range.label }}</span>
-                      {% if range.unit %}<span class="text-gray-500">{{ range.unit }}</span>{% endif %}
+                  {% if range.control == "slider" %}
+                    <div>
+                      <div x-data="rangeSlider()"
+                           data-control-params="{{ range.key }}_min,{{ range.key }}_max"
+                           data-floor="{{ range.floor }}"
+                           data-ceiling="{{ range.ceiling }}"
+                           data-min="{{ range.min }}"
+                           data-max="{{ range.max }}"
+                           {% if range.min_asked %}data-keep-min{% endif %}
+                           {% if range.max_asked %}data-keep-max{% endif %}
+                           data-format="{{ range.format }}"
+                           data-unit="{{ range.unit }}"
+                           @input.stop>
+                        <input type="hidden"
+                               name="{{ range.key }}_min"
+                               value="{% if range.min_asked or range.min != range.floor %}{{ range.min }}{% endif %}"
+                               :value="lo > floor || keepLo ? lo : ''">
+                        <input type="hidden"
+                               name="{{ range.key }}_max"
+                               value="{% if range.max_asked or range.max != range.ceiling %}{{ range.max }}{% endif %}"
+                               :value="hi < ceiling || keepHi ? hi : ''">
+                        <div class="mb-1 flex items-baseline justify-between gap-2 text-xs">
+                          <span class="text-gray-300">{{ range.label }}</span>
+                          <button type="button"
+                                  @click="exact = !exact"
+                                  :aria-expanded="exact"
+                                  aria-label="Type exact {{ range.label }} values"
+                                  class="cursor-pointer rounded px-1 font-medium tabular-nums transition-colors hover:text-white"
+                                  :class="active ? 'text-indigo-300' : 'text-gray-400'"
+                                  x-text="label"></button>
+                        </div>
+                        <div class="relative h-5">
+                          <div class="absolute inset-x-2 top-1/2 h-1 -translate-y-1/2 rounded-full bg-white/10">
+                            <div class="absolute h-full rounded-full bg-indigo-500"
+                                 :style="`left: ${percent(lo)}%; right: ${100 - percent(hi)}%`"></div>
+                          </div>
+                          <input type="range"
+                                 min="{{ range.floor }}"
+                                 max="{{ range.ceiling }}"
+                                 step="{{ range.step }}"
+                                 value="{{ range.min }}"
+                                 :value="lo"
+                                 :aria-valuetext="format(lo)"
+                                 aria-label="{{ range.label }}, minimum"
+                                 @input="setBound('lo', $el)"
+                                 @change="submit()"
+                                 class="range-thumb absolute inset-0 w-full"
+                                 :class="lo > (floor + ceiling) / 2 ? 'z-20' : 'z-10'">
+                          <input type="range"
+                                 min="{{ range.floor }}"
+                                 max="{{ range.ceiling }}"
+                                 step="{{ range.step }}"
+                                 value="{{ range.max }}"
+                                 :value="hi"
+                                 :aria-valuetext="format(hi)"
+                                 aria-label="{{ range.label }}, maximum"
+                                 @input="setBound('hi', $el)"
+                                 @change="submit()"
+                                 class="range-thumb absolute inset-0 w-full"
+                                 :class="lo === hi && hi <= (floor + ceiling) / 2 ? 'z-30' : ''">
+                        </div>
+                        <div x-cloak x-show="exact" class="mt-2 grid grid-cols-2 gap-2">
+                          <input type="number"
+                                 min="{{ range.floor }}"
+                                 max="{{ range.ceiling }}"
+                                 step="{{ range.step }}"
+                                 inputmode="decimal"
+                                 value="{{ range.min }}"
+                                 :value="lo"
+                                 @change="setBound('lo', $el); submit()"
+                                 aria-label="{{ range.label }}, minimum, exact"
+                                 class="h-8 min-w-0 rounded-lg bg-white/5 px-2.5 text-sm text-white ring-1 ring-white/10 focus:ring-2 focus:ring-indigo-400 focus:outline-none">
+                          <input type="number"
+                                 min="{{ range.floor }}"
+                                 max="{{ range.ceiling }}"
+                                 step="{{ range.step }}"
+                                 inputmode="decimal"
+                                 value="{{ range.max }}"
+                                 :value="hi"
+                                 @change="setBound('hi', $el); submit()"
+                                 aria-label="{{ range.label }}, maximum, exact"
+                                 class="h-8 min-w-0 rounded-lg bg-white/5 px-2.5 text-sm text-white ring-1 ring-white/10 focus:ring-2 focus:ring-indigo-400 focus:outline-none">
+                        </div>
+                      </div>
+                      {% if range.unset %}
+                        <label class="mt-2 inline-block cursor-pointer">
+                          <input type="checkbox"
+                                 name="{{ range.key }}"
+                                 value="{{ range.unset }}"
+                                 {% if range.unset_checked %}checked{% endif %}
+                                 class="peer sr-only">
+                          <span class="flex h-7 items-center rounded-full bg-white/5 px-3 text-xs font-medium text-gray-300 ring-1 ring-white/10 transition-colors peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-400 peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-400 hover:bg-white/10">Unrated</span>
+                        </label>
+                      {% endif %}
                     </div>
-                    <div class="grid grid-cols-2 gap-2">
-                      {% for input in range.inputs %}
-                        <input type="{{ range.type }}"
-                               name="{{ input.name }}"
-                               value="{{ input.value }}"
-                               {% if range.type == "number" %}step="{{ range.step }}" inputmode="decimal"{% endif %}
-                               placeholder="{{ input.placeholder }}"
-                               aria-label="{{ input.label }}"
-                               class="h-8 min-w-0 rounded-lg bg-white/5 px-2.5 text-sm text-white ring-1 ring-white/10 placeholder:text-gray-500 focus:ring-2 focus:ring-indigo-400 focus:outline-none [color-scheme:dark]">
-                      {% endfor %}
+                  {% elif range.control == "dates" %}
+                    <div x-data="datePresets('{{ range.mode }}')"
+                         data-control-params="{{ range.key }}_min,{{ range.key }}_max,{{ range.key }}_within">
+                      <p class="mb-1.5 text-xs text-gray-300">{{ range.label }}</p>
+                      <div class="flex flex-wrap gap-1.5"
+                           role="group"
+                           aria-label="{{ range.label }}">
+                        <button type="button"
+                                @click="choose(''); submit()"
+                                :aria-pressed="mode === ''"
+                                :class="chip(mode === '')"
+                                class="h-7 cursor-pointer rounded-full px-3 text-xs font-medium ring-1 transition-colors">
+                          Any
+                        </button>
+                        {% for preset in range.presets %}
+                          <button type="button"
+                                  @click="choose('{{ preset.value }}'); submit()"
+                                  :aria-pressed="mode === '{{ preset.value }}'"
+                                  :class="chip(mode === '{{ preset.value }}')"
+                                  class="h-7 cursor-pointer rounded-full px-3 text-xs font-medium ring-1 transition-colors">
+                            {{ preset.label }}
+                          </button>
+                        {% endfor %}
+                        <button type="button"
+                                @click="choose('custom'); submit()"
+                                :aria-pressed="mode === 'custom'"
+                                :class="chip(mode === 'custom')"
+                                class="h-7 cursor-pointer rounded-full px-3 text-xs font-medium ring-1 transition-colors">
+                          Custom
+                        </button>
+                      </div>
+                      <input type="hidden"
+                             name="{{ range.key }}_within"
+                             value="{% if range.mode != 'custom' %}{{ range.mode }}{% endif %}"
+                             :value="preset">
+                      <div x-cloak
+                           x-show="mode === 'custom'"
+                           class="mt-2 grid grid-cols-2 gap-2">
+                        {% for input in range.inputs %}
+                          <input type="date"
+                                 name="{{ input.name }}"
+                                 value="{{ input.value }}"
+                                 aria-label="{{ input.label }}"
+                                 class="h-8 min-w-0 rounded-lg bg-white/5 px-2.5 text-sm text-white ring-1 ring-white/10 focus:ring-2 focus:ring-indigo-400 focus:outline-none [color-scheme:dark]">
+                        {% endfor %}
+                      </div>
                     </div>
-                    {% if range.unset %}
-                      <label class="mt-2 inline-block cursor-pointer">
-                        <input type="checkbox"
-                               name="{{ range.key }}"
-                               value="{{ range.unset }}"
-                               {% if range.unset_checked %}checked{% endif %}
-                               class="peer sr-only">
-                        <span class="flex h-7 items-center rounded-full bg-white/5 px-3 text-xs font-medium text-gray-300 ring-1 ring-white/10 transition-colors peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-400 peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-400 hover:bg-white/10">Unrated</span>
-                      </label>
-                    {% endif %}
-                  </div>
+                  {% elif range.control == "players" %}
+                    <div x-data="playerChips('{{ range.min }}', '{{ range.max }}')"
+                         data-control-params="{{ range.key }}_min,{{ range.key }}_max">
+                      <p class="mb-1.5 text-xs text-gray-300">Fits this many players</p>
+                      <div class="flex flex-wrap gap-1.5" role="group" aria-label="Players">
+                        {% for chip in range.chips %}
+                          <button type="button"
+                                  @click="pick({{ chip.value }}); submit()"
+                                  :aria-pressed="picked({{ chip.value }})"
+                                  :class="chip(picked({{ chip.value }}))"
+                                  class="h-7 min-w-9 cursor-pointer rounded-full px-3 text-xs font-medium ring-1 transition-colors">
+                            {{ chip.label }}
+                          </button>
+                        {% endfor %}
+                      </div>
+                      <input type="hidden"
+                             name="{{ range.key }}_min"
+                             value="{{ range.min }}"
+                             :value="min">
+                      <input type="hidden"
+                             name="{{ range.key }}_max"
+                             value="{{ range.max }}"
+                             :value="max">
+                    </div>
+                  {% endif %}
                 {% endfor %}
                 {% for field in group.choices %}
-                  <div>
+                  <div x-data="{ q: '' }">
                     {% if field.label != group.title %}<p class="mb-1 text-xs text-gray-300">{{ field.label }}</p>{% endif %}
+                    {% if field.options|length > 12 %}
+                      <input type="search"
+                             x-model="q"
+                             @input.stop
+                             placeholder="Search {{ field.label|lower }}..."
+                             aria-label="Search {{ field.label|lower }}"
+                             class="mb-2 h-8 w-full rounded-lg bg-white/5 px-2.5 text-sm text-white ring-1 ring-white/10 placeholder:text-gray-500 focus:ring-2 focus:ring-indigo-400 focus:outline-none">
+                    {% endif %}
                     <div class="flex max-h-44 flex-wrap gap-1.5 overflow-y-auto p-0.5">
                       {% for option in field.options %}
-                        <label class="cursor-pointer">
+                        <label class="cursor-pointer"
+                               data-name="{{ option.label|lower }}"
+                               x-show="!q || $el.dataset.name.includes(q.toLowerCase().trim()) || $el.querySelector('input').checked">
                           <input type="checkbox"
                                  name="{{ field.key }}"
                                  value="{{ option.value }}"

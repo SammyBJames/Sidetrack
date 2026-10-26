@@ -247,3 +247,52 @@
   font-size: 15px;
   margin-top: 3px;
 }
+
+/* The two thumbs of a range slider share one track: only the thumbs take the pointer */
+.range-thumb {
+  appearance: none;
+  background: transparent;
+  pointer-events: none;
+  height: 100%;
+  margin: 0;
+}
+
+.range-thumb::-webkit-slider-runnable-track {
+  background: transparent;
+  height: 100%;
+}
+
+.range-thumb::-moz-range-track {
+  background: transparent;
+}
+
+.range-thumb::-webkit-slider-thumb {
+  appearance: none;
+  pointer-events: auto;
+  cursor: grab;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.125rem;
+  border-radius: 9999px;
+  background: white;
+  box-shadow: 0 0 0 2px #6366f1, 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.range-thumb::-moz-range-thumb {
+  pointer-events: auto;
+  cursor: grab;
+  width: 1rem;
+  height: 1rem;
+  border: 0;
+  border-radius: 9999px;
+  background: white;
+  box-shadow: 0 0 0 2px #6366f1, 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.range-thumb:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px #a5b4fc, 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.range-thumb:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 3px #a5b4fc, 0 1px 3px rgba(0, 0, 0, 0.5);
+}

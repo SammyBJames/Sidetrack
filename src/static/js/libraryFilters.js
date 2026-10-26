@@ -2,7 +2,8 @@
 // the results on each change. The sort and layout are its hidden fields, the filters are the
 // inputs of the panel with x-ref="panel" (named by their URL params). The sorts come from the
 // JSON in the element with id="library-sorts", each with its usual direction and how either
-// direction reads.
+// direction reads. The panel's slider, date and player controls keep their own state, which their
+// elements with data-control-params (the params they set) can reset().
 // Guard against re-registering when this script re-runs after an HTMX body swap.
 if (!window.__libraryFiltersRegistered) {
   window.__libraryFiltersRegistered = true;
@@ -81,10 +82,24 @@ if (!window.__libraryFiltersRegistered) {
         this.inerted = [];
         this.$refs.panelButton.focus();
       },
+      // The classes of a chip, on or off
+      chip(on) {
+        return on
+          ? "bg-indigo-600 text-white ring-indigo-400"
+          : "bg-white/5 text-gray-300 ring-white/10 hover:bg-white/10";
+      },
+      // Resets the panel's controls that set any of these params, or all of them without
+      resetControls(params) {
+        for (const control of this.$refs.panel.querySelectorAll("[data-control-params]")) {
+          const own = control.dataset.controlParams.split(",");
+          if (!params || own.some((param) => params.includes(param))) Alpine.$data(control).reset();
+        }
+      },
       // Empties the inputs named by these params, or with a `value` only that choice's checkbox
       removeFilter(params, value) {
+        this.resetControls(params);
         for (const input of this.$refs.panel.querySelectorAll("input")) {
-          if (!params.includes(input.name)) continue;
+          if (!params.includes(input.name) || input.closest("[data-control-params]")) continue;
           if (input.type !== "checkbox") input.value = "";
           else if (!value || input.value.toLowerCase() === value.toLowerCase()) input.checked = false;
         }
@@ -92,7 +107,9 @@ if (!window.__libraryFiltersRegistered) {
       },
       // Clears the filters, and the search and status too with `everything`
       clearFilters(everything = false) {
+        this.resetControls();
         for (const input of this.$refs.panel.querySelectorAll("input")) {
+          if (!input.name || input.closest("[data-control-params]")) continue;
           if (input.type === "checkbox") input.checked = false;
           else input.value = "";
         }
@@ -102,6 +119,124 @@ if (!window.__libraryFiltersRegistered) {
       // Waits for the fields to take the new values before sending them
       submit() {
         this.$nextTick(() => htmx.trigger(this.$refs.form, "submit"));
+      },
+    }));
+
+    // A two-handle range slider of two range inputs over one track, set from its data attributes:
+    // the scale (floor, ceiling), the values chosen (min, max), their format and unit. A handle
+    // at the end of the scale sets no filter.
+    Alpine.data("rangeSlider", () => ({
+      floor: 0,
+      ceiling: 1,
+      lo: 0,
+      hi: 1,
+      numberFormat: "count",
+      unit: "",
+      exact: false,
+      // Whether a bound the address put at an end of the scale is still kept, until it's moved
+      keepLo: false,
+      keepHi: false,
+      // Reads the scale and chosen values from the element's data attributes
+      init() {
+        const data = this.$el.dataset;
+        this.floor = Number(data.floor);
+        this.ceiling = Number(data.ceiling);
+        this.lo = Number(data.min);
+        this.hi = Number(data.max);
+        this.numberFormat = data.format;
+        this.unit = data.unit;
+        this.keepLo = "keepMin" in data;
+        this.keepHi = "keepMax" in data;
+      },
+      // Whether either handle is off the end of the scale, so a filter is set
+      get active() {
+        return this.lo > this.floor || this.hi < this.ceiling;
+      },
+      // The chosen range as words, e.g. "1h 30m – 2h 45m" or "100 – 400 pages"
+      get label() {
+        const suffix = this.unit === "%" ? "%" : this.numberFormat === "count" && this.unit ? ` ${this.unit}` : "";
+        return `${this.format(this.lo)} \u2013 ${this.format(this.hi)}${suffix}`;
+      },
+      // A value as the field shows it
+      format(value) {
+        if (this.numberFormat === "minutes") {
+          const hours = Math.floor(value / 60);
+          const minutes = value % 60;
+          return hours ? `${hours}h${minutes ? ` ${minutes}m` : ""}` : `${minutes}m`;
+        }
+        if (this.numberFormat === "year") return String(value);
+        if (this.numberFormat === "decimal" && !Number.isInteger(value)) return value.toFixed(1);
+        return value.toLocaleString();
+      },
+      // Where a value sits along the scale, 0 to 100
+      percent(value) {
+        return ((value - this.floor) / (this.ceiling - this.floor)) * 100;
+      },
+      // Takes an input's value for the lower or upper end, kept within the scale and the other end,
+      // and puts back what was kept
+      setBound(side, input) {
+        const value = Number(input.value);
+        if (input.value !== "" && !Number.isNaN(value)) {
+          this[side] =
+            side === "lo"
+              ? Math.min(Math.max(value, this.floor), this.hi)
+              : Math.max(Math.min(value, this.ceiling), this.lo);
+        }
+        if (side === "lo") this.keepLo = false;
+        else this.keepHi = false;
+        input.value = this[side];
+      },
+      // Puts both handles back at the ends of the scale, setting no filter
+      reset() {
+        this.lo = this.floor;
+        this.hi = this.ceiling;
+        this.keepLo = false;
+        this.keepHi = false;
+      },
+    }));
+
+    // A date field's presets ("" for any, "custom" for its date pickers), by the mode chosen. A
+    // preset or custom dates are set, never both.
+    Alpine.data("datePresets", (mode) => ({
+      mode,
+      // The preset to send, "" for any or custom dates
+      get preset() {
+        return this.mode === "custom" ? "" : this.mode;
+      },
+      // Picks a mode, dropping any typed dates unless it is "custom"
+      choose(mode) {
+        this.mode = mode;
+        if (mode !== "custom") this.clearDates();
+      },
+      // Empties the date pickers
+      clearDates() {
+        for (const input of this.$el.querySelectorAll("input[type=date]")) input.value = "";
+      },
+      // Back to any date
+      reset() {
+        this.mode = "";
+        this.clearDates();
+      },
+    }));
+
+    // Chips for how many players a game fits, 1 to 6+, from the player counts in the address
+    Alpine.data("playerChips", (min, max) => ({
+      min,
+      max,
+      // Whether a chip is the chosen count; 6 stands for 6 or more, with no upper end
+      picked(count) {
+        return this.min === String(count) && this.max === (count === 6 ? "" : String(count));
+      },
+      // Chooses a count, or clears it if it is already chosen
+      pick(count) {
+        if (this.picked(count)) return this.reset();
+        this.min = String(count);
+        this.max = count === 6 ? "" : String(count);
+      },
+      // Clears the chosen count
+      reset() {
+        this.min = "";
+        this.max = "";
       },
     }));
   });
