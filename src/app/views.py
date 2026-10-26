@@ -16,7 +16,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from app import config, helpers, history_processor, quick_actions
+from app import config, helpers, history_processor, item_details, quick_actions
 from app import home as home_helpers
 from app import statistics as stats
 from app.forms import EpisodeForm, ManualItemForm, get_form_class
@@ -405,6 +405,16 @@ def media_details(request, source, media_type, media_id, title):  # noqa: ARG001
     else:
         watch_providers = None
 
+    ratings = helpers.get_media_ratings(media_metadata)
+    item_details.save_page_details(
+        current_instance.item if current_instance else None,
+        media_type,
+        source,
+        media_id,
+        media_metadata,
+        ratings,
+    )
+
     context = {
         "media": media_metadata,
         "media_type": media_type,
@@ -419,7 +429,7 @@ def media_details(request, source, media_type, media_id, title):  # noqa: ARG001
             "media_type": MediaTypes.SEASON.value if next_season else media_type,
             "season_number": (next_season.item.season_number if next_season else None),
         },
-        "ratings": helpers.get_media_ratings(media_metadata),
+        "ratings": ratings,
         "certification": helpers.get_certification(
             media_metadata, request.user.watch_provider_region
         ),
@@ -486,6 +496,16 @@ def season_details(request, source, media_id, title, season_number):  # noqa: AR
                     )
                 )
 
+    ratings = helpers.get_media_ratings(season_metadata)
+    item_details.save_page_details(
+        current_instance.item if current_instance else None,
+        MediaTypes.SEASON.value,
+        source,
+        media_id,
+        season_metadata,
+        ratings,
+    )
+
     context = {
         "media": season_metadata,
         "tv": tv_with_seasons_metadata,
@@ -503,7 +523,7 @@ def season_details(request, source, media_id, title, season_number):  # noqa: AR
             season_metadata.get("providers"), request.user.watch_provider_region
         ),
         "watch_provider_region": request.user.watch_provider_region,
-        "ratings": helpers.get_media_ratings(season_metadata),
+        "ratings": ratings,
         "certification": helpers.get_certification(
             season_metadata, request.user.watch_provider_region
         ),

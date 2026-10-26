@@ -1,3 +1,5 @@
+from datetime import date
+from decimal import Decimal
 from unittest.mock import patch
 
 from django.conf import settings
@@ -587,3 +589,210 @@ class MediaDetailsViewTests(TestCase):
         # More cast than shown links to all of them, and the whole crew shows
         self.assertContains(response, "31 cast members")
         self.assertNotContains(response, "crew members")
+
+
+class DetailsStoredByPagesTests(TestCase):
+    """Test that details pages store their item's details."""
+
+    def setUp(self):
+        """Create a user and log in."""
+        self.credentials = {"username": "test", "password": "12345"}
+        self.user = get_user_model().objects.create_user(**self.credentials)
+        self.client.login(**self.credentials)
+
+    @patch("app.providers.omdb.get_ratings")
+    @patch("app.providers.services.get_media_metadata")
+    def test_media_details_stores_details_and_ratings(
+        self,
+        mock_get_metadata,
+        mock_get_ratings,
+    ):
+        """A movie page stores its details and OMDb ratings with no extra calls."""
+        mock_get_metadata.return_value = {
+            "media_id": "603",
+            "title": "The Matrix",
+            "media_type": MediaTypes.MOVIE.value,
+            "source": Sources.TMDB.value,
+            "image": "http://example.com/image.jpg",
+            "genres": ["Action"],
+            "score": 8.2,
+            "score_count": 100,
+            "external_links": {"IMDb": "https://www.imdb.com/title/tt0133093/"},
+            "details": {"release_date": "1999-03-31", "runtime": "2h 16m"},
+        }
+        mock_get_ratings.return_value = [
+            {"source": "imdb", "score": "8.7", "scale": "/10", "votes": 1},
+            {"source": "rotten_tomatoes", "score": "83%", "scale": "", "votes": None},
+        ]
+        item = Item.objects.create(
+            media_id="603",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.MOVIE.value,
+            title="The Matrix",
+            image="http://example.com/image.jpg",
+        )
+        Movie.objects.create(item=item, user=self.user, status=Status.PLANNING.value)
+        url = reverse(
+            "media_details",
+            kwargs={
+                "source": Sources.TMDB.value,
+                "media_type": MediaTypes.MOVIE.value,
+                "media_id": "603",
+                "title": "the-matrix",
+            },
+        )
+
+        self.assertEqual(self.client.get(url).status_code, 200)
+
+        mock_get_metadata.assert_called_once()
+        mock_get_ratings.assert_called_once()
+        item.refresh_from_db()
+        self.assertEqual(item.release_date, date(1999, 3, 31))
+        self.assertEqual(item.runtime, 136)
+        self.assertEqual(item.genres, "|Action|")
+        self.assertEqual(item.provider_score, Decimal("8.2"))
+        self.assertEqual(item.imdb_score, Decimal("8.7"))
+        self.assertEqual(item.rotten_tomatoes, 83)
+        self.assertIsNotNone(item.details_updated_at)
+
+        # A second view of unchanged details doesn't write the item again
+        stored_at = item.details_updated_at
+        self.client.get(url)
+        item.refresh_from_db()
+        self.assertEqual(item.details_updated_at, stored_at)
+
+    @patch("app.providers.services.get_media_metadata")
+    def test_untracked_media_details_stores_on_an_existing_item(
+        self,
+        mock_get_metadata,
+    ):
+        """A page of a title only another user tracks still stores its details."""
+        mock_get_metadata.return_value = {
+            "media_id": "238",
+            "title": "Test Book",
+            "media_type": MediaTypes.BOOK.value,
+            "source": Sources.OPENLIBRARY.value,
+            "image": "http://example.com/image.jpg",
+            "details": {"number_of_pages": 412},
+        }
+        item = Item.objects.create(
+            media_id="238",
+            source=Sources.OPENLIBRARY.value,
+            media_type=MediaTypes.BOOK.value,
+            title="Test Book",
+            image="http://example.com/image.jpg",
+        )
+
+        self.client.get(
+            reverse(
+                "media_details",
+                kwargs={
+                    "source": Sources.OPENLIBRARY.value,
+                    "media_type": MediaTypes.BOOK.value,
+                    "media_id": "238",
+                    "title": "test-book",
+                },
+            ),
+        )
+
+        item.refresh_from_db()
+        self.assertEqual(item.length, 412)
+
+    @patch("app.providers.services.get_media_metadata")
+    def test_page_without_an_item_creates_none(self, mock_get_metadata):
+        """A page of a title nobody tracks stores nothing."""
+        mock_get_metadata.return_value = {
+            "media_id": "238",
+            "title": "Test Book",
+            "media_type": MediaTypes.BOOK.value,
+            "source": Sources.OPENLIBRARY.value,
+            "image": "http://example.com/image.jpg",
+            "details": {"number_of_pages": 412},
+        }
+
+        self.client.get(
+            reverse(
+                "media_details",
+                kwargs={
+                    "source": Sources.OPENLIBRARY.value,
+                    "media_type": MediaTypes.BOOK.value,
+                    "media_id": "238",
+                    "title": "test-book",
+                },
+            ),
+        )
+
+        self.assertFalse(Item.objects.exists())
+
+    @patch("app.providers.tmdb.process_episodes", return_value=[])
+    @patch("app.providers.services.get_media_metadata")
+    def test_season_details_stores_the_seasons_details(
+        self,
+        mock_get_metadata,
+        mock_process_episodes,  # noqa: ARG002
+    ):
+        """A season page stores the season's details, not its show's."""
+        mock_get_metadata.return_value = {
+            "title": "Friends",
+            "media_id": "1668",
+            "source": Sources.TMDB.value,
+            "media_type": MediaTypes.TV.value,
+            "image": "http://example.com/image.jpg",
+            "details": {"episodes": 236},
+            "season/2": {
+                "title": "Friends",
+                "media_id": "1668",
+                "media_type": MediaTypes.SEASON.value,
+                "source": Sources.TMDB.value,
+                "image": "http://example.com/season.jpg",
+                "season_number": 2,
+                "episodes": [],
+                "details": {"first_air_date": "1995-09-21", "episodes": 24},
+            },
+        }
+        # Season 1 is created first, so a lookup ignoring the number would find it
+        other_season = Item.objects.create(
+            media_id="1668",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.SEASON.value,
+            title="Friends",
+            image="http://example.com/season.jpg",
+            season_number=1,
+        )
+        season = Item.objects.create(
+            media_id="1668",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.SEASON.value,
+            title="Friends",
+            image="http://example.com/season.jpg",
+            season_number=2,
+        )
+        show = Item.objects.create(
+            media_id="1668",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Friends",
+            image="http://example.com/image.jpg",
+        )
+
+        response = self.client.get(
+            reverse(
+                "season_details",
+                kwargs={
+                    "source": Sources.TMDB.value,
+                    "media_id": "1668",
+                    "title": "friends",
+                    "season_number": 2,
+                },
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        mock_get_metadata.assert_called_once()
+        season.refresh_from_db()
+        show.refresh_from_db()
+        self.assertEqual(season.length, 24)
+        self.assertEqual(season.release_date, date(1995, 9, 21))
+        self.assertIsNone(show.length)
+        other_season.refresh_from_db()
+        self.assertIsNone(other_season.length)

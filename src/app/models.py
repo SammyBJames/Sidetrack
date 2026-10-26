@@ -65,6 +65,14 @@ class MediaTypes(models.TextChoices):
     BOARDGAME = "boardgame", "Boardgame"
 
 
+class AiringStatus(models.TextChoices):
+    """Choices for whether a title is still coming out."""
+
+    UPCOMING = "upcoming", "Upcoming"
+    AIRING = "airing", "Airing"
+    ENDED = "ended", "Ended"
+
+
 class Item(CalendarTriggerMixin, models.Model):
     """Model to store basic information about media items."""
 
@@ -83,6 +91,44 @@ class Item(CalendarTriggerMixin, models.Model):
     image = models.URLField()  # if add default, custom media entry will show the value
     season_number = models.PositiveIntegerField(null=True, blank=True)
     episode_number = models.PositiveIntegerField(null=True, blank=True)
+
+    # Details from the provider, kept to sort and filter libraries. Null or
+    # empty when unknown. See app.item_details
+    release_date = models.DateField(null=True, blank=True)
+    # Minutes: a movie, an episode or a board game's play time
+    runtime = models.PositiveIntegerField(null=True, blank=True)
+    # Episodes, chapters, pages or issues
+    length = models.PositiveIntegerField(null=True, blank=True)
+    season_count = models.PositiveIntegerField(null=True, blank=True)
+    provider_score = models.DecimalField(
+        max_digits=3,
+        decimal_places=1,
+        null=True,
+        blank=True,
+    )
+    provider_score_count = models.PositiveIntegerField(null=True, blank=True)
+    imdb_score = models.DecimalField(
+        max_digits=3,
+        decimal_places=1,
+        null=True,
+        blank=True,
+    )
+    rotten_tomatoes = models.PositiveSmallIntegerField(null=True, blank=True)
+    metacritic = models.PositiveSmallIntegerField(null=True, blank=True)
+    airing_status = models.CharField(
+        max_length=10,
+        choices=AiringStatus,
+        blank=True,
+        default="",
+    )
+    # Minutes
+    time_to_beat = models.PositiveIntegerField(null=True, blank=True)
+    min_players = models.PositiveSmallIntegerField(null=True, blank=True)
+    max_players = models.PositiveSmallIntegerField(null=True, blank=True)
+    # "|Drama|Comedy|" so a genre is matched as "|Drama|"
+    genres = models.TextField(blank=True, default="")
+    platforms = models.TextField(blank=True, default="")
+    details_updated_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         """Meta options for the model."""
