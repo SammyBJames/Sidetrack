@@ -217,6 +217,10 @@ class Item(CalendarTriggerMixin, models.Model):
             events.tasks.reload_calendar(items_to_process=items_to_process)
 
 
+# Shows and seasons, which go through their episodes instead of new entries
+EPISODIC_MEDIA_TYPES = (MediaTypes.TV.value, MediaTypes.SEASON.value)
+
+
 def is_caught_up(media):
     """Return whether media has nothing released left to go through, only more to come.
 
@@ -264,7 +268,7 @@ class MediaManager(models.Manager):
         """Return list of historical model names."""
         return [f"historical{media_type}" for media_type in MediaTypes.values]
 
-    def get_media_list(
+    def get_media_list(  # noqa: PLR0913
         self,
         user,
         media_type,
@@ -272,13 +276,19 @@ class MediaManager(models.Manager):
         sort_filter,
         search=None,
         *,
+        sort_order=None,
+        rated=None,
+        rewatched=False,
         exclude_caught_up=True,
     ):
         """Get media list based on filters, sorting and search.
 
-        Filtered to in progress or repeating, media caught up to its latest
-        release is left out unless `exclude_caught_up` is False, as it waits for
-        the next.
+        Each media is listed by its latest entry. Filtered to in progress or
+        repeating, media caught up to its latest release is left out unless
+        `exclude_caught_up` is False, as it waits for the next, and filtered to
+        caught up, it's all that's listed. `rated` is "rated" or "unrated" for
+        media with or without a score, and `rewatched` keeps media finished more
+        than once. The sort goes in `sort_order`, else its usual direction.
         """
         model = apps.get_model(app_label="app", model_name=media_type)
         queryset = model.objects.filter(user=user.id)
@@ -289,54 +299,141 @@ class MediaManager(models.Manager):
                 search_filter |= Q(notes__icontains=search)
             queryset = queryset.filter(search_filter)
 
-        if status_filter != users.models.MediaStatusChoices.ALL:
+        caught_up = status_filter == users.models.LibraryStatusChoices.CAUGHT_UP
+        statuses = None
+        if caught_up:
+            statuses = (Status.IN_PROGRESS.value, Status.REPEATING.value)
+        elif status_filter and status_filter != users.models.MediaStatusChoices.ALL:
+            statuses = (status_filter,)
+
+        if statuses:
             # Only items with an entry in that status, so the windows scan fewer rows
             queryset = queryset.filter(
                 item__in=model.objects.filter(
                     user=user.id,
-                    status=status_filter,
+                    status__in=statuses,
                 ).values("item"),
             )
 
-        queryset = queryset.annotate(
-            repeats=Window(
-                expression=Count("id"),
-                partition_by=[F("item")],
-            ),
-            row_number=Window(
-                expression=RowNumber(),
-                partition_by=[F("item")],
-                order_by=F("created_at").desc(),
-            ),
-        ).filter(row_number=1)
-
-        # Filtered by the latest entry's status, so a repeat in progress isn't
-        # also listed as completed by its earlier play
-        if status_filter != users.models.MediaStatusChoices.ALL:
-            queryset = queryset.annotate(
-                latest_status=Window(
-                    expression=FirstValue("status"),
-                    partition_by=[F("item")],
-                    order_by=F("created_at").desc(),
-                ),
-            ).filter(latest_status=status_filter)
+        queryset = self._filter_latest_entries(
+            queryset,
+            media_type,
+            statuses,
+            rated=rated,
+            rewatched=rewatched,
+        )
 
         queryset = queryset.select_related("item")
         queryset = self._apply_prefetch_related(queryset, media_type)
 
-        if sort_filter == users.models.MediaSortChoices.RECENT:
-            queryset = self._sort_recent_media_list(queryset, media_type)
-        elif sort_filter:
-            queryset = self._sort_media_list(queryset, sort_filter, media_type)
+        if sort_filter:
+            queryset = self._sort_media_list(
+                queryset,
+                sort_filter,
+                media_type,
+                sort_order,
+            )
+
+        # Shows and seasons count their plays through their episodes, so they're
+        # filtered by them once loaded
+        media_list = queryset
+        if rewatched and media_type in EPISODIC_MEDIA_TYPES:
+            media_list = [media for media in queryset if media.plays > 1]
 
         # Media caught up to its latest release isn't listed as being gone
         # through, so it's a list of what is instead of a queryset
+        if caught_up:
+            return self.only_caught_up(media_list, media_type)
         if exclude_caught_up and status_filter in (
             Status.IN_PROGRESS.value,
             Status.REPEATING.value,
         ):
-            return self.without_caught_up(queryset, media_type)
+            return self.without_caught_up(media_list, media_type)
+        return media_list
+
+    def _filter_latest_entries(
+        self, queryset, media_type, statuses, *, rated, rewatched
+    ):
+        """Return the latest entry of each media whose entries match the filters.
+
+        Media is filtered by its latest entry's status and score, and annotated
+        with its number of entries as `repeats` and when it was first added as
+        `added_at`.
+        """
+        latest = {"partition_by": [F("item")], "order_by": F("created_at").desc()}
+        queryset = queryset.annotate(
+            repeats=Window(expression=Count("id"), partition_by=[F("item")]),
+            added_at=Window(
+                expression=models.Min("created_at"),
+                partition_by=[F("item")],
+            ),
+            row_number=Window(expression=RowNumber(), **latest),
+        ).filter(row_number=1)
+
+        # Filtered in windows, as filters outside one leave out the entries it
+        # picks the latest from, e.g. so a repeat in progress isn't also listed
+        # as completed by its earlier play
+        if statuses:
+            queryset = queryset.annotate(
+                latest_status=Window(expression=FirstValue("status"), **latest),
+            ).filter(latest_status__in=statuses)
+        if rated in ("rated", "unrated"):
+            queryset = queryset.annotate(
+                latest_score=Window(expression=FirstValue("score"), **latest),
+            ).filter(latest_score__isnull=rated == "unrated")
+        # Shows and seasons count their plays through their episodes instead
+        if rewatched and media_type not in EPISODIC_MEDIA_TYPES:
+            queryset = queryset.annotate(
+                completed_entries=Window(
+                    expression=models.Sum(
+                        models.Case(
+                            models.When(status=Status.COMPLETED.value, then=1),
+                            default=0,
+                        ),
+                    ),
+                    partition_by=[F("item")],
+                ),
+            ).filter(completed_entries__gt=1)
         return queryset
+
+    def get_status_counts(self, user, media_type, search=None, **filters):
+        """Return how many media of a type the list has in each status.
+
+        Takes the list's search and `rated` and `rewatched` filters. Media caught
+        up to its latest release counts as caught up instead of in progress or
+        repeating, and "All" counts every media.
+        """
+        all_status = users.models.MediaStatusChoices.ALL
+        media_list = self.get_media_list(
+            user,
+            media_type,
+            all_status,
+            None,
+            search,
+            **filters,
+        )
+        if isinstance(media_list, list):
+            statuses = [media.status for media in media_list]
+        else:
+            statuses = media_list.prefetch_related(None).values_list(
+                "status",
+                flat=True,
+            )
+        counts = Counter(statuses)
+        counts[all_status] = sum(counts.values())
+
+        if counts[Status.IN_PROGRESS.value] or counts[Status.REPEATING.value]:
+            for media in self.get_media_list(
+                user,
+                media_type,
+                users.models.LibraryStatusChoices.CAUGHT_UP,
+                None,
+                search,
+                **filters,
+            ):
+                counts[media.status] -= 1
+                counts[users.models.LibraryStatusChoices.CAUGHT_UP] += 1
+        return counts
 
     def _apply_prefetch_related(self, queryset, media_type):
         """Apply appropriate prefetch_related based on media type."""
@@ -371,149 +468,69 @@ class MediaManager(models.Manager):
 
         return base_queryset
 
-    def _sort_recent_media_list(self, queryset, media_type):
-        """Sort by last activity first, the order of the home page's rows."""
-        # Shows and seasons have no progressed_at column, their last activity is
-        # their latest watched episode, as their progressed_at properties compute
-        if media_type == MediaTypes.SEASON.value:
-            last_activity = models.Max("episodes__end_date")
-        elif media_type == MediaTypes.TV.value:
-            last_activity = models.Max(
-                "seasons__episodes__end_date",
-                filter=models.Q(seasons__item__season_number__gt=0),
-            )
-        else:
-            last_activity = models.F("progressed_at")
+    def _sort_media_list(self, queryset, sort_filter, media_type=None, sort_order=None):
+        """Sort a media list by a sort's value, in `sort_order` or its usual direction.
 
-        return queryset.annotate(
-            last_activity=models.functions.Coalesce(last_activity, "created_at"),
-        ).order_by(
-            models.F("last_activity").desc(),
-            models.functions.Lower("item__title"),
+        Media without the value comes last either way, and ties go by title.
+        """
+        if sort_order is None:
+            sort_order = users.models.default_sort_order(sort_filter)
+        sort_value = self._sort_value(sort_filter, media_type)
+        # Aggregates are ordered by from an annotation, as they group the rows
+        if getattr(sort_value, "contains_aggregate", False):
+            queryset = queryset.annotate(sort_value=sort_value)
+            sort_value = F("sort_value")
+        ordering = (
+            sort_value.asc(nulls_last=True)
+            if sort_order == users.models.SortOrderChoices.ASC
+            else sort_value.desc(nulls_last=True)
         )
+        return queryset.order_by(ordering, models.functions.Lower("item__title"))
 
-    def _sort_media_list(self, queryset, sort_filter, media_type=None):
-        """Sort media list using SQL sorting with annotations for calculated fields."""
+    def _sort_value(self, sort_filter, media_type):
+        """Return the expression a media list's sort orders by."""
+        sorts = users.models.MediaSortChoices
+        if sort_filter == sorts.ADDED:
+            return F("added_at")
+        if sort_filter == sorts.TITLE:
+            return models.functions.Lower("item__title")
+        if sort_filter == sorts.SCORE:
+            return F("score")
+        if sort_filter == sorts.STATUS:
+            # From what's being gone through to what's put aside
+            return models.Case(
+                *(
+                    models.When(status=status, then=rank)
+                    for rank, status in enumerate(STATUS_SORT_ORDER)
+                ),
+                output_field=models.IntegerField(),
+            )
+
+        # Shows and seasons have no dates or progress columns, so they're those
+        # of their watched episodes, specials aside
         if media_type == MediaTypes.TV.value:
-            return self._sort_tv_media_list(queryset, sort_filter)
-        if media_type == MediaTypes.SEASON.value:
-            return self._sort_season_media_list(queryset, sort_filter)
+            episodes = "seasons__episodes"
+            regular = Q(seasons__item__season_number__gt=0)
+            episode_values = {
+                sorts.RECENT: Max(f"{episodes}__end_date", filter=regular),
+                sorts.PROGRESS: Count(episodes, filter=regular),
+                sorts.START_DATE: models.Min(f"{episodes}__end_date", filter=regular),
+                sorts.END_DATE: Max(f"{episodes}__end_date", filter=regular),
+            }
+        elif media_type == MediaTypes.SEASON.value:
+            episode_values = {
+                sorts.RECENT: Max("episodes__end_date"),
+                sorts.PROGRESS: Max("episodes__item__episode_number"),
+                sorts.START_DATE: models.Min("episodes__end_date"),
+                sorts.END_DATE: Max("episodes__end_date"),
+            }
+        else:
+            episode_values = {sorts.RECENT: F("progressed_at")}
 
-        return self._sort_generic_media_list(queryset, sort_filter)
-
-    def _sort_tv_media_list(self, queryset, sort_filter):
-        """Sort TV media list based on the sort criteria."""
-        if sort_filter == "start_date":
-            # Annotate with the minimum start_date from related seasons/episodes
-            queryset = queryset.annotate(
-                calculated_start_date=models.Min(
-                    "seasons__episodes__end_date",
-                    filter=models.Q(seasons__item__season_number__gt=0),
-                ),
-            )
-            return queryset.order_by(
-                models.F("calculated_start_date").asc(nulls_last=True),
-                models.functions.Lower("item__title"),
-            )
-
-        if sort_filter == "end_date":
-            # Annotate with the maximum end_date from related seasons/episodes
-            queryset = queryset.annotate(
-                calculated_end_date=models.Max(
-                    "seasons__episodes__end_date",
-                    filter=models.Q(seasons__item__season_number__gt=0),
-                ),
-            )
-            return queryset.order_by(
-                models.F("calculated_end_date").desc(nulls_last=True),
-                models.functions.Lower("item__title"),
-            )
-
-        if sort_filter == "progress":
-            # Annotate with the sum of episodes watched (excluding season 0)
-            queryset = queryset.annotate(
-                # Count episodes in regular seasons (season_number > 0)
-                calculated_progress=models.Count(
-                    "seasons__episodes",
-                    filter=models.Q(seasons__item__season_number__gt=0),
-                ),
-            )
-            return queryset.order_by(
-                "-calculated_progress",
-                models.functions.Lower("item__title"),
-            )
-
-        # Default to generic sorting
-        return self._sort_generic_media_list(queryset, sort_filter)
-
-    def _sort_season_media_list(self, queryset, sort_filter):
-        """Sort Season media list based on the sort criteria."""
-        if sort_filter == "start_date":
-            # Annotate with the minimum end_date from related episodes
-            queryset = queryset.annotate(
-                calculated_start_date=models.Min("episodes__end_date"),
-            )
-            return queryset.order_by(
-                models.F("calculated_start_date").asc(nulls_last=True),
-                models.functions.Lower("item__title"),
-            )
-
-        if sort_filter == "end_date":
-            # Annotate with the maximum end_date from related episodes
-            queryset = queryset.annotate(
-                calculated_end_date=models.Max("episodes__end_date"),
-            )
-            return queryset.order_by(
-                models.F("calculated_end_date").desc(nulls_last=True),
-                models.functions.Lower("item__title"),
-            )
-
-        if sort_filter == "progress":
-            # Annotate with the maximum episode number
-            queryset = queryset.annotate(
-                calculated_progress=models.Max("episodes__item__episode_number"),
-            )
-            return queryset.order_by(
-                "-calculated_progress",
-                models.functions.Lower("item__title"),
-            )
-
-        # Default to generic sorting
-        return self._sort_generic_media_list(queryset, sort_filter)
-
-    def _sort_generic_media_list(self, queryset, sort_filter):
-        """Apply generic sorting logic for all media types."""
-        # Handle sorting by date fields with special null handling
-        if sort_filter in ("start_date", "end_date"):
-            # For start_date, sort ascending (earliest first)
-            if sort_filter == "start_date":
-                return queryset.order_by(
-                    models.F(sort_filter).asc(nulls_last=True),
-                    models.functions.Lower("item__title"),
-                )
-            # For other date fields, sort descending (latest first)
-            return queryset.order_by(
-                models.F(sort_filter).desc(nulls_last=True),
-                models.functions.Lower("item__title"),
-            )
-
-        # Handle sorting by Item fields
-        item_fields = [f.name for f in Item._meta.fields]
-        if sort_filter in item_fields:
-            if sort_filter == "title":
-                # Case-insensitive title sorting
-                return queryset.order_by(models.functions.Lower("item__title"))
-            # Default sorting for other Item fields
-            return queryset.order_by(
-                f"-item__{sort_filter}",
-                models.functions.Lower("item__title"),
-            )
-
-        # Default sorting by media field
-        return queryset.order_by(
-            models.F(sort_filter).desc(nulls_last=True),
-            models.functions.Lower("item__title"),
-        )
+        if sort_filter == sorts.RECENT:
+            # Last activity, or when it was added for media never gone through
+            return models.functions.Coalesce(episode_values[sorts.RECENT], "created_at")
+        return episode_values.get(sort_filter, F(sort_filter))
 
     def get_home_status(
         self,
@@ -662,12 +679,22 @@ class MediaManager(models.Manager):
 
     def without_caught_up(self, media_list, media_type):
         """Return media from a list that isn't caught up to its latest release."""
+        media_list = self.annotate_releases(media_list, media_type)
+        return [media for media in media_list if not is_caught_up(media)]
+
+    def only_caught_up(self, media_list, media_type):
+        """Return media from a list that's caught up to its latest release."""
+        media_list = self.annotate_releases(media_list, media_type)
+        return [media for media in media_list if is_caught_up(media)]
+
+    def annotate_releases(self, media_list, media_type):
+        """Return a list of the media annotated with how much is out and what's next."""
         media_list = list(media_list)
         self.annotate_max_progress(media_list, media_type)
         # Shows get their next releases from their seasons with max_progress
         if media_type != MediaTypes.TV.value:
             self._annotate_next_event(media_list)
-        return [media for media in media_list if not is_caught_up(media)]
+        return media_list
 
     def _annotate_next_event(self, media_list):
         """Annotate next_event for media items."""
@@ -992,6 +1019,17 @@ class Status(models.TextChoices):
 
 # The statuses of media being gone through again after it was finished
 REPEAT_STATUSES = (Status.PLANNING_REPEAT.value, Status.REPEATING.value)
+
+# The order a list sorted by status starts in
+STATUS_SORT_ORDER = (
+    Status.IN_PROGRESS.value,
+    Status.REPEATING.value,
+    Status.PLANNING.value,
+    Status.PLANNING_REPEAT.value,
+    Status.PAUSED.value,
+    Status.COMPLETED.value,
+    Status.DROPPED.value,
+)
 
 
 class UserMessageLevel(models.TextChoices):

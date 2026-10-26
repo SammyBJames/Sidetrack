@@ -36,13 +36,36 @@ class HomeSortChoices(models.TextChoices):
 class MediaSortChoices(models.TextChoices):
     """Choices for media list sort options."""
 
-    SCORE = "score", "Rating"
+    ADDED = "added", "Date Added"
+    # The home page's order, so its row headers open the list in the same order
+    RECENT = "recent", "Last Activity"
     TITLE = "title", "Title"
+    SCORE = "score", "Rating"
+    STATUS = "status", "Status"
     PROGRESS = "progress", "Progress"
     START_DATE = "start_date", "Start Date"
     END_DATE = "end_date", "End Date"
-    # The home page's order, so its row headers open the list in the same order
-    RECENT = "recent", "Recent"
+
+
+class SortOrderChoices(models.TextChoices):
+    """Choices for the direction of a media list's sort."""
+
+    ASC = "asc", "Ascending"
+    DESC = "desc", "Descending"
+
+
+# Sorts that read best from the start, like titles from A or what's in progress
+# first, as the rest read best from the most recent or highest
+ASCENDING_SORTS = {
+    MediaSortChoices.TITLE,
+    MediaSortChoices.STATUS,
+    MediaSortChoices.START_DATE,
+}
+
+
+def default_sort_order(sort):
+    """Return the direction a media list's sort starts in."""
+    return SortOrderChoices.ASC if sort in ASCENDING_SORTS else SortOrderChoices.DESC
 
 
 class MediaStatusChoices(models.TextChoices):
@@ -54,6 +77,24 @@ class MediaStatusChoices(models.TextChoices):
     PLANNING = Status.PLANNING.value, Status.PLANNING.label
     REPEATING = Status.REPEATING.value, Status.REPEATING.label
     PLANNING_REPEAT = Status.PLANNING_REPEAT.value, Status.PLANNING_REPEAT.label
+    PAUSED = Status.PAUSED.value, Status.PAUSED.label
+    DROPPED = Status.DROPPED.value, Status.DROPPED.label
+
+
+class LibraryStatusChoices(models.TextChoices):
+    """Choices for a media type's list status filter.
+
+    Caught up is the media in progress or repeated that's caught up to its
+    latest release, which isn't listed as in progress.
+    """
+
+    ALL = MediaStatusChoices.ALL.value, MediaStatusChoices.ALL.label
+    IN_PROGRESS = Status.IN_PROGRESS.value, Status.IN_PROGRESS.label
+    REPEATING = Status.REPEATING.value, Status.REPEATING.label
+    CAUGHT_UP = "caught_up", "Caught Up"
+    PLANNING = Status.PLANNING.value, Status.PLANNING.label
+    PLANNING_REPEAT = Status.PLANNING_REPEAT.value, Status.PLANNING_REPEAT.label
+    COMPLETED = Status.COMPLETED.value, Status.COMPLETED.label
     PAUSED = Status.PAUSED.value, Status.PAUSED.label
     DROPPED = Status.DROPPED.value, Status.DROPPED.label
 
@@ -158,10 +199,15 @@ class User(AbstractUser):
         default=MediaSortChoices.SCORE,
         choices=MediaSortChoices,
     )
+    tv_sort_order = models.CharField(
+        max_length=4,
+        default=SortOrderChoices.DESC,
+        choices=SortOrderChoices,
+    )
     tv_status = models.CharField(
         max_length=20,
-        default=MediaStatusChoices.ALL,
-        choices=MediaStatusChoices,
+        default=LibraryStatusChoices.ALL,
+        choices=LibraryStatusChoices,
     )
 
     # Media type preferences: TV Seasons
@@ -176,10 +222,15 @@ class User(AbstractUser):
         default=MediaSortChoices.SCORE,
         choices=MediaSortChoices,
     )
+    season_sort_order = models.CharField(
+        max_length=4,
+        default=SortOrderChoices.DESC,
+        choices=SortOrderChoices,
+    )
     season_status = models.CharField(
         max_length=20,
-        default=MediaStatusChoices.ALL,
-        choices=MediaStatusChoices,
+        default=LibraryStatusChoices.ALL,
+        choices=LibraryStatusChoices,
     )
 
     # Media type preferences: Movies
@@ -194,10 +245,15 @@ class User(AbstractUser):
         default=MediaSortChoices.SCORE,
         choices=MediaSortChoices,
     )
+    movie_sort_order = models.CharField(
+        max_length=4,
+        default=SortOrderChoices.DESC,
+        choices=SortOrderChoices,
+    )
     movie_status = models.CharField(
         max_length=20,
-        default=MediaStatusChoices.ALL,
-        choices=MediaStatusChoices,
+        default=LibraryStatusChoices.ALL,
+        choices=LibraryStatusChoices,
     )
 
     # Media type preferences: Anime
@@ -212,10 +268,15 @@ class User(AbstractUser):
         default=MediaSortChoices.SCORE,
         choices=MediaSortChoices,
     )
+    anime_sort_order = models.CharField(
+        max_length=4,
+        default=SortOrderChoices.DESC,
+        choices=SortOrderChoices,
+    )
     anime_status = models.CharField(
         max_length=20,
-        default=MediaStatusChoices.ALL,
-        choices=MediaStatusChoices,
+        default=LibraryStatusChoices.ALL,
+        choices=LibraryStatusChoices,
     )
 
     # Media type preferences: Manga
@@ -230,10 +291,15 @@ class User(AbstractUser):
         default=MediaSortChoices.SCORE,
         choices=MediaSortChoices,
     )
+    manga_sort_order = models.CharField(
+        max_length=4,
+        default=SortOrderChoices.DESC,
+        choices=SortOrderChoices,
+    )
     manga_status = models.CharField(
         max_length=20,
-        default=MediaStatusChoices.ALL,
-        choices=MediaStatusChoices,
+        default=LibraryStatusChoices.ALL,
+        choices=LibraryStatusChoices,
     )
 
     # Media type preferences: Games
@@ -248,10 +314,15 @@ class User(AbstractUser):
         default=MediaSortChoices.SCORE,
         choices=MediaSortChoices,
     )
+    game_sort_order = models.CharField(
+        max_length=4,
+        default=SortOrderChoices.DESC,
+        choices=SortOrderChoices,
+    )
     game_status = models.CharField(
         max_length=20,
-        default=MediaStatusChoices.ALL,
-        choices=MediaStatusChoices,
+        default=LibraryStatusChoices.ALL,
+        choices=LibraryStatusChoices,
     )
 
     # Media type preferences: Books
@@ -266,10 +337,15 @@ class User(AbstractUser):
         default=MediaSortChoices.SCORE,
         choices=MediaSortChoices,
     )
+    book_sort_order = models.CharField(
+        max_length=4,
+        default=SortOrderChoices.DESC,
+        choices=SortOrderChoices,
+    )
     book_status = models.CharField(
         max_length=20,
-        default=MediaStatusChoices.ALL,
-        choices=MediaStatusChoices,
+        default=LibraryStatusChoices.ALL,
+        choices=LibraryStatusChoices,
     )
 
     # Media type preferences: Comics
@@ -284,10 +360,15 @@ class User(AbstractUser):
         default=MediaSortChoices.SCORE,
         choices=MediaSortChoices,
     )
+    comic_sort_order = models.CharField(
+        max_length=4,
+        default=SortOrderChoices.DESC,
+        choices=SortOrderChoices,
+    )
     comic_status = models.CharField(
         max_length=20,
-        default=MediaStatusChoices.ALL,
-        choices=MediaStatusChoices,
+        default=LibraryStatusChoices.ALL,
+        choices=LibraryStatusChoices,
     )
 
     # Media type preferences: Board Games
@@ -302,10 +383,15 @@ class User(AbstractUser):
         default=MediaSortChoices.SCORE,
         choices=MediaSortChoices,
     )
+    boardgame_sort_order = models.CharField(
+        max_length=4,
+        default=SortOrderChoices.DESC,
+        choices=SortOrderChoices,
+    )
     boardgame_status = models.CharField(
         max_length=20,
-        default=MediaStatusChoices.ALL,
-        choices=MediaStatusChoices,
+        default=LibraryStatusChoices.ALL,
+        choices=LibraryStatusChoices,
     )
 
     # UI preferences
@@ -506,6 +592,42 @@ class User(AbstractUser):
                 condition=models.Q(book_sort__in=MediaSortChoices.values),
             ),
             models.CheckConstraint(
+                name="tv_sort_order_valid",
+                condition=models.Q(tv_sort_order__in=SortOrderChoices.values),
+            ),
+            models.CheckConstraint(
+                name="season_sort_order_valid",
+                condition=models.Q(season_sort_order__in=SortOrderChoices.values),
+            ),
+            models.CheckConstraint(
+                name="movie_sort_order_valid",
+                condition=models.Q(movie_sort_order__in=SortOrderChoices.values),
+            ),
+            models.CheckConstraint(
+                name="anime_sort_order_valid",
+                condition=models.Q(anime_sort_order__in=SortOrderChoices.values),
+            ),
+            models.CheckConstraint(
+                name="manga_sort_order_valid",
+                condition=models.Q(manga_sort_order__in=SortOrderChoices.values),
+            ),
+            models.CheckConstraint(
+                name="game_sort_order_valid",
+                condition=models.Q(game_sort_order__in=SortOrderChoices.values),
+            ),
+            models.CheckConstraint(
+                name="book_sort_order_valid",
+                condition=models.Q(book_sort_order__in=SortOrderChoices.values),
+            ),
+            models.CheckConstraint(
+                name="comic_sort_order_valid",
+                condition=models.Q(comic_sort_order__in=SortOrderChoices.values),
+            ),
+            models.CheckConstraint(
+                name="boardgame_sort_order_valid",
+                condition=models.Q(boardgame_sort_order__in=SortOrderChoices.values),
+            ),
+            models.CheckConstraint(
                 name="calendar_layout_valid",
                 condition=models.Q(calendar_layout__in=CalendarLayoutChoices.values),
             ),
@@ -523,31 +645,31 @@ class User(AbstractUser):
             ),
             models.CheckConstraint(
                 name="tv_status_valid",
-                condition=models.Q(tv_status__in=MediaStatusChoices.values),
+                condition=models.Q(tv_status__in=LibraryStatusChoices.values),
             ),
             models.CheckConstraint(
                 name="season_status_valid",
-                condition=models.Q(season_status__in=MediaStatusChoices.values),
+                condition=models.Q(season_status__in=LibraryStatusChoices.values),
             ),
             models.CheckConstraint(
                 name="movie_status_valid",
-                condition=models.Q(movie_status__in=MediaStatusChoices.values),
+                condition=models.Q(movie_status__in=LibraryStatusChoices.values),
             ),
             models.CheckConstraint(
                 name="anime_status_valid",
-                condition=models.Q(anime_status__in=MediaStatusChoices.values),
+                condition=models.Q(anime_status__in=LibraryStatusChoices.values),
             ),
             models.CheckConstraint(
                 name="manga_status_valid",
-                condition=models.Q(manga_status__in=MediaStatusChoices.values),
+                condition=models.Q(manga_status__in=LibraryStatusChoices.values),
             ),
             models.CheckConstraint(
                 name="game_status_valid",
-                condition=models.Q(game_status__in=MediaStatusChoices.values),
+                condition=models.Q(game_status__in=LibraryStatusChoices.values),
             ),
             models.CheckConstraint(
                 name="book_status_valid",
-                condition=models.Q(book_status__in=MediaStatusChoices.values),
+                condition=models.Q(book_status__in=LibraryStatusChoices.values),
             ),
             models.CheckConstraint(
                 name="quick_watch_date_valid",
