@@ -16,7 +16,14 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from app import config, helpers, history_processor, item_details, quick_actions
+from app import (
+    config,
+    helpers,
+    history_processor,
+    item_details,
+    library_fields,
+    quick_actions,
+)
 from app import home as home_helpers
 from app import statistics as stats
 from app.forms import EpisodeForm, ManualItemForm, get_form_class
@@ -59,16 +66,6 @@ RATED_FILTERS = ("rated", "unrated")
 
 # Media gone through all at once, whose list rows have no progress to show
 UNPROGRESSED_MEDIA_TYPES = (MediaTypes.MOVIE.value, MediaTypes.BOARDGAME.value)
-
-# How a list's sort reads in each direction, ascending then descending, dates
-# reading by age
-DATE_ORDER_LABELS = ("Oldest first", "Newest first")
-SORT_ORDER_LABELS = {
-    MediaSortChoices.TITLE: ("A to Z", "Z to A"),
-    MediaSortChoices.SCORE: ("Lowest first", "Highest first"),
-    MediaSortChoices.STATUS: ("In progress first", "Dropped first"),
-    MediaSortChoices.PROGRESS: ("Least first", "Most first"),
-}
 
 # The date a list's rows show for its sort, as its heading and the entry's
 # attribute, else its last activity
@@ -191,11 +188,14 @@ def media_list(request, username, media_type):
         target_user.update_preference if own_list else target_user.get_valid_preference
     )
     layout = preference(f"{media_type}_layout", request.GET.get("layout"))
-    sort_filter = preference(f"{media_type}_sort", request.GET.get("sort"))
-    sort_order = request.GET.get("order")
-    if sort_order is None and "sort" in request.GET:
-        sort_order = default_sort_order(sort_filter)
-    sort_order = preference(f"{media_type}_sort_order", sort_order)
+    sort_field, sort_order = _list_sort(
+        target_user,
+        media_type,
+        request.GET,
+        preference,
+        own_list=own_list,
+    )
+    sort_filter = sort_field.key
     status_filter = preference(f"{media_type}_status", request.GET.get("status"))
 
     search = request.GET.get("search", "").strip()
@@ -235,15 +235,15 @@ def media_list(request, username, media_type):
         "current_layout": layout,
         "current_sort": sort_filter,
         "current_order": sort_order,
-        "current_sort_label": MediaSortChoices(sort_filter).label,
+        "current_sort_label": sort_field.label,
         "sort_choices": [
             {
-                "value": value,
-                "label": label,
-                "order": default_sort_order(value),
-                "order_labels": SORT_ORDER_LABELS.get(value, DATE_ORDER_LABELS),
+                "value": field.key,
+                "label": field.label,
+                "order": field.default_order,
+                "order_labels": field.order_labels,
             }
-            for value, label in MediaSortChoices.choices
+            for field in library_fields.get_sortable_fields(media_type)
         ],
         "date_heading": date_heading,
         "show_progress": media_type not in UNPROGRESSED_MEDIA_TYPES,
@@ -266,6 +266,25 @@ def media_list(request, username, media_type):
         template_name = "app/media_list.html"
 
     return render(request, template_name, context)
+
+
+def _list_sort(user, media_type, params, preference, *, own_list):
+    """Return the sort field and direction a media type's list goes by.
+
+    A saved sort the media type doesn't have, like progress for movies, is the
+    default sort, which is saved in its place on the user's own list.
+    """
+    sort = preference(f"{media_type}_sort", params.get("sort"))
+    order = params.get("order")
+    field = library_fields.get_sort_field(media_type, sort)
+    if field.key != sort:
+        if own_list:
+            user.update_preference(f"{media_type}_sort", field.key)
+        if "sort" not in params:
+            order = field.default_order
+    if order is None and "sort" in params:
+        order = default_sort_order(field.key)
+    return field, preference(f"{media_type}_sort_order", order)
 
 
 def _annotate_list_dates(media_list, sort_filter):

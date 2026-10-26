@@ -403,14 +403,24 @@ class MediaManager(models.Manager):
         """Return the latest entry of each media whose entries match the filters.
 
         Media is filtered by its latest entry's status and score, and annotated
-        with its number of entries as `repeats` and when it was first added as
-        `added_at`.
+        with its number of entries as `repeats`, when it was first added as
+        `added_at` and its number of completed entries as `completed_entries`.
         """
         latest = {"partition_by": [F("item")], "order_by": F("created_at").desc()}
         queryset = queryset.annotate(
             repeats=Window(expression=Count("id"), partition_by=[F("item")]),
             added_at=Window(
                 expression=models.Min("created_at"),
+                partition_by=[F("item")],
+            ),
+            # Windowed with the others, as the latest entries are picked after
+            completed_entries=Window(
+                expression=models.Sum(
+                    models.Case(
+                        models.When(status=Status.COMPLETED.value, then=1),
+                        default=0,
+                    ),
+                ),
                 partition_by=[F("item")],
             ),
             row_number=Window(expression=RowNumber(), **latest),
@@ -429,17 +439,7 @@ class MediaManager(models.Manager):
             ).filter(latest_score__isnull=rated == "unrated")
         # Shows and seasons count their plays through their episodes instead
         if rewatched and media_type not in EPISODIC_MEDIA_TYPES:
-            queryset = queryset.annotate(
-                completed_entries=Window(
-                    expression=models.Sum(
-                        models.Case(
-                            models.When(status=Status.COMPLETED.value, then=1),
-                            default=0,
-                        ),
-                    ),
-                    partition_by=[F("item")],
-                ),
-            ).filter(completed_entries__gt=1)
+            queryset = queryset.filter(completed_entries__gt=1)
         return queryset
 
     def get_status_counts(self, user, media_type, search=None, **filters):
@@ -514,14 +514,19 @@ class MediaManager(models.Manager):
 
         return base_queryset
 
-    def _sort_media_list(self, queryset, sort_filter, media_type=None, sort_order=None):
+    def _sort_media_list(self, queryset, sort_filter, media_type, sort_order=None):
         """Sort a media list by a sort's value, in `sort_order` or its usual direction.
 
-        Media without the value comes last either way, and ties go by title.
+        A sort the media type doesn't have is its default sort. Media without
+        the value comes last either way, and ties go by title.
         """
+        # Imported here as the fields use this module's models
+        from app import library_fields  # noqa: PLC0415
+
+        field = library_fields.get_sort_field(media_type, sort_filter)
         if sort_order is None:
-            sort_order = users.models.default_sort_order(sort_filter)
-        sort_value = self._sort_value(sort_filter, media_type)
+            sort_order = field.default_order
+        sort_value = field.sort(media_type)
         # Aggregates are ordered by from an annotation, as they group the rows
         if getattr(sort_value, "contains_aggregate", False):
             queryset = queryset.annotate(sort_value=sort_value)
@@ -532,51 +537,6 @@ class MediaManager(models.Manager):
             else sort_value.desc(nulls_last=True)
         )
         return queryset.order_by(ordering, models.functions.Lower("item__title"))
-
-    def _sort_value(self, sort_filter, media_type):
-        """Return the expression a media list's sort orders by."""
-        sorts = users.models.MediaSortChoices
-        if sort_filter == sorts.ADDED:
-            return F("added_at")
-        if sort_filter == sorts.TITLE:
-            return models.functions.Lower("item__title")
-        if sort_filter == sorts.SCORE:
-            return F("score")
-        if sort_filter == sorts.STATUS:
-            # From what's being gone through to what's put aside
-            return models.Case(
-                *(
-                    models.When(status=status, then=rank)
-                    for rank, status in enumerate(STATUS_SORT_ORDER)
-                ),
-                output_field=models.IntegerField(),
-            )
-
-        # Shows and seasons have no dates or progress columns, so they're those
-        # of their watched episodes, specials aside
-        if media_type == MediaTypes.TV.value:
-            episodes = "seasons__episodes"
-            regular = Q(seasons__item__season_number__gt=0)
-            episode_values = {
-                sorts.RECENT: Max(f"{episodes}__end_date", filter=regular),
-                sorts.PROGRESS: Count(episodes, filter=regular),
-                sorts.START_DATE: models.Min(f"{episodes}__end_date", filter=regular),
-                sorts.END_DATE: Max(f"{episodes}__end_date", filter=regular),
-            }
-        elif media_type == MediaTypes.SEASON.value:
-            episode_values = {
-                sorts.RECENT: Max("episodes__end_date"),
-                sorts.PROGRESS: Max("episodes__item__episode_number"),
-                sorts.START_DATE: models.Min("episodes__end_date"),
-                sorts.END_DATE: Max("episodes__end_date"),
-            }
-        else:
-            episode_values = {sorts.RECENT: F("progressed_at")}
-
-        if sort_filter == sorts.RECENT:
-            # Last activity, or when it was added for media never gone through
-            return models.functions.Coalesce(episode_values[sorts.RECENT], "created_at")
-        return episode_values.get(sort_filter, F(sort_filter))
 
     def get_home_status(
         self,

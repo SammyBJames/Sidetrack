@@ -45,6 +45,18 @@ class MediaSortChoices(models.TextChoices):
     PROGRESS = "progress", "Progress"
     START_DATE = "start_date", "Start Date"
     END_DATE = "end_date", "End Date"
+    PLAYS = "plays", "Times Finished"
+    RELEASE = "release", "Release Year"
+    PROVIDER_SCORE = "provider_score", "Provider Rating"
+    IMDB = "imdb", "IMDb Rating"
+    ROTTEN_TOMATOES = "rotten_tomatoes", "Rotten Tomatoes"
+    METACRITIC = "metacritic", "Metacritic"
+    RUNTIME = "runtime", "Runtime"
+    SEASONS = "seasons", "Seasons"
+    LENGTH = "length", "Length"
+    AIRING_STATUS = "airing_status", "Airing Status"
+    TIME_TO_BEAT = "time_to_beat", "Time to Beat"
+    PLAYERS = "players", "Players"
 
 
 class SortOrderChoices(models.TextChoices):
@@ -60,6 +72,7 @@ ASCENDING_SORTS = {
     MediaSortChoices.TITLE,
     MediaSortChoices.STATUS,
     MediaSortChoices.START_DATE,
+    MediaSortChoices.AIRING_STATUS,
 }
 
 
@@ -564,6 +577,14 @@ class User(AbstractUser):
                 condition=models.Q(book_layout__in=LayoutChoices.values),
             ),
             models.CheckConstraint(
+                name="comic_layout_valid",
+                condition=models.Q(comic_layout__in=LayoutChoices.values),
+            ),
+            models.CheckConstraint(
+                name="boardgame_layout_valid",
+                condition=models.Q(boardgame_layout__in=LayoutChoices.values),
+            ),
+            models.CheckConstraint(
                 name="tv_sort_valid",
                 condition=models.Q(tv_sort__in=MediaSortChoices.values),
             ),
@@ -590,6 +611,14 @@ class User(AbstractUser):
             models.CheckConstraint(
                 name="book_sort_valid",
                 condition=models.Q(book_sort__in=MediaSortChoices.values),
+            ),
+            models.CheckConstraint(
+                name="comic_sort_valid",
+                condition=models.Q(comic_sort__in=MediaSortChoices.values),
+            ),
+            models.CheckConstraint(
+                name="boardgame_sort_valid",
+                condition=models.Q(boardgame_sort__in=MediaSortChoices.values),
             ),
             models.CheckConstraint(
                 name="tv_sort_order_valid",
@@ -670,6 +699,14 @@ class User(AbstractUser):
             models.CheckConstraint(
                 name="book_status_valid",
                 condition=models.Q(book_status__in=LibraryStatusChoices.values),
+            ),
+            models.CheckConstraint(
+                name="comic_status_valid",
+                condition=models.Q(comic_status__in=LibraryStatusChoices.values),
+            ),
+            models.CheckConstraint(
+                name="boardgame_status_valid",
+                condition=models.Q(boardgame_status__in=LibraryStatusChoices.values),
             ),
             models.CheckConstraint(
                 name="quick_watch_date_valid",

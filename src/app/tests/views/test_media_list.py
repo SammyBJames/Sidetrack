@@ -6,6 +6,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from app import library_fields
 from app.models import (
     TV,
     Episode,
@@ -80,6 +81,77 @@ class MediaListViewTests(TestCase):
             response.context["media_type_plural"],
             app_tags.media_type_readable_plural(MediaTypes.MOVIE.value).lower(),
         )
+
+    def test_sort_choices_are_the_media_types_sorts(self):
+        """The sort dropdown lists the sorts of the list's media type."""
+        for media_type in (
+            MediaTypes.MOVIE.value,
+            MediaTypes.TV.value,
+            MediaTypes.BOOK.value,
+            MediaTypes.GAME.value,
+            MediaTypes.BOARDGAME.value,
+        ):
+            response = self.client.get(
+                reverse("medialist", args=[self.user.username, media_type]),
+            )
+            choices = {
+                choice["value"]: choice for choice in response.context["sort_choices"]
+            }
+            with self.subTest(media_type=media_type):
+                self.assertEqual(
+                    list(choices),
+                    [
+                        field.key
+                        for field in library_fields.get_sortable_fields(media_type)
+                    ],
+                )
+                self.assertEqual(choices["title"]["order"], "asc")
+                self.assertEqual(choices["title"]["order_labels"], ("A to Z", "Z to A"))
+
+        movie = self.client.get(
+            reverse("medialist", args=[self.user.username, MediaTypes.MOVIE.value]),
+        ).context["sort_choices"]
+        self.assertNotIn("progress", [choice["value"] for choice in movie])
+        self.assertIn("imdb", [choice["value"] for choice in movie])
+
+    def test_saved_sort_the_media_type_lacks_loads_the_default(self):
+        """A movie list saved as progress loads sorted by the default."""
+        get_user_model().objects.filter(pk=self.user.pk).update(
+            movie_sort="progress",
+            movie_sort_order="asc",
+        )
+        url = reverse("medialist", args=[self.user.username, MediaTypes.MOVIE.value])
+
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["current_sort"], "score")
+        self.assertEqual(response.context["current_order"], "desc")
+        self.assertEqual(response.context["current_sort_label"], "Your rating")
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.movie_sort, "score")
+
+        # Asked for as well, it's the same
+        response = self.client.get(url, {"sort": "progress"})
+        self.assertEqual(response.context["current_sort"], "score")
+
+    def test_saved_sort_of_another_users_list_falls_back_unsaved(self):
+        """Someone else's list falls back too, leaving their preference alone."""
+        get_user_model().objects.filter(pk=self.external_user.pk).update(
+            profile_private=False,
+            movie_sort="progress",
+        )
+
+        response = self.client.get(
+            reverse(
+                "medialist",
+                args=[self.external_user.username, MediaTypes.MOVIE.value],
+            ),
+        )
+
+        self.assertEqual(response.context["current_sort"], "score")
+        self.external_user.refresh_from_db()
+        self.assertEqual(self.external_user.movie_sort, "progress")
 
     def test_season_list_opens_the_tv_list(self):
         """Seasons have no list of their own, so theirs opens their shows'."""
