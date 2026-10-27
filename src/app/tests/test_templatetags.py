@@ -436,21 +436,35 @@ class AppTagsTests(TestCase):
             with self.subTest(air_date=air_date):
                 self.assertEqual(app_tags.air_date_label(air_date), expected)
 
-    def test_human_date(self):
-        """Dates read in words, with yesterday named and other years shown."""
-        now = timezone.now()
+    def test_entry_dates(self):
+        """An entry's dates read as its dialog's summary does."""
+        year = timezone.localdate().year
+        start = timezone.datetime(year, 3, 1, 12, tzinfo=UTC)
+        end = timezone.datetime(year, 3, 9, 12, tzinfo=UTC)
+        other = timezone.datetime(2020, 3, 1, 12, tzinfo=UTC)
         cases = [
-            (now, "Today"),
-            (now - timezone.timedelta(days=1), "Yesterday"),
-            (
-                timezone.datetime(2024, 10, 6, 12, tzinfo=UTC),
-                "October 6, 2024",
-            ),
-            (None, ""),
+            (start, end, "Mar 1 \u2013 Mar 9"),
+            (start, None, "Started Mar 1"),
+            (None, end, "Finished Mar 9"),
+            (None, None, ""),
+            (other, None, "Started Mar 1, 2020"),
+            (other, end, "Mar 1, 2020 \u2013 Mar 9"),
+            (start, start.replace(hour=20), "Mar 1"),
         ]
-        for value, expected in cases:
-            with self.subTest(value=value):
-                self.assertEqual(app_tags.human_date(value), expected)
+        for start_date, end_date, expected in cases:
+            with self.subTest(start=start_date, end=end_date):
+                entry = MagicMock(start_date=start_date, end_date=end_date)
+                self.assertEqual(app_tags.entry_dates(entry), expected)
+
+    def test_entry_dates_use_the_current_time_zone(self):
+        """The days are those of the current time zone, as the dialog shows them."""
+        year = timezone.localdate().year
+        entry = MagicMock(
+            start_date=timezone.datetime(year, 3, 2, 3, tzinfo=UTC),
+            end_date=None,
+        )
+        with timezone.override("America/Denver"):
+            self.assertEqual(app_tags.entry_dates(entry), "Started Mar 1")
 
     def test_unreleased(self):
         """Media is unreleased until its air date, or while it has none."""

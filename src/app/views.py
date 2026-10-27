@@ -407,6 +407,19 @@ def media_search(request):
     return render(request, "app/search.html", context)
 
 
+def _newest_first(entries):
+    """Return entries for display, the one that ended last first.
+
+    Entries not ended go by when they were added. `user_medias` keeps its own
+    order, which `current_instance` depends on.
+    """
+    return sorted(
+        entries,
+        key=lambda entry: (entry.end_date or entry.created_at, entry.pk),
+        reverse=True,
+    )
+
+
 @require_GET
 def media_details(request, source, media_type, media_id, title):  # noqa: ARG001 title for URL
     """Return the details page for a media item."""
@@ -465,6 +478,12 @@ def media_details(request, source, media_type, media_id, title):  # noqa: ARG001
         "media": media_metadata,
         "media_type": media_type,
         "user_medias": user_medias,
+        # Shows and seasons list their entries on their episodes' pages
+        "entries": (
+            []
+            if media_type in (MediaTypes.TV.value, MediaTypes.SEASON.value)
+            else _newest_first(user_medias)
+        ),
         "current_instance": current_instance,
         "watch_providers": watch_providers,
         "watch_provider_region": request.user.watch_provider_region,
@@ -660,14 +679,8 @@ def episode_details(
 
     # Every entry of the episode, the one watched last first, as an import may
     # add them in any order; those not watched yet go by when they were added
-    entries = sorted(
-        (
-            entry
-            for entry in episodes_in_db
-            if entry.item.episode_number == episode_number
-        ),
-        key=lambda entry: (entry.end_date or entry.created_at, entry.pk),
-        reverse=True,
+    entries = _newest_first(
+        entry for entry in episodes_in_db if entry.item.episode_number == episode_number
     )
 
     context = {

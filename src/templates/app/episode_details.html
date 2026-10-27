@@ -113,19 +113,6 @@
 
         {# Sections, after the side panel on narrower screens #}
         <div class="order-1 min-w-0 xl:order-none">
-          {# Every entry of the episode, the current one too, as other media list theirs, each with its rating to change #}
-          {% if entries|length > 1 or latest_entry.status == Status.COMPLETED.value %}
-            <section class="mb-8">
-              {% include "app/components/section_heading.html" with title=media_type|plays_heading count=entries|length %}
-              <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-                {% for entry in entries %}
-                  {% url 'update_media_score' media_type entry.id as score_url %}
-                  {% include "app/components/entry_tile.html" with entry=entry status=entry.status score_url=score_url actions="app/components/repeat_actions.html" %}
-                {% endfor %}
-              </div>
-            </section>
-          {% endif %}
-
           {% with people_widths="*:w-32 sm:*:w-36 xl:*:w-40" %}
             {% if media.cast %}
               {% include "app/components/card_row.html" with title="Guest Stars" entries=media.cast card="app/components/person_card.html" widths=people_widths more_url=media.source_url|add:"/cast" more_count=media.total_cast_count more_label="guest stars" %}
@@ -138,6 +125,8 @@
 
           {# The season's other episodes #}
           {% include "app/components/card_row.html" with title=media.season_title entries=episodes card="app/components/episode_card.html" widths="*:w-64 sm:*:w-72" %}
+
+          {% include "app/components/entries_section.html" %}
         </div>
       </div>
 

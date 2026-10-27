@@ -1,5 +1,5 @@
 import re
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -12,6 +12,7 @@ from app import config
 from app.models import (
     TV,
     Book,
+    Game,
     Item,
     MediaTypes,
     Movie,
@@ -494,6 +495,7 @@ class MediaDetailsViewTests(TestCase):
             user=self.user,
             status=Status.COMPLETED.value,
             progress=300,
+            start_date=datetime(2020, 3, 1, 12, tzinfo=UTC),
         )
         Book.objects.create(
             item=item,
@@ -517,20 +519,164 @@ class MediaDetailsViewTests(TestCase):
         content = response.content.decode()
         self.assertRegex(content, r"Your Reads</h2>\s*<span[^>]*>2</span>")
         self.assertNotIn("Repeats", content)
-        # Each read shows how far it got, the one in progress named as a reread
-        self.assertRegex(content, r"120\s*pages")
-        self.assertRegex(content, r"300\s*pages")
+        # The one in progress is named as a reread, and books show no progress
         self.assertIn("Rereading", content)
+        self.assertRegex(content, r"Started Mar 1, 2020\s*</div>")
+        tiles = content.split("Your Reads</h2>")[1].split("</section>")[0]
+        self.assertNotRegex(tiles, r"[•>]\s*(120|300)\b")
 
     @patch("app.providers.services.get_media_metadata")
-    def test_planned_movie_has_no_watches(self, mock_get_metadata):
-        """A movie that's only planned has no watches to list."""
+    def test_planned_movie_lists_its_entry(self, mock_get_metadata):
+        """An entry is listed whatever its status, a planned one too."""
         response = self._get_tracked_movie_details(
             mock_get_metadata,
             Status.PLANNING.value,
         )
 
+        content = response.content.decode()
+        self.assertRegex(content, r"Your Watches</h2>\s*<span[^>]*>1</span>")
+        self.assertIn('title="Planning"', content.split("Your Watches</h2>")[1])
+
+    @patch("app.providers.services.get_media_metadata")
+    def test_untracked_page_has_no_entries_section(self, mock_get_metadata):
+        """A page of media that isn't tracked has no entries section."""
+        mock_get_metadata.return_value = {
+            "media_id": "238",
+            "title": "Test Movie",
+            "media_type": MediaTypes.MOVIE.value,
+            "source": Sources.TMDB.value,
+            "image": "http://example.com/image.jpg",
+            "overview": "Test overview",
+            "release_date": "2023-01-01",
+        }
+
+        response = self.client.get(
+            reverse(
+                "media_details",
+                kwargs={
+                    "source": Sources.TMDB.value,
+                    "media_type": MediaTypes.MOVIE.value,
+                    "media_id": "238",
+                    "title": "test-movie",
+                },
+            ),
+        )
+
         self.assertNotContains(response, "Your Watches")
+
+    @patch("app.providers.services.get_media_metadata")
+    def test_entries_section_comes_last_and_newest_first(self, mock_get_metadata):
+        """The section follows the other rows, and lists the latest end first."""
+        mock_get_metadata.return_value = {
+            "media_id": "377193",
+            "title": "Test Book",
+            "media_type": MediaTypes.BOOK.value,
+            "source": Sources.HARDCOVER.value,
+            "image": "http://example.com/image.jpg",
+            "max_progress": None,
+            "synopsis": "Test synopsis",
+            "crew": [{"id": 1, "name": "Crew Member", "image": "", "role": "Editor"}],
+        }
+        item = Item.objects.create(
+            media_id="377193",
+            source=Sources.HARDCOVER.value,
+            media_type=MediaTypes.BOOK.value,
+            title="Test Book",
+            image="http://example.com/image.jpg",
+        )
+        newer = Book.objects.create(
+            item=item,
+            user=self.user,
+            status=Status.COMPLETED.value,
+            end_date=datetime(2024, 6, 5, 12, tzinfo=UTC),
+        )
+        older = Book.objects.create(
+            item=item,
+            user=self.user,
+            status=Status.COMPLETED.value,
+            end_date=datetime(2024, 1, 5, 12, tzinfo=UTC),
+        )
+        planned = Book.objects.create(
+            item=item,
+            user=self.user,
+            status=Status.PLANNING.value,
+        )
+
+        response = self.client.get(
+            reverse(
+                "media_details",
+                kwargs={
+                    "source": Sources.HARDCOVER.value,
+                    "media_type": MediaTypes.BOOK.value,
+                    "media_id": "377193",
+                    "title": "test-book",
+                },
+            ),
+        )
+
+        content = response.content.decode()
+        self.assertEqual(response.context["entries"], [planned, newer, older])
+        # The page's own entry is still the newest added
+        self.assertEqual(response.context["current_instance"], planned)
+        self.assertIn("Crew Member", content)
+        self.assertGreater(
+            content.index("Your Reads</h2>"), content.index("Crew Member")
+        )
+        tiles = content.split("Your Reads</h2>")[1]
+        self.assertLess(
+            tiles.index(f'"instance_id": "{newer.id}"'),
+            tiles.index(f'"instance_id": "{older.id}"'),
+        )
+
+    @patch("app.providers.services.get_media_metadata")
+    def test_game_tile_shows_playtime_and_others_no_progress(self, mock_get_metadata):
+        """A game's dates are followed by its playtime, and a book's progress isn't."""
+        mock_get_metadata.return_value = {
+            "media_id": "1",
+            "title": "Test Game",
+            "media_type": MediaTypes.GAME.value,
+            "source": Sources.IGDB.value,
+            "image": "http://example.com/image.jpg",
+            "max_progress": None,
+            "synopsis": "Test synopsis",
+        }
+        item = Item.objects.create(
+            media_id="1",
+            source=Sources.IGDB.value,
+            media_type=MediaTypes.GAME.value,
+            title="Test Game",
+            image="http://example.com/image.jpg",
+        )
+        Game.objects.create(
+            item=item,
+            user=self.user,
+            status=Status.IN_PROGRESS.value,
+            progress=270,
+            start_date=datetime(2020, 3, 1, 12, tzinfo=UTC),
+        )
+        Game.objects.create(
+            item=item,
+            user=self.user,
+            status=Status.PAUSED.value,
+            progress=90,
+        )
+
+        response = self.client.get(
+            reverse(
+                "media_details",
+                kwargs={
+                    "source": Sources.IGDB.value,
+                    "media_type": MediaTypes.GAME.value,
+                    "media_id": "1",
+                    "title": "test-game",
+                },
+            ),
+        )
+
+        content = response.content.decode()
+        self.assertRegex(content, r"Started Mar 1, 2020 • 4h 30min\s*</div>")
+        # Playtime alone has no bullet before it
+        self.assertRegex(content, r">\s*1h 30min\s*</div>")
 
     @patch("app.providers.services.get_media_metadata")
     def test_track_button_moves_to_the_next_status(self, mock_get_metadata):

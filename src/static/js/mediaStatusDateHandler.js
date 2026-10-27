@@ -146,10 +146,13 @@ if (!window.__mediaFormRegistered) {
       return new Date(year, month - 1, day).toLocaleDateString(undefined, options);
     },
 
-    // The dates in a few words: nothing, one with what it is, or the two as a range
+    // The dates in a few words: nothing, one with what it is, the day when both are the same, or the two as a range
     get summary() {
       const { start_date: start, end_date: end } = this.extra;
-      if (start && end) return `${this.shortDate(start)} \u2013 ${this.shortDate(end)}`;
+      if (start && end) {
+        if (start.slice(0, 10) === end.slice(0, 10)) return this.shortDate(start);
+        return `${this.shortDate(start)} \u2013 ${this.shortDate(end)}`;
+      }
       if (start) return `Started ${this.shortDate(start)}`;
       if (end) return `Finished ${this.shortDate(end)}`;
       return "";

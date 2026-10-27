@@ -362,24 +362,42 @@ def _day_words(day):
     return formats.date_format(day, "F j, Y")
 
 
-@register.filter
-def human_date(value):
-    """Return when something happened in words, e.g. Yesterday or October 6, 2024.
-
-    `value` is a date or datetime, shown in the current time zone.
-    """
-    if not value:
-        return ""
-    day = value
+def _local_day(value):
+    """Return the day of a date or datetime, in the current time zone."""
     if isinstance(value, datetime):
-        day = (
+        return (
             timezone.localtime(value).date()
             if timezone.is_aware(value)
             else value.date()
         )
-    if (timezone.localdate() - day).days == 1:
-        return "Yesterday"
-    return _day_words(day)
+    return value
+
+
+@register.filter
+def entry_dates(entry):
+    """Return an entry's dates in a few words, as its tracking dialog does.
+
+    That is Mar 1 to Mar 9 as a range (one day when both are the same), Started
+    Mar 1, Finished Mar 9 or nothing, each day in the current time zone and with
+    its year when that isn't this year's.
+    """
+
+    def short(value):
+        """Return a date or datetime as a short day, with the year if not this one."""
+        day = _local_day(value)
+        pattern = "M j" if day.year == timezone.localdate().year else "M j, Y"
+        return formats.date_format(day, pattern)
+
+    start, end = entry.start_date, entry.end_date
+    if start and end:
+        if _local_day(start) == _local_day(end):
+            return short(start)
+        return f"{short(start)} \u2013 {short(end)}"
+    if start:
+        return f"Started {short(start)}"
+    if end:
+        return f"Finished {short(end)}"
+    return ""
 
 
 @register.filter

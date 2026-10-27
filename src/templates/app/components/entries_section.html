@@ -1,0 +1,13 @@
+{# Every time through a tracked media, each in a tile with its rating to change, e.g. Your Reads for books. Takes the `entries` to list, newest first, and the page's `media_type`; nothing when there are none #}
+{% load app_tags %}
+{% if entries %}
+  <section class="mb-8">
+    {% include "app/components/section_heading.html" with title=media_type|plays_heading count=entries|length %}
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+      {% for entry in entries %}
+        {% url 'update_media_score' media_type entry.id as score_url %}
+        {% include "app/components/entry_tile.html" with entry=entry status=entry.status score_url=score_url actions="app/components/repeat_actions.html" %}
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}

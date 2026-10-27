@@ -614,7 +614,7 @@ class EpisodeDetailsViewTests(TestCase):
         self.assertNotContains(response, 'aria-label="Next episode"')
 
     def test_watches_show_their_date_and_rating(self, _):
-        """A watch reads when it was in words, with stars that rate it."""
+        """A watch reads when it was, with stars that rate it."""
         watch = self.watch(1)
         Episode.objects.filter(pk=watch.pk).update(
             end_date=datetime(2024, 10, 6, 12, tzinfo=UTC),
@@ -623,7 +623,13 @@ class EpisodeDetailsViewTests(TestCase):
 
         response = self.client.get(self.episode_url(1))
 
-        self.assertContains(response, "October 6, 2024")
+        self.assertContains(response, "Finished Oct 6, 2024")
+        content = response.content.decode()
+        self.assertRegex(content, r">Completed</span>")
+        # The section follows the season's other episodes row
+        self.assertGreater(
+            content.index("Your Watches</h2>"), content.index("Season 1</h2>")
+        )
         score_url = reverse(
             "update_media_score",
             args=[MediaTypes.EPISODE.value, watch.id],
@@ -927,14 +933,14 @@ class EpisodeDetailsViewTests(TestCase):
         Episode.objects.filter(pk=watch.pk).update(status=status)
         return watch
 
-    def test_unfinished_entries_are_not_watches_on_the_episode_page(self, _):
-        """Only completed entries are listed and counted as the episode's watches."""
+    def test_unfinished_entries_are_listed_but_not_watches_on_the_episode_page(self, _):
+        """An unfinished entry is listed, and only completed ones count as watches."""
         self.entry(1, Status.PLANNING.value)
 
         response = self.client.get(self.episode_url(1))
 
         self.assertEqual(response.context["media"]["history"], [])
-        self.assertNotContains(response, "Your Watches")
+        self.assertContains(response, "Your Watches")
         self.assertContains(response, "Mark watched")
 
     def test_one_click_watches_an_episode_only_planned(self, _):
