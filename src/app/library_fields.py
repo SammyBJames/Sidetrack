@@ -84,6 +84,35 @@ LENGTH_UNITS = {
 }
 
 
+# The headings the sort menu lists sorts under, by field key; a sort not named
+# here is about the title
+SORT_GROUPS = {
+    **dict.fromkeys(
+        (
+            MediaSortChoices.RECENT,
+            MediaSortChoices.ADDED,
+            MediaSortChoices.STATUS,
+            MediaSortChoices.SCORE,
+            MediaSortChoices.PLAYS,
+            MediaSortChoices.PROGRESS,
+            MediaSortChoices.START_DATE,
+            MediaSortChoices.END_DATE,
+        ),
+        "Your activity",
+    ),
+    **dict.fromkeys(
+        (
+            MediaSortChoices.PROVIDER_SCORE,
+            MediaSortChoices.IMDB,
+            MediaSortChoices.ROTTEN_TOMATOES,
+            MediaSortChoices.METACRITIC,
+        ),
+        "Ratings",
+    ),
+}
+ABOUT_GROUP = "About the title"
+
+
 @dataclass(frozen=True)
 class LibraryField:
     """A field of one media type's library, as its sort and how to show it.
@@ -113,6 +142,11 @@ class LibraryField:
     # The item column a choice filter reads: one value, or delimited text (as
     # genres) when the field has no `choices`
     column: str = ""
+
+    @property
+    def sort_group(self):
+        """Return the heading the sort menu lists the field's sort under."""
+        return SORT_GROUPS.get(self.key, ABOUT_GROUP)
 
     def format(self, value):
         """Return a value of the field as a list shows it, e.g. "2h 5m"."""

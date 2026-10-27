@@ -11,6 +11,7 @@ if (!window.__libraryFiltersRegistered) {
     Alpine.data("libraryFilters", (state) => ({
       ...state,
       panelOpen: false,
+      sortOpen: false,
       sorts: JSON.parse(document.getElementById("library-sorts").textContent),
       // The results, which replace themselves, say how many there are and how many filters apply
       syncResults() {
@@ -38,6 +39,17 @@ if (!window.__libraryFiltersRegistered) {
       get showLabel() {
         return `Show ${this.count.toLocaleString()} ${this.count === 1 ? this.noun : this.nounPlural}`;
       },
+      // The sorts under their headings, in the order the headings first appear
+      get sortGroups() {
+        const groups = [];
+        for (const choice of this.sorts) {
+          let group = groups.find((found) => found.title === choice.group);
+          if (!group) groups.push((group = { title: choice.group, choices: [] }));
+          group.choices.push(choice);
+        }
+        return groups;
+      },
+      // A sort's choice by its value, the selected sort's without one
       sortChoice(value = this.sort) {
         return this.sorts.find((choice) => choice.value === value) || this.sorts[0];
       },
@@ -50,6 +62,47 @@ if (!window.__libraryFiltersRegistered) {
           this.order = this.sortChoice(value).order;
         }
         this.submit();
+      },
+      // Opens the sort menu, focusing the selected sort, or the last one with `last`
+      openSort(last = false) {
+        this.sortOpen = true;
+        this.$nextTick(() => {
+          const items = this.sortItems();
+          const selected = items.find((item) => item.getAttribute("aria-checked") === "true");
+          (last ? items.at(-1) : selected || items[0])?.focus();
+        });
+      },
+      // Closes the sort menu, returning focus to its button with `refocus`
+      closeSort(refocus = false) {
+        if (!this.sortOpen) return;
+        this.sortOpen = false;
+        if (refocus) this.$refs.sortButton.focus();
+      },
+      // The menu's sorts as buttons, in order
+      sortItems() {
+        return [...this.$refs.sortMenu.querySelectorAll("[role=menuitemradio]")];
+      },
+      // Arrow keys, Home and End move between the menu's sorts and Tab closes it (Escape is handled at the window)
+      moveSort(event) {
+        const items = this.sortItems();
+        const at = items.indexOf(document.activeElement);
+        const target = {
+          ArrowDown: items[(at + 1) % items.length],
+          ArrowUp: items[(at - 1 + items.length) % items.length],
+          Home: items[0],
+          End: items.at(-1),
+        }[event.key];
+        if (target) {
+          event.preventDefault();
+          target.focus();
+        } else if (event.key === "Tab") {
+          this.closeSort();
+        }
+      },
+      // Applies a sort chosen from the menu, which keeps the order when it is already selected, and closes the menu
+      chooseSort(value) {
+        if (value !== this.sort) this.sortBy(value);
+        this.closeSort(true);
       },
       set(field, value) {
         this[field] = value;

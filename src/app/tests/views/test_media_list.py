@@ -90,6 +90,42 @@ class MediaListViewTests(TestCase):
         )
         return [choice["value"] for choice in response.context["sort_choices"]]
 
+    def test_sort_choices_have_their_menu_headings(self):
+        """Each listed sort has the heading the sort menu groups it under."""
+        response = self.client.get(
+            reverse("medialist", args=[self.user.username, MediaTypes.MOVIE.value]),
+        )
+        groups = {
+            choice["value"]: choice["group"]
+            for choice in response.context["sort_choices"]
+        }
+        self.assertEqual(groups["recent"], "Your activity")
+        self.assertEqual(groups["score"], "Your activity")
+        self.assertEqual(groups["title"], "About the title")
+        fields = library_fields.get_fields(MediaTypes.MOVIE.value)
+        self.assertEqual(fields["provider_score"].sort_group, "Ratings")
+        self.assertEqual(fields["runtime"].sort_group, "About the title")
+
+    def test_sort_and_filters_are_separate_controls(self):
+        """The toolbar has a sort menu, and the filter panel has no sort controls."""
+        response = self.client.get(
+            reverse("medialist", args=[self.user.username, MediaTypes.MOVIE.value]),
+        )
+        html = response.content.decode()
+        self.assertIn('role="menuitemradio"', html)
+
+        button = html[html.index('x-ref="panelButton"') :]
+        button = button[: button.index("</button>")]
+        self.assertIn('aria-label="Filters"', button)
+        self.assertIn(">Filters</span>", button)
+        self.assertIn('x-text="filterCount"', button)
+
+        panel = html[html.index('role="dialog"') :]
+        panel = panel[: panel.index("</form>")]
+        self.assertIn(">Filters</h2>", panel)
+        self.assertNotIn("sortBy(", panel)
+        self.assertNotIn("Sort", panel)
+
     def test_sort_choices_are_the_media_types_sorts(self):
         """The sort dropdown lists the sorts of the list's media type."""
         for media_type in (
