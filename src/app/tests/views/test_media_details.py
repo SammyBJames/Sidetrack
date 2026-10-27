@@ -5,13 +5,16 @@ from unittest.mock import patch
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from app import config
 from app.models import (
     TV,
     Book,
+    Episode,
     Game,
     Item,
     MediaTypes,
@@ -1076,3 +1079,180 @@ class DetailsStoredByPagesTests(TestCase):
         self.assertIsNone(show.length)
         other_season.refresh_from_db()
         self.assertIsNone(other_season.length)
+
+
+class RunsSectionTests(TestCase):
+    """Show and season pages list the times through worked out from watches."""
+
+    def setUp(self):
+        """Track a show with a season and log in."""
+        self.credentials = {"username": "test", "password": "12345"}
+        self.user = get_user_model().objects.create_user(**self.credentials)
+        self.client.login(**self.credentials)
+        tv_item = Item.objects.create(
+            media_id="1",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Show",
+        )
+        self.tv = TV(item=tv_item, user=self.user, status=Status.COMPLETED.value)
+        TV.save_base(self.tv)
+        self.season = self.add_season(1)
+
+    def add_season(self, number, status=Status.COMPLETED.value):
+        """Add a season of the show, saved without looking up its metadata."""
+        item = Item.objects.create(
+            media_id="1",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.SEASON.value,
+            title="Show",
+            season_number=number,
+        )
+        season = Season(item=item, user=self.user, related_tv=self.tv, status=status)
+        Season.save_base(season)
+        return season
+
+    def watch(self, season, number, end):
+        """Add a watch of an episode of a season, without moving the season on."""
+        item, _ = Item.objects.get_or_create(
+            media_id="1",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.EPISODE.value,
+            season_number=season.item.season_number,
+            episode_number=number,
+            defaults={"title": "Show"},
+        )
+        Episode.objects.bulk_create(
+            [Episode(related_season=season, item=item, end_date=end)],
+        )
+
+    def get_show(self):
+        """Return the show's page with its metadata mocked."""
+        metadata = {
+            "media_id": "1",
+            "title": "Show",
+            "media_type": MediaTypes.TV.value,
+            "source": Sources.TMDB.value,
+            "image": "http://example.com/image.jpg",
+            "synopsis": "Test synopsis",
+        }
+        with patch("app.providers.services.get_media_metadata", return_value=metadata):
+            return self.client.get(
+                reverse(
+                    "media_details",
+                    kwargs={
+                        "source": Sources.TMDB.value,
+                        "media_type": MediaTypes.TV.value,
+                        "media_id": "1",
+                        "title": "show",
+                    },
+                ),
+            )
+
+    def get_season(self, number=1):
+        """Return a season's page with its metadata mocked."""
+        metadata = {
+            "title": "Show",
+            "media_id": "1",
+            "source": Sources.TMDB.value,
+            "media_type": MediaTypes.TV.value,
+            f"season/{number}": {
+                "title": f"Season {number}",
+                "media_id": "1",
+                "media_type": MediaTypes.SEASON.value,
+                "source": Sources.TMDB.value,
+                "image": "http://example.com/season.jpg",
+                "episodes": [],
+            },
+        }
+        with (
+            patch("app.providers.services.get_media_metadata", return_value=metadata),
+            patch("app.providers.tmdb.process_episodes", return_value=[]),
+        ):
+            return self.client.get(
+                reverse(
+                    "season_details",
+                    kwargs={
+                        "source": Sources.TMDB.value,
+                        "media_id": "1",
+                        "title": "show",
+                        "season_number": number,
+                    },
+                ),
+            )
+
+    def test_season_page_lists_its_runs_newest_first_and_only_the_newest_is_editable(
+        self,
+    ):
+        """The newest run is the entry, with stars and edit; older ones have none."""
+        for month in (1, 2):
+            self.watch(self.season, 1, datetime(2020, month, 5, 12, tzinfo=UTC))
+
+        response = self.get_season()
+
+        content = response.content.decode()
+        self.assertRegex(content, r"Your Watches</h2>\s*<span[^>]*>2</span>")
+        self.assertEqual(len(response.context["entries"]), 2)
+        tiles = content.split("Your Watches</h2>")[1].split("</section>")[0]
+        self.assertEqual(tiles.count('title="Completed"'), 2)
+        self.assertLess(tiles.index("Feb 5, 2020"), tiles.index("Jan 5, 2020"))
+        score_url = reverse("update_media_score", args=["season", self.season.id])
+        self.assertEqual(tiles.count("ratingStars("), 1)
+        self.assertEqual(tiles.count('aria-label="Your rating"'), 1)
+        self.assertIn(score_url, tiles)
+        self.assertEqual(tiles.count('aria-label="Edit entry"'), 1)
+        self.assertIn(f'"instance_id": "{self.season.id}"', tiles)
+
+    def test_show_page_lists_runs_across_seasons(self):
+        """A show's runs count each time through all its seasons."""
+        second = self.add_season(2)
+        for month in (1, 2):
+            self.watch(self.season, 1, datetime(2020, month, 5, 12, tzinfo=UTC))
+            self.watch(second, 1, datetime(2020, month, 9, 12, tzinfo=UTC))
+
+        response = self.get_show()
+
+        content = response.content.decode()
+        self.assertRegex(content, r"Your Watches</h2>\s*<span[^>]*>2</span>")
+        tiles = content.split("Your Watches</h2>")[1].split("</section>")[0]
+        self.assertIn("Feb 5, 2020 \u2013 Feb 9, 2020", tiles)
+        self.assertIn("Jan 5, 2020 \u2013 Jan 9, 2020", tiles)
+        self.assertEqual(tiles.count("ratingStars("), 1)
+        self.assertEqual(tiles.count('aria-label="Edit entry"'), 1)
+
+    def test_planned_season_page_lists_one_undated_run(self):
+        """A planned season shows its entry as one tile without dates."""
+        Season.objects.filter(pk=self.season.pk).update(status=Status.PLANNING.value)
+
+        response = self.get_season()
+
+        tiles = response.content.decode().split("Your Watches</h2>")[1]
+        self.assertEqual(len(response.context["entries"]), 1)
+        self.assertIn('title="Planning"', tiles)
+        self.assertEqual(tiles.count("ratingStars("), 1)
+
+    def count_queries(self, get_page):
+        """Return how many queries loading a page takes."""
+        with CaptureQueriesContext(connection) as queries:
+            self.assertEqual(get_page().status_code, 200)
+        return len(queries)
+
+    def test_season_and_show_queries_do_not_grow_with_runs_or_seasons(self):
+        """Runs read the prefetched seasons and episodes, so more add no queries."""
+        self.watch(self.season, 1, datetime(2020, 1, 5, 12, tzinfo=UTC))
+        # The first loads fill the caches
+        self.get_season()
+        self.get_show()
+        season_few = self.count_queries(self.get_season)
+        show_few = self.count_queries(self.get_show)
+
+        for month in range(2, 6):
+            self.watch(self.season, 1, datetime(2020, month, 5, 12, tzinfo=UTC))
+        for number in (2, 3, 4):
+            season = self.add_season(number)
+            for month in range(1, 6):
+                self.watch(season, 1, datetime(2020, month, 9, 12, tzinfo=UTC))
+
+        self.assertEqual(self.count_queries(self.get_season), season_few)
+        self.assertEqual(self.count_queries(self.get_show), show_few)
+        self.assertEqual(len(self.get_show().context["entries"]), 5)

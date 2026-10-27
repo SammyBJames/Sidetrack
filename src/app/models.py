@@ -1,6 +1,9 @@
 import logging
 import uuid
 from collections import Counter
+from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
 
 from django.apps import apps
 from django.conf import settings
@@ -1034,6 +1037,78 @@ REPEAT_STATUSES = (Status.PLANNING_REPEAT.value, Status.REPEATING.value)
 WATCH_STATUS = Status.COMPLETED.value
 WATCHED_STATUSES = (WATCH_STATUS, *REPEAT_STATUSES)
 
+
+@dataclass
+class Run:
+    """One time through a show or season, worked out from its episode watches.
+
+    The newest run stands for the show's or season's own entry and carries its
+    `id`, `score` and `notes`; earlier runs have none, so they can't be edited.
+    """
+
+    status: str
+    start_date: datetime | None
+    end_date: datetime | None
+    id: int | None = None
+    score: Decimal | None = None
+    notes: str = ""
+
+
+def derive_runs(entry, watches):
+    """Return the runs of a show or season, newest first, from its episode `watches`.
+
+    Run k is the k-th watch of each watched episode, in the order of their end
+    dates and then when they were added. As many runs as the watches show plays
+    (the fewest watches of any one episode) are completed, dated from the
+    earliest start (else end) to the latest end of their watches. An entry not
+    completed adds a run with its own status and the dates of the watches so far
+    in it, none for a planned rewatch; extra watches of single episodes while it
+    is completed add none. An entry planned or in
+    progress is on its first time through, and one paused or dropped whose
+    watched episodes were all watched as often is too, so that pass is its run,
+    not a play. The newest run takes the entry's own id, score and notes. Reads
+    only the watches given.
+    """
+    per_episode = {}
+    for watch in watches:
+        per_episode.setdefault(watch.item_id, []).append(watch)
+    for episode_watches in per_episode.values():
+        episode_watches.sort(
+            key=lambda w: (w.end_date is not None, w.end_date or w.created_at, w.pk),
+        )
+
+    def run(status, number):
+        """Return the run of the `number`-th watches, 0 being the first."""
+        ones = [w[number] for w in per_episode.values() if len(w) > number]
+        starts = [w.start_date or w.end_date for w in ones]
+        ends = [w.end_date for w in ones]
+        starts, ends = [d for d in starts if d], [d for d in ends if d]
+        return Run(status, min(starts, default=None), max(ends, default=None))
+
+    counts = [len(w) for w in per_episode.values()]
+    plays, most = min(counts, default=0), max(counts, default=0)
+    completed = plays
+    current = plays
+    # Planning and in progress entries are on a first time through, so stray
+    # rewatches make no play; paused and dropped ones may follow a rewatch,
+    # which uneven counts tell. Then the last pass is the entry's, not a play
+    if entry.status in (Status.PLANNING.value, Status.IN_PROGRESS.value) or (
+        entry.status in (Status.PAUSED.value, Status.DROPPED.value) and most == plays
+    ):
+        completed = current = max(plays - 1, 0)
+    runs = [run(Status.COMPLETED.value, number) for number in range(completed)]
+    if entry.status != Status.COMPLETED.value:
+        extra = run(entry.status, current)
+        if entry.status == Status.PLANNING_REPEAT.value:
+            extra.start_date = extra.end_date = None
+        runs.append(extra)
+    elif not runs:
+        runs.append(Run(entry.status, None, None))
+
+    runs[-1].id, runs[-1].score, runs[-1].notes = entry.id, entry.score, entry.notes
+    return runs[::-1]
+
+
 # The statuses of an episode's entries for a first watch not made yet. Entries
 # in REPEAT_STATUSES are for watching an episode watched before again.
 UNFINISHED_STATUSES = (
@@ -1321,6 +1396,20 @@ class TV(Media):
             if season.item.season_number != 0 and season.watches
         ]
         return min(plays) if plays else 0
+
+    @property
+    def runs(self):
+        """Return the times the show was watched through, newest first."""
+        # Specials aren't part of watching a show through
+        return derive_runs(
+            self,
+            [
+                watch
+                for season in self.seasons.all()
+                if season.item.season_number != 0
+                for watch in season.watches
+            ],
+        )
 
     @property
     def last_watched(self):
@@ -2090,6 +2179,11 @@ class Season(Media):
         """Return how many times every watched episode of the season was watched."""
         counts = Counter(episode.item.episode_number for episode in self.watches)
         return min(counts.values()) if counts else 0
+
+    @property
+    def runs(self):
+        """Return the times the season was watched through, newest first."""
+        return derive_runs(self, self.watches)
 
     @property
     def repeat_entries(self):

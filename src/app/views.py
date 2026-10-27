@@ -478,10 +478,10 @@ def media_details(request, source, media_type, media_id, title):  # noqa: ARG001
         "media": media_metadata,
         "media_type": media_type,
         "user_medias": user_medias,
-        # Shows and seasons list their entries on their episodes' pages
+        # Shows list their times through, worked out from their episodes
         "entries": (
-            []
-            if media_type in (MediaTypes.TV.value, MediaTypes.SEASON.value)
+            (current_instance.runs if current_instance else [])
+            if media_type == MediaTypes.TV.value
             else _newest_first(user_medias)
         ),
         "current_instance": current_instance,
@@ -576,6 +576,7 @@ def season_details(request, source, media_id, title, season_number):  # noqa: AR
         "tv": tv_with_seasons_metadata,
         "media_type": MediaTypes.SEASON.value,
         "user_medias": user_medias,
+        "entries": current_instance.runs if current_instance else [],
         "current_instance": current_instance,
         "next_release": _next_release(current_instance),
         # The entry the tracking button acts on

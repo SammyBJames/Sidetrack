@@ -1,8 +1,8 @@
 {% load app_tags %}
 
-{# One entry or watch: its status, its dates (with a game's playtime), its rating to change with the stars, and its notes. Takes the `entry` and its `status`, the `score_url` its stars save to, and the `actions` template of its buttons, which also read `entry` #}
+{# One entry or watch: its status, its dates (with a game's playtime), its rating to change with the stars, and its notes. Takes the `entry` and its `status`, the `score_url` its stars save to, and the `actions` template of its buttons, which also read `entry`; without those it is read-only #}
 <div class="panel flex flex-col gap-3 p-4"
-     x-data="ratingStars({{ entry.score|default_if_none:'null' }}, '{{ score_url }}', '{{ csrf_token }}')">
+     {% if score_url %}x-data="ratingStars({{ entry.score|default_if_none:'null' }}, '{{ score_url }}', '{{ csrf_token }}')"{% endif %}>
   <div class="flex items-start justify-between gap-3">
     <div class="min-w-0">
       <div class="flex items-center gap-1.5 text-sm font-semibold text-white">
@@ -20,13 +20,17 @@
         {% endif %}
       {% endwith %}
     </div>
-    <div class="flex shrink-0 gap-2">{% include actions %}</div>
+    {% if actions %}
+      <div class="flex shrink-0 gap-2">{% include actions %}</div>
+    {% endif %}
   </div>
 
-  <div class="tooltip w-fit"
-       :data-tooltip="(hovered ?? rating) ? `Rating · ${hovered ?? rating}/10` : 'Rate it'">
-    {% include "app/components/rating_stars.html" with size="size-4" %}
-  </div>
+  {% if score_url %}
+    <div class="tooltip w-fit"
+         :data-tooltip="(hovered ?? rating) ? `Rating · ${hovered ?? rating}/10` : 'Rate it'">
+      {% include "app/components/rating_stars.html" with size="size-4" %}
+    </div>
+  {% endif %}
 
   {% if entry.notes %}
     <p class="line-clamp-2 border-t border-white/5 pt-3 text-sm text-gray-300 italic"
