@@ -264,7 +264,7 @@ def media_list(request, username, media_type):
             {
                 "value": field.key,
                 "label": field.label,
-                "group": field.sort_group,
+                "group": field.group,
                 "order": field.default_order,
                 "order_labels": field.order_labels,
             }

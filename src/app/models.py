@@ -263,10 +263,6 @@ class Item(CalendarTriggerMixin, models.Model):
             events.tasks.reload_calendar(items_to_process=items_to_process)
 
 
-# Shows and seasons, which go through their episodes instead of new entries
-EPISODIC_MEDIA_TYPES = (MediaTypes.TV.value, MediaTypes.SEASON.value)
-
-
 def is_caught_up(media):
     """Return whether media has nothing released left to go through, only more to come.
 
@@ -384,6 +380,17 @@ class MediaManager(models.Manager):
         # Media caught up to its latest release isn't listed as being gone
         # through, so it's a list of what is instead of a queryset
         if caught_up:
+            # Only media with a release to come can be caught up, so the rest
+            # isn't loaded; whole items are kept, so the windows are unchanged
+            upcoming = events.models.Event.objects.filter(datetime__gt=timezone.now())
+            if media_type == MediaTypes.TV.value:
+                media_list = media_list.filter(
+                    item__media_id__in=upcoming.filter(
+                        item__media_type=MediaTypes.SEASON.value,
+                    ).values("item__media_id"),
+                )
+            else:
+                media_list = media_list.filter(item__in=upcoming.values("item"))
             return self.only_caught_up(media_list, media_type)
         if exclude_caught_up and status_filter in (
             Status.IN_PROGRESS.value,

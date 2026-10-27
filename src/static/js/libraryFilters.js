@@ -4,12 +4,12 @@
 // JSON in the element with id="library-sorts", each with its usual direction and how either
 // direction reads. The panel's slider, date, player and choice rows keep their own state (whether
 // they are open, and the value they summarize), which their elements with data-control-params (the
-// params they set) can reset(). Their summaries repeat the words of the server's (library_fields.py).
+// params they set) can reset(). The rows word their values here; the server only says which start open.
 // Guard against re-registering when this script re-runs after an HTMX body swap.
 if (!window.__libraryFiltersRegistered) {
   window.__libraryFiltersRegistered = true;
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  // The date presets' names, as the server has them
+  // The date presets' names, as the server's WITHIN has them (library_fields.py)
   const PRESET_NAMES = {
     "7d": "Past week",
     "30d": "Past month",

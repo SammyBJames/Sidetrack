@@ -1,9 +1,13 @@
 import os
 from datetime import date
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.contrib.staticfiles.testing import StaticLiveServerTestCase
+from django.urls import reverse
 from playwright.sync_api import expect, sync_playwright
+
+from app.models import BoardGame, Item, MediaTypes, Movie, Sources, Status
 
 
 class IntegrationTest(StaticLiveServerTestCase):
@@ -38,6 +42,83 @@ class IntegrationTest(StaticLiveServerTestCase):
         super().tearDownClass()
         cls.browser.close()
         cls.playwright.stop()
+
+    def test_filter_rows_word_their_values(self):
+        """Each filter row reads the value it's set to, and "Any" once cleared."""
+        for title, imdb, runtime, genres in (
+            ("Heat", Decimal("8.3"), 170, "|Drama|Crime|"),
+            ("Up", Decimal("6.1"), 90, "|Drama|"),
+        ):
+            item = Item.objects.create(
+                media_id=title,
+                source=Sources.MANUAL.value,
+                media_type=MediaTypes.MOVIE.value,
+                title=title,
+                image="https://example.com/image.jpg",
+                imdb_score=imdb,
+                runtime=runtime,
+                genres=genres,
+            )
+            Movie.objects.create(item=item, user=self.user, status=Status.COMPLETED)
+        url = reverse("medialist", args=["test", MediaTypes.MOVIE.value])
+        self.page.goto(
+            f"{self.live_server_url}{url}?imdb_min=7&runtime_min=90"
+            "&added_within=30d&genre=Drama&genre=Crime",
+        )
+        self.page.get_by_role("button", name="Filters, 4 active").click()
+
+        rows = {
+            key: self.page.locator(f'button[aria-controls="filter-{key}"]')
+            for key in ("imdb", "runtime", "added", "genre")
+        }
+        for key, text in (
+            ("imdb", "7+"),
+            ("runtime", "1h 30m+"),
+            ("added", "Past month"),
+            ("genre", "Drama, Crime"),
+        ):
+            expect(rows[key]).to_contain_text(text)
+            expect(rows[key]).to_have_attribute("aria-expanded", "true")
+        # The slider's scale ends are formatted under its track
+        expect(self.page.locator("#filter-runtime")).to_contain_text("1h 30m")
+        expect(self.page.locator("#filter-runtime")).to_contain_text("2h 50m")
+
+        panel = self.page.get_by_role("dialog", name="Filters")
+        panel.get_by_role("button", name="Clear all").click()
+        for row in rows.values():
+            expect(row).to_contain_text("Any")
+
+        # A bound or unrated, an upper bound and a custom end date
+        self.page.goto(
+            f"{self.live_server_url}{url}?score_min=7&score=unrated&runtime_max=165"
+            "&added_max=2026-04-02",
+        )
+        self.page.get_by_role("button", name="Filters, 3 active").click()
+        for key, text in (
+            ("score", "7+ or unrated"),
+            ("runtime", "up to 2h 45m"),
+            ("added", "Until Apr 2, 2026"),
+        ):
+            expect(
+                self.page.locator(f'button[aria-controls="filter-{key}"]'),
+            ).to_contain_text(text)
+
+        item = Item.objects.create(
+            media_id="Duel",
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.BOARDGAME.value,
+            title="Duel",
+            image="https://example.com/image.jpg",
+            min_players=2,
+            max_players=4,
+        )
+        BoardGame.objects.create(item=item, user=self.user, status=Status.COMPLETED)
+        url = reverse("medialist", args=["test", MediaTypes.BOARDGAME.value])
+        self.page.goto(f"{self.live_server_url}{url}?players_min=4&players_max=4")
+        self.page.get_by_role("button", name="Filters, 1 active").click()
+        expect(
+            self.page.locator('button[aria-controls="filter-players"]'),
+        ).to_contain_text("Fits 4 players")
 
     def test_season_progress_edit(self):
         """Test the progress edit of a season."""

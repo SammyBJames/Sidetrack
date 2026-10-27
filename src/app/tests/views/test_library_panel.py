@@ -335,6 +335,22 @@ class LibraryPanelViewTests(TestCase):
         self.assertEqual(response.context["media"].sorted_value, "8.4")
         self.assertContains(response, "8.4")
 
+    def test_quick_action_row_is_dated_by_the_first_entry(self):
+        """The row's date added is that of the title's first entry."""
+        first = datetime(2020, 1, 2, tzinfo=UTC)
+        Movie.objects.filter(pk=self.movie.pk).update(created_at=first)
+        Movie.objects.create(
+            item=self.movie.item,
+            user=self.user,
+            status=Status.DROPPED.value,
+        )
+        response = self.quick_row("added")
+
+        self.assertEqual(
+            response.context["media"].sorted_value,
+            app_tags.date_format(first, self.user),
+        )
+
     def test_quick_action_row_counts_the_times_finished(self):
         """The row's times finished count the completed entries."""
         Movie.objects.create(

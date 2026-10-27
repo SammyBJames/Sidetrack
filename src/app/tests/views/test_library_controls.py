@@ -10,7 +10,6 @@ from app import library_fields
 from app.models import (
     TV,
     BoardGame,
-    Book,
     Episode,
     Item,
     MediaTypes,
@@ -341,90 +340,36 @@ class LibraryControlsTests(TestCase):
         self.assertContains(response, "playerChips(true, '2', '4')")
         self.assertContains(response, "6+")
 
-    def test_rows_summarize_their_value(self):
-        """Each row says "Any" or its value, the words the pills and controls use."""
-        Item.objects.filter(pk=self.short.item.pk).update(
-            imdb_score=7.1,
-            rotten_tomatoes=80,
-            release_date=date(1999, 5, 1),
-            genres="|Drama|Crime|Comedy|",
-        )
-        _, controls = self.controls()
-        self.assertEqual(controls["runtime"]["summary"], "Any")
-        self.assertEqual(controls["added"]["summary"], "Any")
+    def test_rows_start_open_when_filtered(self):
+        """A row the address filters by starts open, the others closed."""
+        Item.objects.filter(pk=self.short.item.pk).update(genres="|Drama|")
+        response, controls = self.controls()
         self.assertFalse(controls["runtime"]["active"])
+        self.assertFalse(controls["added"]["active"])
 
-        for params, key, text in (
-            ({"imdb_min": "7", "imdb_max": "10"}, "imdb", f"7{DASH}10"),
-            ({"runtime_min": "90"}, "runtime", "1h 30m+"),
-            ({"runtime_min": "120"}, "runtime", "2h+"),
-            ({"runtime_max": "165"}, "runtime", "up to 2h 45m"),
-            ({"imdb_min": "7.5", "imdb_max": "7.5"}, "imdb", "7.5"),
-            (
-                {"release_min": "2000", "release_max": "2010"},
-                "release",
-                f"2000{DASH}2010",
-            ),
-            ({"rotten_tomatoes_min": "50"}, "rotten_tomatoes", "50%+"),
-            ({"score_min": "7", "score": "unrated"}, "score", "7+ or unrated"),
-            ({"score": "unrated"}, "score", "Unrated"),
-            ({"added_within": "30d"}, "added", "Past month"),
-            (
-                {"added_min": "2026-03-01", "added_max": "2026-04-02"},
-                "added",
-                f"Mar 1 {DASH} Apr 2, 2026",
-            ),
-            (
-                {"added_min": "2025-03-01", "added_max": "2026-04-02"},
-                "added",
-                f"Mar 1, 2025 {DASH} Apr 2, 2026",
-            ),
-            ({"added_min": "2026-03-01"}, "added", "From Mar 1, 2026"),
-            ({"added_max": "2026-04-02"}, "added", "Until Apr 2, 2026"),
+        for params, key in (
+            ({"runtime_min": "90"}, "runtime"),
+            ({"score": "unrated"}, "score"),
+            ({"added_within": "30d"}, "added"),
+            ({"added_max": "2026-04-02"}, "added"),
         ):
             with self.subTest(params=params):
                 _, controls = self.controls(**params)
-                self.assertEqual(controls[key]["summary"], text)
                 self.assertTrue(controls[key]["active"])
 
-        response = self.client.get(self.url, {"genre": ["Drama", "Crime"]})
-        self.assertContains(response, "Crime, Drama</span>")
-        response = self.client.get(self.url, {"genre": ["Drama", "Crime", "Comedy"]})
-        self.assertContains(response, "Comedy +2</span>")
+        def genre_row(response):
+            """Return the genre row of a response's panel."""
+            return next(
+                c
+                for g in response.context["filter_groups"]
+                for c in g["choices"]
+                if c["key"] == "genre"
+            )
 
-    def test_word_units_read_after_the_plus(self):
-        """A count's unit follows the bound: "10+ pages", "up to 400 pages"."""
-        self.create(Book, "Short", length=100)
-        self.create(Book, "Long", length=500)
-        for params, text in (
-            ({"length_min": "10"}, "10+ pages"),
-            ({"length_max": "400"}, "up to 400 pages"),
-            ({"length_min": "100", "length_max": "400"}, f"100{DASH}400 pages"),
-        ):
-            with self.subTest(params=params):
-                _, controls = self.controls(MediaTypes.BOOK.value, **params)
-                self.assertEqual(controls["length"]["summary"], text)
-
-    def test_player_rows_say_how_many_fit(self):
-        """The players row reads like its pill, or as a range the chips lack."""
-        self.create(BoardGame, "Duo", min_players=2, max_players=2)
-        url = reverse("medialist", args=["test", MediaTypes.BOARDGAME.value])
-        for params, text in (
-            ({}, "Any"),
-            ({"players_min": "4", "players_max": "4"}, "Fits 4 players"),
-            ({"players_min": "6"}, "Fits 6+ players"),
-            ({"players_min": "6", "players_max": "6"}, "Fits 6 players"),
-            ({"players_min": "2", "players_max": "4"}, f"2{DASH}4"),
-        ):
-            with self.subTest(params=params):
-                response = self.client.get(url, params)
-                control = next(
-                    c
-                    for g in response.context["filter_groups"]
-                    for c in g["ranges"]
-                    if c["key"] == "players"
-                )
-                self.assertEqual(control["summary"], text)
+        self.assertFalse(genre_row(response)["active"])
+        self.assertTrue(
+            genre_row(self.client.get(self.url, {"genre": "Drama"}))["active"],
+        )
 
     def test_groups_list_filters_under_one_heading_level(self):
         """Ratings have their own group, genres are rows of About the title."""
@@ -476,12 +421,10 @@ class LibraryControlsTests(TestCase):
         self.assertContains(response, "rangeSlider(false)")
         self.assertContains(response, "datePresets(false, ''")
 
-    def test_slider_shows_its_scale_ends(self):
-        """The scale's ends sit under the track, formatted, not as a range label."""
+    def test_slider_has_exact_values(self):
+        """A slider offers its exact values as inputs too."""
         response = self.client.get(self.url)
 
-        self.assertContains(response, 'x-text="format(floor)">1h 30m</span>')
-        self.assertContains(response, 'x-text="format(ceiling)">2h 45m</span>')
         self.assertContains(response, "Exact values")
         self.assertContains(response, 'aria-label="Exact Runtime values"')
 

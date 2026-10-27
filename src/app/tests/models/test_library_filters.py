@@ -295,6 +295,8 @@ class LibraryFiltersTests(TestCase):
             "imdb_max=inf",
             "imdb_min=1e999",
             "imdb_min=",
+            "imdb=",
+            "added=",
             "release_min=2000-01",
             "release_min=0",
             "release_max=99999",

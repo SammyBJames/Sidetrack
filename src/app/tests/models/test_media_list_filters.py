@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.http import QueryDict
@@ -221,6 +222,49 @@ class MediaListFilterTests(TestCase):
             self.titles(MediaTypes.ANIME.value, status_filter=Status.IN_PROGRESS.value),
             ["Behind"],
         )
+
+    def test_caught_up_loads_only_media_with_a_release_to_come(self):
+        """Media with nothing to come isn't loaded to check whether it's caught up."""
+        self.create_caught_up_anime()
+        finished = self.item("Finished airing", MediaTypes.ANIME.value)
+        Anime.objects.bulk_create(
+            [Anime(item=finished, user=self.user, status=Status.IN_PROGRESS.value)],
+        )
+        Event.objects.create(
+            item=finished,
+            content_number=1,
+            datetime=timezone.now() - timedelta(days=1),
+        )
+
+        with mock.patch.object(
+            MediaManager,
+            "only_caught_up",
+            autospec=True,
+            side_effect=MediaManager.only_caught_up,
+        ) as only_caught_up:
+            self.titles(
+                MediaTypes.ANIME.value,
+                status_filter=LibraryStatusChoices.CAUGHT_UP,
+            )
+
+        checked = only_caught_up.call_args.args[1]
+        self.assertEqual([media.item.title for media in checked], ["Airing"])
+
+    def test_caught_up_repeats_are_listed_and_counted_as_caught_up(self):
+        """A rewatch up to its latest release is caught up instead of repeating."""
+        self.create_caught_up_anime()
+        Anime.objects.update(status=Status.REPEATING.value)
+
+        self.assertEqual(
+            self.titles(
+                MediaTypes.ANIME.value,
+                status_filter=LibraryStatusChoices.CAUGHT_UP,
+            ),
+            ["Airing"],
+        )
+        counts = self.manager.get_status_counts(self.user, MediaTypes.ANIME.value)
+        self.assertEqual(counts[Status.REPEATING.value], 0)
+        self.assertEqual(counts[LibraryStatusChoices.CAUGHT_UP], 1)
 
     def test_status_counts(self):
         """Each status counts its media, caught up apart from in progress."""

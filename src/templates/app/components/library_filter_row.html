@@ -1,4 +1,4 @@
-{% comment %}A filter's disclosure row heading: its label, the value it is set to and a chevron. It opens the control under it with the id `body`, and needs the control's Alpine state (open, summary, active). `open` and `summary` are what the server rendered.{% endcomment %}
+{% comment %}A filter's disclosure row heading: its label, the value it is set to and a chevron. It opens the control under it with the id `body`, and needs the control's Alpine state (open, summary, active), which words the value. `open` is whether the server rendered it open.{% endcomment %}
 <button type="button"
         @click="open = !open"
         aria-expanded="{{ open|yesno:'true,false' }}"
@@ -8,7 +8,7 @@
   <span class="shrink-0 font-medium text-gray-200">{{ label }}</span>
   <span class="ml-auto min-w-0 truncate tabular-nums"
         :class="active ? 'text-indigo-300' : 'text-gray-400'"
-        x-text="summary">{{ summary }}</span>
+        x-text="summary"></span>
   <span class="shrink-0 text-gray-500 transition-transform"
         :class="open && 'rotate-180'"
         aria-hidden="true">{% include "app/icons/chevron-down.svg" with classes="size-4" %}</span>

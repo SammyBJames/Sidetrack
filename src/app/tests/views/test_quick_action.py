@@ -580,6 +580,24 @@ class QuickActionViewTests(TestCase):
 
         self.assertNotIn("HX-Reswap", response)
 
+    def test_card_stays_caught_up_while_repeating(self):
+        """A list of caught up media keeps an entry still being repeated."""
+        anime = Anime.objects.create(
+            item=self.anime_item,
+            user=self.user,
+            status=Status.REPEATING.value,
+            progress=1,
+        )
+
+        response = self.post(
+            self.anime_item,
+            quick_actions.NEXT,
+            instance_id=anime.id,
+            status="caught_up",
+        )
+
+        self.assertNotIn("HX-Reswap", response)
+
     def test_completed_card_leaves_caught_up_list(self):
         """Finishing media removes it from a list of caught up media."""
         movie = Movie.objects.create(

@@ -103,8 +103,8 @@ class MediaListViewTests(TestCase):
         self.assertEqual(groups["score"], "Your activity")
         self.assertEqual(groups["title"], "About the title")
         fields = library_fields.get_fields(MediaTypes.MOVIE.value)
-        self.assertEqual(fields["provider_score"].sort_group, "Ratings")
-        self.assertEqual(fields["runtime"].sort_group, "About the title")
+        self.assertEqual(fields["provider_score"].group, "Ratings")
+        self.assertEqual(fields["runtime"].group, "About the title")
 
     def test_sort_and_filters_are_separate_controls(self):
         """The toolbar has a sort menu, and the filter panel has no sort controls."""
@@ -165,6 +165,22 @@ class MediaListViewTests(TestCase):
         self.assertIn("score", movie)
 
         Item.objects.filter(media_id="278").update(imdb_score=8.1, runtime=120)
+        # Another user's titles don't count
+        Movie.objects.bulk_create(
+            [
+                Movie(
+                    item=Item.objects.create(
+                        media_id="other",
+                        source=Sources.MANUAL.value,
+                        media_type=MediaTypes.MOVIE.value,
+                        title="Theirs",
+                        metacritic=80,
+                    ),
+                    user=self.external_user,
+                    status=Status.COMPLETED.value,
+                ),
+            ],
+        )
         movie = self.sort_keys(MediaTypes.MOVIE.value)
         self.assertIn("imdb", movie)
         self.assertIn("runtime", movie)
@@ -476,7 +492,7 @@ class TVCardCountsTests(TestCase):
         self.assertIn(">2 Seasons • 5 Episodes<", self.card_text())
 
     def test_caught_up_show_waits_outside_in_progress(self):
-        """A show in progress with every released episode watched isn't listed so."""
+        """A show watched up to its latest episode is caught up, not in progress."""
         self.tv.status = Status.IN_PROGRESS.value
         TV.save_base(self.tv)
         for number, episodes in ((1, 3), (2, 2)):
@@ -513,6 +529,7 @@ class TVCardCountsTests(TestCase):
             return [media.id for media in response.context["media_list"]]
 
         self.assertEqual(listed(Status.IN_PROGRESS.value), [])
+        self.assertEqual(listed("caught_up"), [self.tv.id])
         self.assertEqual(listed("All"), [self.tv.id])
 
     def test_show_waiting_on_its_new_season_shows_when_it_airs(self):

@@ -62,7 +62,7 @@
                          data-format="{{ range.format }}"
                          data-unit="{{ range.unit }}"
                          @input.stop>
-                      {% include "app/components/library_filter_row.html" with label=range.label summary=range.summary open=range.active body="filter-"|add:range.key %}
+                      {% include "app/components/library_filter_row.html" with label=range.label open=range.active body="filter-"|add:range.key %}
                       <input type="hidden"
                              name="{{ range.key }}_min"
                              value="{% if range.min_asked or range.min != range.floor %}{{ range.min }}{% endif %}"
@@ -103,8 +103,8 @@
                                  :class="lo === hi && hi <= (floor + ceiling) / 2 ? 'z-30' : ''">
                         </div>
                         <div class="mt-1 flex justify-between px-1 text-[0.6875rem] text-gray-500 tabular-nums">
-                          <span x-text="format(floor)">{{ range.floor_text }}</span>
-                          <span x-text="format(ceiling)">{{ range.ceiling_text }}</span>
+                          <span x-text="format(floor)"></span>
+                          <span x-text="format(ceiling)"></span>
                         </div>
                         <div class="mt-2 flex flex-wrap items-center gap-2">
                           {% if range.unset %}
@@ -154,7 +154,7 @@
                   {% elif range.control == "dates" %}
                     <div x-data="datePresets({{ range.active|yesno:'true,false' }}, '{{ range.mode }}', '{{ range.inputs.0.value }}', '{{ range.inputs.1.value }}')"
                          data-control-params="{{ range.key }}_min,{{ range.key }}_max,{{ range.key }}_within">
-                      {% include "app/components/library_filter_row.html" with label=range.label summary=range.summary open=range.active body="filter-"|add:range.key %}
+                      {% include "app/components/library_filter_row.html" with label=range.label open=range.active body="filter-"|add:range.key %}
                       <div x-cloak x-show="open" id="filter-{{ range.key }}" class="pt-1 pb-3">
                         <div class="flex flex-wrap gap-1.5"
                              role="group"
@@ -204,7 +204,7 @@
                   {% elif range.control == "players" %}
                     <div x-data="playerChips({{ range.active|yesno:'true,false' }}, '{{ range.min }}', '{{ range.max }}')"
                          data-control-params="{{ range.key }}_min,{{ range.key }}_max">
-                      {% include "app/components/library_filter_row.html" with label=range.label summary=range.summary open=range.active body="filter-"|add:range.key %}
+                      {% include "app/components/library_filter_row.html" with label=range.label open=range.active body="filter-"|add:range.key %}
                       <div x-cloak x-show="open" id="filter-{{ range.key }}" class="pt-1 pb-3">
                         <div class="flex flex-wrap gap-1.5" role="group" aria-label="Players">
                           {% for chip in range.chips %}
@@ -232,7 +232,7 @@
                 {% for field in group.choices %}
                   <div x-data="choiceRow({{ field.active|yesno:'true,false' }})"
                        data-control-params="{{ field.key }}">
-                    {% include "app/components/library_filter_row.html" with label=field.label summary=field.summary open=field.active body="filter-"|add:field.key %}
+                    {% include "app/components/library_filter_row.html" with label=field.label open=field.active body="filter-"|add:field.key %}
                     <div x-cloak x-show="open" id="filter-{{ field.key }}" class="pt-1 pb-3">
                       {% if field.options|length > 12 %}
                         <input type="search"
