@@ -290,7 +290,8 @@ class TVWebhookMixin:
         if self._is_played(payload):
             now = timezone.now().replace(second=0, microsecond=0)
             latest_episode = (
-                app.models.Episode.objects.filter(
+                app.models.Episode.objects.watches()
+                .filter(
                     item=episode_item,
                     related_season=season_instance,
                 )
@@ -336,9 +337,10 @@ class TVWebhookMixin:
             )
 
     def _delete_tv_episode(self, media_id, season_number, episode_number, user):
-        """Delete the latest tracked episode instance for an unplayed event."""
+        """Delete the latest watch of an episode for an unplayed event."""
         episode = (
-            app.models.Episode.objects.filter(
+            app.models.Episode.objects.watches()
+            .filter(
                 related_season__user=user,
                 item__media_id=media_id,
                 item__source=Sources.TMDB.value,

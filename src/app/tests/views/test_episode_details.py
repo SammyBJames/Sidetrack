@@ -408,13 +408,20 @@ class EpisodeDetailsViewTests(TestCase):
     def test_rewatched_season_shows_what_is_left(self, _):
         """While a season is rewatched, episodes not seen again are offered again."""
         first = self.watch(1)
-        self.watch(2)
+        second = self.watch(2)
         season = first.related_season
         season.status = Status.PLANNING_REPEAT.value
-        season.repeat_started_at = timezone.now()
         Season.save_base(season)
+        # The first episode was watched again, and the second is still to be
         Episode.objects.bulk_create(
-            [Episode(related_season=season, item=first.item)],
+            [
+                Episode(related_season=season, item=first.item),
+                Episode(
+                    related_season=season,
+                    item=second.item,
+                    status=Status.PLANNING_REPEAT.value,
+                ),
+            ],
         )
 
         content = self.client.get(self.season_url()).content.decode()
@@ -461,8 +468,14 @@ class EpisodeDetailsViewTests(TestCase):
         # An unwatched episode isn't planned
         self.client.post(reverse("episode_plan_repeat"), {**data, "episode_number": 2})
 
-        season.refresh_from_db()
-        self.assertEqual(season.planned_repeat_episodes, [1])
+        self.assertEqual(
+            list(
+                season.episodes.filter(
+                    status=Status.PLANNING_REPEAT.value,
+                ).values_list("item__episode_number", flat=True),
+            ),
+            [1],
+        )
         repeat_color = config.get_status_text_color(Status.PLANNING_REPEAT.value)
         self.assertRegex(
             self.client.get(self.season_url()).content.decode(),
@@ -475,7 +488,7 @@ class EpisodeDetailsViewTests(TestCase):
 
         season.refresh_from_db()
         self.assertEqual(season.episodes.count(), 2)
-        self.assertEqual(season.planned_repeat_episodes, [])
+        self.assertEqual(season.episodes.watches().count(), 2)
         self.assertEqual(season.status, Status.COMPLETED.value)
 
     def test_season_can_be_marked_watched_at_once(self, _):
@@ -665,9 +678,9 @@ class EpisodeDetailsViewTests(TestCase):
             1,
         )
 
-    def test_rewatch_is_planned_for_episodes_watched_before(self, _):
-        """An episode being rewatched can be planned again, and a planned one can't."""
-        self.entry(1, Status.REPEATING.value)
+    def test_rewatch_is_planned_once_for_watched_episodes(self, _):
+        """A watched episode is planned again once, and one only planned isn't."""
+        self.watch(1)
         self.entry(2, Status.PLANNING.value)
         data = {
             "media_id": "1396",
@@ -675,13 +688,22 @@ class EpisodeDetailsViewTests(TestCase):
             "season_number": 1,
         }
 
-        for number in (1, 2):
+        for number in (1, 1, 2):
             self.client.post(
                 reverse("episode_plan_repeat"),
                 {**data, "episode_number": number},
             )
 
-        self.assertEqual(Season.objects.get().planned_repeat_episodes, [1])
+        self.assertEqual(
+            sorted(
+                Episode.objects.values_list("item__episode_number", "status"),
+            ),
+            [
+                (1, Status.COMPLETED.value),
+                (1, Status.PLANNING_REPEAT.value),
+                (2, Status.PLANNING.value),
+            ],
+        )
 
 
 class ManualShowTests(TestCase):

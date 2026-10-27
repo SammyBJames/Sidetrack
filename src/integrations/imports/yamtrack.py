@@ -209,9 +209,9 @@ class YamtrackImporter:
             if progressed_at:
                 form.instance._history_date = parse_datetime(progressed_at)
 
-            # Entries keep when they were first added, which the library sorts by.
-            # Episodes don't, as a rewatch tells its watches apart by when they
-            # were added.
+            # Entries keep when they were first added, which the library sorts
+            # by. Episodes have no library entries of their own, so theirs is
+            # when they were imported.
             if media_type != MediaTypes.EPISODE.value:
                 form.instance.imported_created_at = helpers.parse_added_date(
                     row.get("created_at"),

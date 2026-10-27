@@ -7,7 +7,7 @@ from django.core.cache import cache
 from django.utils import timezone
 
 from app import helpers
-from app.models import MediaTypes, Sources
+from app.models import REPEAT_STATUSES, MediaTypes, Sources
 from app.providers import services
 
 logger = logging.getLogger(__name__)
@@ -941,8 +941,9 @@ def filter_providers(all_providers, region):
 def process_episodes(season_metadata, episodes_in_db):
     """Process the episodes for the selected season, with the user's entries.
 
-    Each episode's `history` is its watches, and `watched` is whether it has
-    been watched, which entries planned or being watched again also show.
+    Each episode's `history` is its watches, `watched` is whether it has
+    been watched, which entries planned or being watched again also show, and
+    `repeat_planned` whether it has an entry to watch it again.
     """
     episodes_metadata = []
 
@@ -971,6 +972,7 @@ def process_episodes(season_metadata, episodes_in_db):
                 "overview": episode["overview"],
                 "history": [ep for ep in entries if ep.is_watch],
                 "watched": any(ep.marks_watched for ep in entries),
+                "repeat_planned": any(ep.status in REPEAT_STATUSES for ep in entries),
                 "runtime": get_readable_duration(episode["runtime"]),
                 "runtime_minutes": episode["runtime"],
             },

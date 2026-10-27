@@ -214,6 +214,8 @@ class TVStatusTests(TestCase):
                     for number in range(4)
                 ],
             },
+            # Its seasons, when they're asked for
+            **{f"season/{number}": {"episodes": []} for number in range(4)},
         }
         # Season 2 has been started, unlike season 1
         self.season2.status = Status.IN_PROGRESS.value

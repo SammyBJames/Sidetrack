@@ -1,7 +1,7 @@
 from django.conf import settings
 
 from app import models
-from app.models import MediaTypes, Sources
+from app.models import REPEAT_STATUSES, MediaTypes, Sources
 
 
 def metadata(media_id, media_type):
@@ -131,8 +131,9 @@ def episode(media_id, season_number, episode_number):
 def process_episodes(season_metadata, episodes_in_db):
     """Process the episodes for the selected season, with the user's entries.
 
-    Each episode's `history` is its watches, and `watched` is whether it has
-    been watched, which entries planned or being watched again also show.
+    Each episode's `history` is its watches, `watched` is whether it has
+    been watched, which entries planned or being watched again also show, and
+    `repeat_planned` whether it has an entry to watch it again.
     """
     # Convert the queryset to a dictionary for efficient lookups
     tracked_episodes = {}
@@ -160,6 +161,7 @@ def process_episodes(season_metadata, episodes_in_db):
             "overview": "No synopsis available.",
             "history": [ep for ep in entries if ep.is_watch],
             "watched": any(ep.marks_watched for ep in entries),
+            "repeat_planned": any(ep.status in REPEAT_STATUSES for ep in entries),
         }
         episodes_metadata.append(episode_data)
 

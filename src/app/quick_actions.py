@@ -244,7 +244,8 @@ def apply_quick_action(action, media):
     Saves `media` and returns it, or the new entry that planning a repeat
     starts, which keeps the finished one as an earlier play. A start or end date
     is filled in only when it is empty, and not at all for media whose dates come
-    from its episodes. Planning a show plans its seasons too.
+    from its episodes. Planning a show plans its seasons too, and planning a
+    season its episodes.
     """
     if action.key == NEXT:
         if media.item.media_type == MediaTypes.TV.value:
@@ -270,12 +271,15 @@ def apply_quick_action(action, media):
         and getattr(media, date_field) is None
     ):
         setattr(media, date_field, _now())
-    # A show on the watchlist brings its seasons with it, or isn't saved at all
-    # when they can't be planned, so trying again plans them
+    # A show on the watchlist brings its seasons with it, and a season its
+    # episodes, or isn't saved at all when they can't be planned, so trying
+    # again plans them
     with transaction.atomic():
         media.save()
         if action.key == PLAN and media.item.media_type == MediaTypes.TV.value:
             media.plan_seasons()
+        elif action.key == PLAN and media.item.media_type == MediaTypes.SEASON.value:
+            media.plan_episodes()
     return media
 
 

@@ -152,7 +152,11 @@ class ShowRewatchTests(TestCase):
             ),
         )
         season = Season.objects.get(pk=self.seasons[1].pk)
-        self.assertIsNotNone(season.repeat_started_at)
+        # Each watched episode is planned to be watched again
+        self.assertEqual(
+            [episode.item.episode_number for episode in season.repeat_entries],
+            [1, 2],
+        )
         self.assertEqual(season.progress, 0)
         self.assertEqual(season.next_repeat_episode_number, 1)
 
@@ -177,7 +181,7 @@ class ShowRewatchTests(TestCase):
         season = Season.objects.get(pk=self.seasons[1].pk)
         self.assertEqual(season.progress, 1)
         self.assertEqual(season.next_repeat_episode_number, 2)
-        self.assertEqual(season.episodes.count(), 3)
+        self.assertEqual(season.episodes.watches().count(), 3)
         action = quick_actions.get_quick_action(MediaTypes.SEASON.value, season)
         self.assertEqual(action.label, "Mark S1E2 watched")
         self.assertEqual(action.target_status, Status.REPEATING.value)
@@ -350,6 +354,13 @@ class ShowRewatchTests(TestCase):
         self.assertEqual(self.seasons[1].episodes.count(), 4)
         self.assertEqual(self.seasons[2].episodes.count(), 4)
         self.assertEqual(self.seasons[0].episodes.count(), 1)
+        # Each new play is dated when the rewatch was finished
+        self.assertFalse(
+            Episode.objects.filter(
+                related_season__in=(self.seasons[1], self.seasons[2]),
+                end_date__isnull=True,
+            ).exists(),
+        )
 
     def test_planned_show_watches_its_next_episode(self, _):
         """A show planned to be rewatched starts with its first episode in one click."""
@@ -390,7 +401,7 @@ class ShowRewatchTests(TestCase):
         season.decrease_progress()
         season = Season.objects.get(pk=season.pk)
         self.assertEqual(season.progress, 0)
-        self.assertEqual(season.episodes.count(), 2)
+        self.assertEqual(season.episodes.watches().count(), 2)
 
         # Finished from the tracking form
         season.status = Status.COMPLETED.value
@@ -407,7 +418,8 @@ class ShowRewatchTests(TestCase):
                 },
             ),
         )
-        self.assertEqual(season.episodes.count(), 4)
+        self.assertEqual(season.episodes.watches().count(), 4)
+        self.assertEqual(season.repeat_entries, [])
 
 
 class CountedRewatchTests(TestCase):

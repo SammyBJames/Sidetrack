@@ -8,11 +8,8 @@ from django.utils import formats, timezone
 from django.utils.dateparse import parse_datetime
 
 from app import config, helpers
-from app.models import REPEAT_STATUSES, MediaTypes, Status
+from app.models import REPEAT_STATUSES, WATCH_STATUS, MediaTypes, Status
 from app.templatetags import app_tags
-
-# Fields kept for the app's own use, which aren't shown in the history
-INTERNAL_FIELDS = {"repeat_started_at", "planned_repeat_episodes"}
 
 
 def _journal_queryset(model, user, start_date, end_date):
@@ -141,16 +138,16 @@ def build_journal_entries(index_page, user):
         if info is None:
             continue
 
+        # A creation ("+") has no previous record; otherwise use the
+        # batched predecessor instead of a per-row ``prev_record`` query.
+        prev_record = (
+            None
+            if record.history_type == "+"
+            else prev_records.get((media_type, record.history_id))
+        )
         if media_type == MediaTypes.EPISODE.value:
-            changes = _episode_changes(record, info)
+            changes = _episode_changes(record, prev_record, info)
         else:
-            # A creation ("+") has no previous record; otherwise use the
-            # batched predecessor instead of a per-row ``prev_record`` query.
-            prev_record = (
-                None
-                if record.history_type == "+"
-                else prev_records.get((media_type, record.history_id))
-            )
             processed = process_history_entry(
                 (record, prev_record),
                 media_type,
@@ -240,18 +237,15 @@ def _resolve_display_items(records):
 
 
 def _fetch_prev_records(records):
-    """Map each non-episode record to its predecessor, batched per media type.
+    """Map each record to its predecessor, batched per media type.
 
     Mirrors django-simple-history's ``prev_record`` (the newest row for the same
     object with a strictly earlier ``history_date``) but fetches every involved
     object's history in one query per media type instead of one query per row.
-    Episodes are excluded because their journal entries never diff against a
-    predecessor.
     """
     ids_by_type = defaultdict(set)
     for (media_type, _history_id), record in records.items():
-        if media_type != MediaTypes.EPISODE.value:
-            ids_by_type[media_type].add(record.id)
+        ids_by_type[media_type].add(record.id)
 
     prev = {}
     for media_type, object_ids in ids_by_type.items():
@@ -275,16 +269,20 @@ def _fetch_prev_records(records):
     return prev
 
 
-def _episode_changes(record, info):
+def _episode_changes(record, prev_record, info):
     """Build a change description for an episode history record.
 
-    A newly-watched episode is a completion of that episode (it receives an
-    ``end_date``), so it is tagged ``end_date`` to earn the completed accent;
-    later edits are treated as progress. Notes added with the watch follow as
-    their own change, like they do for other media.
+    An entry that became a watch, created as one or turned into one from a plan
+    that has no history of its own, is a completion of that episode, so it is
+    tagged ``end_date`` to earn the completed accent; other changes are treated
+    as progress. Notes added with the watch follow as their own change, like
+    they do for other media.
     """
     episode_number = info["episode_number"]
-    if record.history_type == "+":
+    became_watch = record.status == WATCH_STATUS and (
+        prev_record is None or prev_record.status != WATCH_STATUS
+    )
+    if became_watch:
         description = f"Watched episode {episode_number}"
         changes = [{"description": description, "field": "end_date"}]
         if record.notes:
@@ -367,9 +365,7 @@ def organize_changes(changes, media_type, user):
     end_date_change = None
 
     for change in changes:
-        if change.field in INTERNAL_FIELDS or (
-            change.field == "progress" and media_type == MediaTypes.MOVIE.value
-        ):
+        if change.field == "progress" and media_type == MediaTypes.MOVIE.value:
             continue
 
         change_data = {
@@ -412,7 +408,6 @@ def collect_creation_changes(new_record, history_model, media_type, user):
         if (
             field.name.startswith("history_")
             or field.name == "id"
-            or field.name in INTERNAL_FIELDS
             or not hasattr(new_record, field.attname)
             or (field.name == "progress" and media_type == MediaTypes.MOVIE.value)
         ):

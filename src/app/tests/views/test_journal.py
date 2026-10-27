@@ -203,6 +203,34 @@ class JournalViewTests(TestCase):
         )
         self.assertEqual(episode_entries[0]["accent"], Status.COMPLETED.value)
 
+    def test_journal_planned_episode_watched(self):
+        """A planned episode made a watch reads as watched, and a later edit doesn't."""
+        self._add_episode()
+        episode = Episode.objects.get()
+        Episode.objects.filter(pk=episode.pk).update(status=Status.PLANNING.value)
+        episode.history.all().delete()
+        now = timezone.now()
+        for date, status, notes in (
+            (now - datetime.timedelta(days=2), Status.COMPLETED, ""),
+            (now - datetime.timedelta(days=1), Status.COMPLETED, "Hi"),
+        ):
+            episode.status = status.value
+            episode.notes = notes
+            episode._history_user = self.user
+            episode._history_date = date
+            Episode.save_base(episode)
+
+        response = self.client.get(reverse("journal"))
+
+        self.assertEqual(
+            [
+                entry["changes"][0]["description"]
+                for entry in response.context["entries"]
+                if entry["media_type"] == MediaTypes.EPISODE.value
+            ],
+            ["Updated episode 1", "Watched episode 1"],
+        )
+
     def test_journal_excludes_other_users(self):
         """The feed only contains the requesting user's activity."""
         credentials = {"username": "other", "password": "12345"}

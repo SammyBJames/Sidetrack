@@ -458,6 +458,9 @@ def bulk_create_media(bulk_media_list, user):
             batch_size=500,
             default_user=user,
         )
+        if media_type == MediaTypes.EPISODE.value:
+            # Watches imported fulfil the plans of their episodes
+            app.models.settle_plans(bulk_media)
 
         # Saving stamps entries as added now, so those imported with when they
         # were added get it back
@@ -470,13 +473,13 @@ def bulk_create_media(bulk_media_list, user):
             media.created_at = media.imported_created_at
         model.objects.bulk_update(dated, ["created_at"], batch_size=500)
 
-    # Seasons imported in a repeat status start it over now, as every episode
-    # imported with them is older
-    app.models.Season.objects.filter(
+    # Seasons imported in a repeat status without a rewatch planned start one,
+    # which goes through every episode imported with them
+    for season in app.models.Season.objects.filter(
         user=user,
         status__in=REPEAT_STATUSES,
-        repeat_started_at__isnull=True,
-    ).update(repeat_started_at=timezone.now())
+    ).exclude(episodes__status__in=REPEAT_STATUSES):
+        season.plan_repeat_entries()
 
 
 def bulk_update_media(bulk_media_list, fields_by_media_type, user):

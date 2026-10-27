@@ -576,6 +576,62 @@ class JellyfinWebhookTests(TestCase):
         self.assertEqual(season.status, Status.IN_PROGRESS.value)
         self.assertEqual(tv.status, Status.IN_PROGRESS.value)
 
+    def test_mark_unplayed_leaves_an_episodes_plans(self):
+        """Unplaying deletes the episode's watch, not its entry to watch it again."""
+        tv_item = Item.objects.create(
+            media_id="123",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Test Show",
+            image="http://example.com/image.jpg",
+        )
+        tv = TV(item=tv_item, user=self.user, status=Status.IN_PROGRESS.value)
+        TV.save_base(tv)
+        season = Season(
+            item=Item.objects.create(
+                media_id="123",
+                source=Sources.TMDB.value,
+                media_type=MediaTypes.SEASON.value,
+                title="Test Show",
+                image="http://example.com/image.jpg",
+                season_number=1,
+            ),
+            user=self.user,
+            related_tv=tv,
+            status=Status.IN_PROGRESS.value,
+        )
+        Season.save_base(season)
+        episode_item = Item.objects.create(
+            media_id="123",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.EPISODE.value,
+            title="Test Episode",
+            image="http://example.com/image.jpg",
+            season_number=1,
+            episode_number=1,
+        )
+        Episode.objects.bulk_create(
+            [
+                Episode(
+                    item=episode_item, related_season=season, end_date=timezone.now()
+                ),
+                # Dated later, as Postgres puts entries without a date first
+                Episode(
+                    item=episode_item,
+                    related_season=season,
+                    status=Status.PLANNING_REPEAT.value,
+                    end_date=timezone.now() + timezone.timedelta(days=1),
+                ),
+            ],
+        )
+
+        JellyfinWebhookProcessor()._delete_tv_episode("123", 1, 1, self.user)
+
+        self.assertEqual(
+            list(Episode.objects.values_list("status", flat=True)),
+            [Status.PLANNING_REPEAT.value],
+        )
+
     def test_mark_unplayed_untracked_movie_does_not_create_item(self):
         """Test Jellyfin MarkUnplayed does not create metadata for missing media."""
         self.user.jellyfin_mark_unplayed_enabled = True
@@ -877,7 +933,6 @@ class JellyfinWebhookTests(TestCase):
             user=self.user,
             related_tv=tv,
             status=Status.PLANNING_REPEAT.value,
-            repeat_started_at=timezone.now(),
         )
         Season.save_base(season)
         payload = {
@@ -900,6 +955,7 @@ class JellyfinWebhookTests(TestCase):
             ],
         )
         Episode.objects.update(created_at=timezone.now() - timezone.timedelta(days=1))
+        season.plan_repeat_entries()
 
         self.client.post(
             self.url,
@@ -911,7 +967,9 @@ class JellyfinWebhookTests(TestCase):
         season.refresh_from_db()
         self.assertEqual(tv.status, Status.REPEATING.value)
         self.assertEqual(season.status, Status.REPEATING.value)
-        self.assertEqual(season.episodes.count(), 3)
+        self.assertEqual(season.episodes.watches().count(), 3)
+        # The play fulfils the first episode's entry to watch it again
+        self.assertEqual(season.next_repeat_episode_number, 2)
 
     def test_replayed_episode_of_finished_season_leaves_show_status(self):
         """Playing a finished season's episode again leaves its show as it was."""

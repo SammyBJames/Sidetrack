@@ -1034,6 +1034,15 @@ REPEAT_STATUSES = (Status.PLANNING_REPEAT.value, Status.REPEATING.value)
 WATCH_STATUS = Status.COMPLETED.value
 WATCHED_STATUSES = (WATCH_STATUS, *REPEAT_STATUSES)
 
+# The statuses of an episode's entries for a first watch not made yet. Entries
+# in REPEAT_STATUSES are for watching an episode watched before again.
+UNFINISHED_STATUSES = (
+    Status.PLANNING.value,
+    Status.IN_PROGRESS.value,
+    Status.PAUSED.value,
+    Status.DROPPED.value,
+)
+
 # The order a list sorted by status starts in
 STATUS_SORT_ORDER = (
     Status.IN_PROGRESS.value,
@@ -1387,6 +1396,7 @@ class TV(Media):
         tv_completed = True
         # What the seasons not finished are left as
         remaining_statuses = set()
+        previous_statuses = {}
 
         season_numbers = [
             season["season_number"]
@@ -1424,6 +1434,7 @@ class TV(Media):
                 )
 
                 if season_instance.status != target_status:
+                    previous_statuses[season_instance.pk] = season_instance.status
                     season_instance.status = target_status
                     seasons_to_update.append(season_instance)
 
@@ -1456,13 +1467,14 @@ class TV(Media):
             season_metadata = tv_with_seasons_metadata[
                 f"season/{season_instance.item.season_number}"
             ]
+            season_instance.move_entries(previous_statuses.get(season_instance.pk))
             episodes_to_create.extend(
                 season_instance.get_remaining_eps(
                     season_metadata,
                     current_date=current_date,
                 ),
             )
-        bulk_create_with_history(episodes_to_create, Episode)
+        save_watches(episodes_to_create)
 
         if episodes_to_create:
             created_episodes_count = len(episodes_to_create)
@@ -1507,7 +1519,7 @@ class TV(Media):
 
         Called when the user puts the show on their watchlist. Seasons with
         watched episodes, and seasons the user dropped or finished, are left as
-        they are.
+        they are. The episodes of the seasons planned are planned too.
         """
         tv_metadata = providers.services.get_media_metadata(
             self.item.media_type,
@@ -1522,6 +1534,7 @@ class TV(Media):
         }
         seasons_to_create = []
         seasons_to_update = []
+        previous_statuses = {}
 
         for season_data in tv_metadata.get("related", {}).get("seasons", []):
             season_number = season_data["season_number"]
@@ -1554,14 +1567,39 @@ class TV(Media):
                 season.status in (Status.IN_PROGRESS.value, Status.PAUSED.value)
                 and not season.watched_entries
             ):
+                previous_statuses[season.pk] = season.status
                 season.status = Status.PLANNING.value
                 seasons_to_update.append(season)
 
         bulk_create_with_history(seasons_to_create, Season)
         bulk_update_with_history(seasons_to_update, Season, ["status"])
+        for season in seasons_to_update:
+            season.move_entries(previous_statuses[season.pk])
+        # The episodes of its planned seasons are planned with them, from their
+        # seasons fetched together
+        planned = list(
+            self.seasons.filter(
+                item__season_number__gt=0,
+                status=Status.PLANNING.value,
+            ).select_related("item"),
+        )
+        if planned:
+            seasons_metadata = providers.services.get_media_metadata(
+                "tv_with_seasons",
+                self.item.media_id,
+                self.item.source,
+                [season.item.season_number for season in planned],
+            )
+        for season in planned:
+            season.plan_episodes(
+                seasons_metadata[f"season/{season.item.season_number}"]
+            )
 
     def _plan_repeat(self):
-        """Plan to rewatch the show's watched seasons, other than specials."""
+        """Plan to rewatch the show's watched seasons, other than specials.
+
+        Each of their watched episodes gets an entry to rewatch it.
+        """
         seasons = list(
             self.seasons.filter(
                 item__season_number__gt=0,
@@ -1570,15 +1608,11 @@ class TV(Media):
             .exclude(status__in=REPEAT_STATUSES)
             .distinct(),
         )
-        now = timezone.now()
         for season in seasons:
             season.status = Status.PLANNING_REPEAT.value
-            season.repeat_started_at = now
-        bulk_update_with_history(
-            seasons,
-            Season,
-            fields=["status", "repeat_started_at"],
-        )
+        bulk_update_with_history(seasons, Season, fields=["status"])
+        for season in seasons:
+            season.plan_repeat_entries()
 
     def _start_next_repeat_season(self, min_season_number=0):
         """Start rewatching the first planned season after a season number.
@@ -1629,7 +1663,7 @@ class TV(Media):
             episodes_to_create.extend(season.get_remaining_repeat_eps(now))
             season.status = Status.COMPLETED.value
 
-        bulk_create_with_history(episodes_to_create, Episode)
+        save_watches(episodes_to_create)
         bulk_update_with_history(seasons, Season, fields=["status"])
 
         if episodes_to_create:
@@ -1649,6 +1683,10 @@ class TV(Media):
         for season in seasons:
             season.status = Status.COMPLETED.value
         bulk_update_with_history(seasons, Season, fields=["status"])
+        Episode.objects.filter(
+            related_season__in=seasons,
+            status__in=REPEAT_STATUSES,
+        ).delete()
 
     def _waits_for_next_season(self):
         """Return whether the only seasons left to watch are planned and unaired.
@@ -1685,7 +1723,7 @@ class TV(Media):
         )
 
     def _mark_in_progress_seasons_as_dropped(self):
-        """Mark all in-progress seasons as dropped."""
+        """Mark all in-progress seasons as dropped, with their unfinished episodes."""
         in_progress_seasons = list(
             self.seasons.filter(status=Status.IN_PROGRESS.value),
         )
@@ -1699,6 +1737,8 @@ class TV(Media):
                 Season,
                 fields=["status"],
             )
+        for season in in_progress_seasons:
+            season.move_entries(Status.IN_PROGRESS.value)
 
     def _start_next_available_season(
         self,
@@ -1766,12 +1806,14 @@ class TV(Media):
                 break
 
             if next_unwatched_season.status != Status.IN_PROGRESS.value:
+                previous_status = next_unwatched_season.status
                 next_unwatched_season.status = Status.IN_PROGRESS.value
                 bulk_update_with_history(
                     [next_unwatched_season],
                     Season,
                     fields=["status"],
                 )
+                next_unwatched_season.move_entries(previous_status)
                 season_started = True
                 started_season_number = season_number
             else:
@@ -1873,12 +1915,6 @@ class Season(Media):
         on_delete=models.CASCADE,
         related_name="seasons",
     )
-    # When the season was last planned to be rewatched, so the episodes watched
-    # since are the ones watched again
-    repeat_started_at = models.DateTimeField(null=True, blank=True)
-    # The watched episodes planned to be watched again on their own, by number
-    planned_repeat_episodes = models.JSONField(default=list, blank=True)
-
     tracker = FieldTracker()
 
     class Meta:
@@ -1900,22 +1936,20 @@ class Season(Media):
 
     @tracker  # postpone field reset until after the save
     def save(self, *args, **kwargs):
-        """Save the media instance."""
+        """Save the season, moving its episodes' entries and its show on.
+
+        See `move_entries` for what a new status does to the entries.
+        """
         # if related_tv is not set
         if self.related_tv_id is None:
             self.related_tv = self.get_tv()
 
         repeat_status_from = self.tracker.previous("status")
-        if (
-            self.tracker.has_changed("status")
-            and self.status in REPEAT_STATUSES
-            and repeat_status_from not in REPEAT_STATUSES
-        ):
-            self.repeat_started_at = timezone.now()
 
         super(Media, self).save(*args, **kwargs)
 
         if self.tracker.has_changed("status"):
+            self.move_entries(repeat_status_from)
             if (
                 self.status == Status.COMPLETED.value
                 and repeat_status_from in REPEAT_STATUSES
@@ -1975,10 +2009,7 @@ class Season(Media):
             current_date=current_date,
         )
         if episodes_to_create:
-            bulk_create_with_history(
-                episodes_to_create,
-                Episode,
-            )
+            save_watches(episodes_to_create)
             created_episodes_count = len(episodes_to_create)
             episode_label = "episode" if created_episodes_count == 1 else "episodes"
             self.create_user_message(
@@ -1998,6 +2029,7 @@ class Season(Media):
                 Season,
                 fields=["status"],
             )
+            self.move_entries(Status.COMPLETED.value)
             self.create_user_message(
                 "was left in progress because unreleased episodes remain.",
                 level=UserMessageLevel.WARNING,
@@ -2018,7 +2050,7 @@ class Season(Media):
         """
         now = timezone.now().replace(second=0, microsecond=0)
         episodes_to_create = self.get_remaining_repeat_eps(now)
-        bulk_create_with_history(episodes_to_create, Episode)
+        save_watches(episodes_to_create)
         if episodes_to_create:
             count = len(episodes_to_create)
             self.create_user_message(
@@ -2051,44 +2083,175 @@ class Season(Media):
         return min(counts.values()) if counts else 0
 
     @property
-    def repeated_episodes(self):
-        """Return the watches of episodes made in the rewatch."""
-        if self.status not in REPEAT_STATUSES or self.repeat_started_at is None:
-            return []
+    def repeat_entries(self):
+        """Return the season's entries for watching an episode again, still to do.
+
+        Planning a rewatch adds one for each watched episode, and watching the
+        episode turns it into a watch.
+        """
         return [
             episode
-            for episode in self.watches
-            if episode.created_at >= self.repeat_started_at
+            for episode in self.episodes.all()
+            if episode.status in REPEAT_STATUSES
         ]
 
     @property
     def repeated_episode_numbers(self):
-        """Return the numbers of the episodes watched again in the rewatch."""
-        return {episode.item.episode_number for episode in self.repeated_episodes}
+        """Return the numbers of the episodes watched again in the season's rewatch.
+
+        Those are its watched episodes with no entry left to watch them again.
+        Seasons not being rewatched have none.
+        """
+        if self.status not in REPEAT_STATUSES:
+            return set()
+        left = {episode.item.episode_number for episode in self.repeat_entries}
+        return {episode.item.episode_number for episode in self.watches} - left
 
     @property
     def next_repeat_episode_number(self):
-        """Return the first episode left to watch again in the rewatch, or None.
-
-        A rewatch goes through the episodes watched before.
-        """
-        left = {
-            episode.item.episode_number for episode in self.watched_entries
-        } - self.repeated_episode_numbers
-        return min(left) if left else None
+        """Return the first episode left to watch again, or None."""
+        return min(
+            (episode.item.episode_number for episode in self.repeat_entries),
+            default=None,
+        )
 
     def get_remaining_repeat_eps(self, end_date):
-        """Return the watches needed to finish the season's rewatch."""
-        rewatched = self.repeated_episode_numbers
-        items = {
-            episode.item.episode_number: episode.item
-            for episode in self.watched_entries
-            if episode.item.episode_number not in rewatched
-        }
-        return [
-            Episode(related_season=self, item=items[number], end_date=end_date)
-            for number in sorted(items)
+        """Return the entries left to watch again, each made a watch on a date.
+
+        They're saved with `save_watches`.
+        """
+        entries = sorted(
+            self.repeat_entries,
+            key=lambda episode: episode.item.episode_number,
+        )
+        for entry in entries:
+            entry.status = WATCH_STATUS
+            entry.end_date = end_date
+        return entries
+
+    def move_entries(self, previous_status):
+        """Move the season's episode entries on after its status changed.
+
+        `previous_status` is the status before the change. Pausing or dropping
+        it pauses or drops its unfinished entries, and starting or planning it
+        resumes them: those with a start date in
+        progress when it's started, the others planned. Planning a rewatch plans
+        one for each watched episode, and leaving a rewatch other than by
+        finishing it drops what was left of it. Episodes without an entry are
+        planned by `plan_episodes`, as that looks their season up.
+        """
+        entries = Episode.objects.filter(related_season=self)
+        if self.status in (Status.PAUSED.value, Status.DROPPED.value):
+            entries.filter(status__in=UNFINISHED_STATUSES).update(status=self.status)
+        elif self.status == Status.IN_PROGRESS.value:
+            stopped = (Status.PAUSED.value, Status.DROPPED.value)
+            entries.filter(status__in=stopped, start_date__isnull=False).update(
+                status=Status.IN_PROGRESS.value,
+            )
+            entries.filter(status__in=stopped).update(status=Status.PLANNING.value)
+        elif self.status == Status.PLANNING.value:
+            entries.filter(
+                status__in=(Status.PAUSED.value, Status.DROPPED.value),
+            ).update(status=Status.PLANNING.value)
+
+        if self.status in REPEAT_STATUSES and previous_status not in REPEAT_STATUSES:
+            self.plan_repeat_entries()
+        elif previous_status in REPEAT_STATUSES and self.status not in (
+            WATCH_STATUS,
+            *REPEAT_STATUSES,
+        ):
+            entries.filter(status__in=REPEAT_STATUSES).delete()
+
+    def plan_episodes(self, season_metadata=None):
+        """Plan each of the season's known episodes that has no entry yet.
+
+        Called when the user plans the season, or its show. `season_metadata`
+        is fetched when it isn't given.
+        """
+        if season_metadata is None:
+            season_metadata = providers.services.get_media_metadata(
+                MediaTypes.SEASON.value,
+                self.item.media_id,
+                self.item.source,
+                [self.item.season_number],
+            )
+        tracked = set(
+            Episode.objects.filter(related_season=self).values_list(
+                "item__episode_number",
+                flat=True,
+            ),
+        )
+        numbers = [
+            episode["episode_number"]
+            for episode in season_metadata["episodes"]
+            if episode["episode_number"] not in tracked
         ]
+        items = self._episode_items(season_metadata, numbers)
+        Episode.objects.bulk_create(
+            [
+                Episode(
+                    related_season=self,
+                    item=items[number],
+                    status=Status.PLANNING.value,
+                )
+                for number in numbers
+            ],
+        )
+
+    def plan_repeat_entries(self):
+        """Plan to watch again each watched episode not planned to be already."""
+        entries = list(Episode.objects.filter(related_season=self))
+        planned = {
+            entry.item_id for entry in entries if entry.status in REPEAT_STATUSES
+        }
+        watched = {
+            entry.item_id
+            for entry in entries
+            if entry.is_watch and entry.item_id not in planned
+        }
+        Episode.objects.bulk_create(
+            [
+                Episode(
+                    related_season=self,
+                    item_id=item_id,
+                    status=Status.PLANNING_REPEAT.value,
+                )
+                for item_id in sorted(watched)
+            ],
+        )
+
+    def _episode_items(self, season_metadata, numbers):
+        """Return the items of some of the season's episodes by number.
+
+        Those missing are created.
+        """
+        existing = Item.objects.filter(
+            media_id=self.item.media_id,
+            source=self.item.source,
+            media_type=MediaTypes.EPISODE.value,
+            season_number=self.item.season_number,
+            episode_number__in=numbers,
+        )
+        items = {item.episode_number: item for item in existing}
+        missing = [
+            Item(
+                media_id=self.item.media_id,
+                source=self.item.source,
+                media_type=MediaTypes.EPISODE.value,
+                season_number=self.item.season_number,
+                episode_number=episode["episode_number"],
+                title=self.item.title,
+                image=_episode_image(episode),
+            )
+            for episode in season_metadata["episodes"]
+            if episode["episode_number"] in numbers
+            and episode["episode_number"] not in items
+        ]
+        if missing:
+            # Another request may have made some meanwhile
+            Item.objects.bulk_create(missing, ignore_conflicts=True)
+            items = {item.episode_number: item for item in existing.all()}
+        return items
 
     def _get_latest_watched_episode_number(self):
         """Return the highest watched episode number for the season."""
@@ -2224,34 +2387,67 @@ class Season(Media):
             logger.info("No more episodes to watch.")
 
     def watch(self, episode_number, end_date, notes=""):
-        """Create or add a repeat to an episode of the season."""
-        item = self.get_episode_item(episode_number)
+        """Watch an episode of the season, turning the entry planning it into a watch.
 
-        episode = Episode.objects.create(
-            related_season=self,
-            item=item,
-            end_date=end_date,
-            notes=notes,
+        While the season is rewatched, that's its entry to watch it again, else
+        its first watch's, else one planning to watch it again on its own. An
+        episode without one gets a new watch. Notes, when given, replace the
+        entry's.
+        """
+        item = self.get_episode_item(episode_number)
+        first = (
+            REPEAT_STATUSES if self.status in REPEAT_STATUSES else UNFINISHED_STATUSES
         )
-        logger.info(
-            "%s created successfully.",
-            episode,
+        entry = min(
+            Episode.objects.filter(related_season=self, item=item).exclude(
+                status=WATCH_STATUS,
+            ),
+            key=lambda entry: (entry.status not in first, entry.created_at),
+            default=None,
         )
+        if entry is None:
+            entry = Episode(related_season=self, item=item, notes=notes)
+        elif notes:
+            entry.notes = notes
+        entry.status = WATCH_STATUS
+        entry.end_date = end_date
+        entry.save()
+        logger.info("%s watched.", entry)
 
     def decrease_progress(self):
         """Unwatch the current episode of the season."""
         if self.status in REPEAT_STATUSES:
-            # Undo the latest watch of the rewatch
-            latest = max(
-                self.repeated_episodes,
-                key=lambda episode: episode.created_at,
-                default=None,
-            )
-            if latest is not None:
-                latest.delete()
+            self._undo_latest_repeat()
             return
 
         self.unwatch(self.progress)
+
+    def _undo_latest_repeat(self):
+        """Plan to watch again the episode last watched again in the rewatch.
+
+        Its latest watch goes back to being the entry to watch it again.
+        """
+        rewatched = self.repeated_episode_numbers
+        counts = Counter(episode.item.episode_number for episode in self.watches)
+        latest = max(
+            (
+                episode
+                for episode in self.watches
+                if episode.item.episode_number in rewatched
+                # An earlier watch stays, as rewatching added one
+                and counts[episode.item.episode_number] > 1
+            ),
+            key=lambda episode: (
+                episode.end_date is not None,
+                episode.end_date or episode.created_at,
+                episode.created_at,
+            ),
+            default=None,
+        )
+        if latest is not None:
+            latest.status = Status.PLANNING_REPEAT.value
+            latest.end_date = None
+            latest.save()
 
     def unwatch(self, episode_number):
         """Unwatch the episode instance."""
@@ -2343,8 +2539,29 @@ class Season(Media):
         season_metadata,
         current_date,
     ):
-        """Return episodes needed to complete a season."""
+        """Return the watches needed to complete a season, saved by `save_watches`.
+
+        Each released episode after the latest watched gets one, and so does
+        every released episode not watched with an unfinished entry, which
+        becomes it.
+        """
         latest_watched_ep_num = self._get_latest_watched_episode_number()
+        unfinished = {}
+        if self.pk is not None:
+            unfinished = {
+                entry.item.episode_number: entry
+                for entry in Episode.objects.filter(
+                    related_season=self,
+                    status__in=UNFINISHED_STATUSES,
+                )
+                # An episode watched already isn't watched again
+                .exclude(
+                    item__in=Episode.objects.watches()
+                    .filter(related_season=self)
+                    .values("item"),
+                )
+                .select_related("item")
+            }
         episodes_to_create = []
 
         # Calculate current time once before the loop
@@ -2352,26 +2569,22 @@ class Season(Media):
 
         # Create Episode objects for the remaining episodes
         for episode in reversed(season_metadata["episodes"]):
-            if episode["episode_number"] <= latest_watched_ep_num:
-                break
-
-            if not app.helpers.is_released_date(
+            entry = unfinished.get(episode["episode_number"])
+            if (
+                episode["episode_number"] <= latest_watched_ep_num and entry is None
+            ) or not app.helpers.is_released_date(
                 episode.get("air_date"),
                 current_date,
             ):
                 continue
 
-            item = self.get_episode_item(episode["episode_number"], season_metadata)
-
+            if entry is None:
+                item = self.get_episode_item(episode["episode_number"], season_metadata)
+                entry = Episode(related_season=self, item=item)
+            entry.status = WATCH_STATUS
             # Resolve end_date based on user preference
-            end_date = self.user.resolve_watch_date(now, episode.get("air_date"))
-
-            episode_db = Episode(
-                related_season=self,
-                item=item,
-                end_date=end_date,
-            )
-            episodes_to_create.append(episode_db)
+            entry.end_date = self.user.resolve_watch_date(now, episode.get("air_date"))
+            episodes_to_create.append(entry)
 
         return episodes_to_create
 
@@ -2385,19 +2598,14 @@ class Season(Media):
                 [self.item.season_number],
             )
 
-        image = settings.IMG_NONE
-        for episode in season_metadata["episodes"]:
-            if episode["episode_number"] == int(episode_number):
-                if episode.get("still_path"):
-                    image = (
-                        f"https://image.tmdb.org/t/p/original{episode['still_path']}"
-                    )
-                elif "image" in episode:
-                    # for manual seasons
-                    image = episode["image"]
-                else:
-                    image = settings.IMG_NONE
-                break
+        image = next(
+            (
+                _episode_image(episode)
+                for episode in season_metadata["episodes"]
+                if episode["episode_number"] == int(episode_number)
+            ),
+            settings.IMG_NONE,
+        )
 
         item, _ = Item.objects.get_or_create(
             media_id=self.item.media_id,
@@ -2412,6 +2620,50 @@ class Season(Media):
         )
 
         return item
+
+
+def _episode_image(episode):
+    """Return the image of an episode as its season's metadata lists it."""
+    if episode.get("still_path"):
+        return f"https://image.tmdb.org/t/p/original{episode['still_path']}"
+    # Manual seasons give their episodes' own
+    return episode.get("image", settings.IMG_NONE)
+
+
+def save_watches(episodes):
+    """Save episode entries made watches, creating the new ones and updating the rest.
+
+    Like other bulk saves, it doesn't move their seasons on, but the watches
+    fulfil their episodes' other entries, as `settle_plans` does.
+    """
+    bulk_create_with_history(
+        [episode for episode in episodes if episode.pk is None],
+        Episode,
+    )
+    bulk_update_with_history(
+        [episode for episode in episodes if episode.pk is not None],
+        Episode,
+        fields=["status", "end_date"],
+    )
+    settle_plans(episodes)
+
+
+def settle_plans(episodes):
+    """Delete the entries still to do of episodes given watches saved in bulk.
+
+    A watch fulfils its episode's plans, as saving one does. `episodes` are
+    saved entries of one user's seasons, and those that aren't watches stay.
+    """
+    watches = [episode for episode in episodes if episode.is_watch]
+    if not watches:
+        return
+    # An episode's item is in only one of a user's seasons
+    Episode.objects.filter(
+        related_season_id__in={episode.related_season_id for episode in watches},
+        item_id__in={episode.item_id for episode in watches},
+    ).exclude(status=WATCH_STATUS).exclude(
+        pk__in=[episode.pk for episode in episodes],
+    ).delete()
 
 
 class EpisodeQuerySet(models.QuerySet):
@@ -2460,6 +2712,7 @@ class Episode(models.Model):
     )
 
     objects = EpisodeQuerySet.as_manager()
+    tracker = FieldTracker(fields=["status"])
 
     class Meta:
         """Meta options for the model."""
@@ -2475,23 +2728,35 @@ class Episode(models.Model):
         """Return the season and episode number."""
         return self.item.__str__()
 
+    @tracker  # postpone field reset until after the save
     def save(self, *args, **kwargs):
-        """Save the episode instance, moving its season and show on when it's new.
+        """Save the entry, moving its season and show on when it becomes a watch.
 
-        Changing a watch's date, notes or score leaves their statuses as they are.
+        A watch fulfils the episode's other entries still to do, which are
+        deleted. An entry that stops being a watch moves them back, as deleting
+        it does. Changing anything else leaves their statuses as they are.
         """
-        is_new = self._state.adding
+        was_watch = (
+            not self._state.adding and self.tracker.previous("status") == WATCH_STATUS
+        )
         super().save(*args, **kwargs)
-        if not is_new:
-            return
-
-        season = self.related_season
-        if self.item.episode_number in season.planned_repeat_episodes:
-            # Watched again as planned
-            season.planned_repeat_episodes.remove(self.item.episode_number)
-            Season.objects.filter(pk=season.pk).update(
-                planned_repeat_episodes=season.planned_repeat_episodes,
+        if self.is_watch and not was_watch:
+            Episode.objects.filter(
+                related_season_id=self.related_season_id,
+                item_id=self.item_id,
+            ).exclude(status=WATCH_STATUS).delete()
+            self._move_parents_on()
+        elif was_watch and not self.is_watch:
+            season = self.related_season
+            self._update_parent_statuses_after_delete(
+                season,
+                season.related_tv,
+                self.item.episode_number,
             )
+
+    def _move_parents_on(self):
+        """Move the season and show on now that the episode was watched."""
+        season = self.related_season
         if season.status in REPEAT_STATUSES:
             self._continue_repeat(season)
             return
@@ -2532,12 +2797,15 @@ class Episode(models.Model):
                 )
 
         elif self.related_season.status != Status.IN_PROGRESS.value:
+            previous_status = self.related_season.status
             self.related_season.status = Status.IN_PROGRESS.value
             bulk_update_with_history(
                 [self.related_season],
                 Season,
                 fields=["status"],
             )
+            # A paused or dropped season's other episodes are resumed with it
+            self.related_season.move_entries(previous_status)
 
         if season_just_completed:
             self.related_season.related_tv._handle_completed_season(season_number)
@@ -2584,14 +2852,21 @@ class Episode(models.Model):
         tv.continue_repeat()
 
     def delete(self, *args, **kwargs):
-        """Delete the episode instance and update parent statuses if needed."""
+        """Delete the entry, moving its season and show back when it was a watch."""
         season = self.related_season
         tv = season.related_tv
         deleted_episode_number = self.item.episode_number
+        was_watch = self.is_watch
 
-        super().delete(*args, **kwargs)
+        result = super().delete(*args, **kwargs)
 
-        self._update_parent_statuses_after_delete(season, tv, deleted_episode_number)
+        if was_watch:
+            self._update_parent_statuses_after_delete(
+                season,
+                tv,
+                deleted_episode_number,
+            )
+        return result
 
     def _update_parent_statuses_after_delete(self, season, tv, deleted_episode_number):
         """Move completed parents back to in progress after unwatching progress."""

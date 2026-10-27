@@ -307,9 +307,93 @@ class SyncExistingMediaTest(TestCase):
         )
 
         season = Season.objects.get(user=self.user)
-        self.assertIsNotNone(season.repeat_started_at)
+        # Each episode imported is planned to be watched again
+        self.assertEqual(
+            [episode.item.episode_number for episode in season.repeat_entries],
+            [1, 2],
+        )
         self.assertEqual(season.progress, 0)
         self.assertEqual(season.next_repeat_episode_number, 1)
+
+    def tracked_season(self, status):
+        """Track a show's first season in a status, without its cascades."""
+        tv = TV(
+            item=Item.objects.create(
+                media_id="1668",
+                source=Sources.TMDB.value,
+                media_type=MediaTypes.TV.value,
+                title="Friends",
+            ),
+            user=self.user,
+            status=status,
+        )
+        TV.save_base(tv)
+        season = Season(
+            item=Item.objects.create(
+                media_id="1668",
+                source=Sources.TMDB.value,
+                media_type=MediaTypes.SEASON.value,
+                title="Friends",
+                season_number=1,
+            ),
+            user=self.user,
+            related_tv=tv,
+            status=status,
+        )
+        Season.save_base(season)
+        return season
+
+    def episode_entry(self, season, number, status=Status.COMPLETED.value):
+        """Return an unsaved entry of an episode of a season."""
+        item, _ = Item.objects.get_or_create(
+            media_id="1668",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.EPISODE.value,
+            season_number=1,
+            episode_number=number,
+            defaults={"title": "Friends"},
+        )
+        return Episode(related_season=season, item=item, status=status)
+
+    def test_imported_watches_fulfil_their_episodes_plans(self):
+        """An episode imported as watched loses its planned entry, not others'."""
+        season = self.tracked_season(Status.PLANNING.value)
+        Episode.objects.bulk_create(
+            [
+                self.episode_entry(season, number, Status.PLANNING.value)
+                for number in (1, 2)
+            ],
+        )
+
+        helpers.bulk_create_media(
+            {MediaTypes.EPISODE.value: [self.episode_entry(season, 1)]},
+            self.user,
+        )
+
+        self.assertEqual(
+            sorted(Episode.objects.values_list("item__episode_number", "status")),
+            [(1, Status.COMPLETED.value), (2, Status.PLANNING.value)],
+        )
+
+    def test_import_leaves_a_rewatch_under_way(self):
+        """A season already being rewatched isn't planned to be rewatched again."""
+        season = self.tracked_season(Status.REPEATING.value)
+        Episode.objects.bulk_create(
+            [
+                self.episode_entry(season, 1),
+                self.episode_entry(season, 1),
+                self.episode_entry(season, 2),
+                self.episode_entry(season, 2, Status.PLANNING_REPEAT.value),
+            ],
+        )
+
+        helpers.bulk_create_media({}, self.user)
+
+        season = Season.objects.get(pk=season.pk)
+        self.assertEqual(
+            [entry.item.episode_number for entry in season.repeat_entries],
+            [2],
+        )
 
     def test_show_sync_does_not_query_dates(self):
         """Syncing a show doesn't query its episodes for dates it isn't given."""

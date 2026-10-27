@@ -1,9 +1,8 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
-from django.utils import timezone
 
 from app import statistics
 from app.forms import EpisodeForm
@@ -200,30 +199,29 @@ class EpisodeStatusTests(TestCase):
             Episode.objects.exclude(status=Status.COMPLETED.value).count(), 3
         )
 
-    def test_entries_planned_or_being_rewatched_count_as_watched(self):
-        """A rewatch goes through every watched episode, as its entries tell."""
+    def test_a_rewatch_goes_through_its_entries_to_watch_again(self):
+        """Episodes with an entry to watch them again are left, then become watches."""
         Episode.objects.all().delete()
-        started = timezone.now() - timedelta(hours=1)
         self.season.status = Status.REPEATING.value
-        self.season.repeat_started_at = started
         Season.save_base(self.season)
-        old = self.add(1, Status.COMPLETED.value, day(1))
-        Episode.objects.filter(pk=old.pk).update(created_at=started - timedelta(days=1))
+        self.add(1, Status.COMPLETED.value, day(1))
         self.add(1, Status.COMPLETED.value, day(2))
+        self.add(2, Status.COMPLETED.value, day(1))
         self.add(2, Status.PLANNING_REPEAT.value)
+        self.add(3, Status.COMPLETED.value, day(1))
         self.add(3, Status.REPEATING.value)
         self.add(4, Status.PLANNING.value)
         season = self.fresh_season()
 
         self.assertEqual(season.repeated_episode_numbers, {1})
+        self.assertEqual(season.progress, 1)
         self.assertEqual(season.next_repeat_episode_number, 2)
+        remaining = season.get_remaining_repeat_eps(day(3))
         self.assertEqual(
-            [
-                episode.item.episode_number
-                for episode in season.get_remaining_repeat_eps(day(3))
-            ],
-            [2, 3],
+            [(episode.item.episode_number, episode.status) for episode in remaining],
+            [(2, Status.COMPLETED.value), (3, Status.COMPLETED.value)],
         )
+        self.assertTrue(all(episode.pk for episode in remaining))
 
     def test_season_page_lists_watches_and_whether_watched(self):
         """An episode's history is its watches, and planned rewatches show it seen."""
@@ -267,9 +265,18 @@ class EpisodeStatusTests(TestCase):
     def test_repeat_state_goes_by_whether_the_episode_was_watched(self):
         """An episode only planned again was watched, and one only planned wasn't."""
         self.season.status = Status.REPEATING.value
-        self.season.repeat_started_at = timezone.now()
-        rewatch_planned = {"episode_number": 3, "watched": True, "history": []}
-        planned = {"episode_number": 4, "watched": False, "history": []}
+        rewatch_planned = {
+            "episode_number": 3,
+            "watched": True,
+            "repeat_planned": True,
+            "history": [],
+        }
+        planned = {
+            "episode_number": 4,
+            "watched": False,
+            "repeat_planned": False,
+            "history": [],
+        }
 
         self.assertEqual(repeat_state(rewatch_planned, self.season), "left")
         self.assertEqual(repeat_state(planned, self.season), "")

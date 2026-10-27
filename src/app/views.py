@@ -36,7 +36,7 @@ from app.forms import (
 from app.models import (
     REPEAT_STATUSES,
     TV,
-    WATCHED_STATUSES,
+    WATCH_STATUS,
     BasicMedia,
     Episode,
     Item,
@@ -932,27 +932,24 @@ def media_save(request):
         model = apps.get_model(app_label="app", model_name=media_type)
         instance = model(item=item, user=request.user)
 
-    # Whether the show was already planned, so only a move to Planning plans its seasons
-    was_planned = (
-        media_type == MediaTypes.TV.value
-        and instance.pk is not None
-        and instance.status == Status.PLANNING.value
-    )
+    # Whether the show or season was already planned, so only a move to
+    # Planning plans its seasons or episodes
+    was_planned = instance.pk is not None and instance.status == Status.PLANNING.value
 
     # Validate the form and save the instance if it's valid
     form_class = get_form_class(media_type)
     form = form_class(request.POST, instance=instance)
     if form.is_valid():
-        # A show put on the watchlist brings its seasons with it, or isn't
-        # saved at all when they can't be planned, so saving again plans them
+        # A show put on the watchlist brings its seasons with it, and a season
+        # its episodes, or isn't saved at all when they can't be planned, so
+        # saving again plans them
         with transaction.atomic():
             form.save()
-            if (
-                media_type == MediaTypes.TV.value
-                and instance.status == Status.PLANNING.value
-                and not was_planned
-            ):
-                instance.plan_seasons()
+            if instance.status == Status.PLANNING.value and not was_planned:
+                if media_type == MediaTypes.TV.value:
+                    instance.plan_seasons()
+                elif media_type == MediaTypes.SEASON.value:
+                    instance.plan_episodes()
         logger.info("%s saved successfully.", form.instance)
     else:
         logger.error(form.errors.as_json())
@@ -1342,20 +1339,16 @@ def episode_save(request):
 
         logger.info("%s did not exist, it was created successfully.", related_season)
 
-    # One click is only offered for an unwatched episode, so a second one, e.g.
-    # while the page reloads, doesn't add another watch
-    # While the season is rewatched, that's an episode not watched again yet
-    already_watched = Episode.objects.watches().filter(
-        related_season=related_season,
-        item__episode_number=episode_number,
+    # One click is only offered for an episode not watched, or planned to be
+    # watched again, so a second one, e.g. while the page reloads, doesn't add
+    # another watch
+    statuses = set(
+        related_season.episodes.filter(
+            item__episode_number=episode_number,
+        ).values_list("status", flat=True),
     )
-    if episode_number in related_season.planned_repeat_episodes:
-        already_watched = already_watched.none()
-    elif related_season.status in REPEAT_STATUSES and related_season.repeat_started_at:
-        already_watched = already_watched.filter(
-            created_at__gte=related_season.repeat_started_at,
-        )
-    if not (request.POST.get("quick") and already_watched.exists()):
+    already_watched = WATCH_STATUS in statuses and not statuses & set(REPEAT_STATUSES)
+    if not (request.POST.get("quick") and already_watched):
         related_season.watch(episode_number, end_date, notes)
 
     return helpers.redirect_back(request)
@@ -1363,7 +1356,10 @@ def episode_save(request):
 
 @require_POST
 def episode_plan_repeat(request):
-    """Plan to watch a watched episode of the user's season again on its own."""
+    """Plan to watch a watched episode of the user's season again on its own.
+
+    It gets an entry to watch it again, unless it has one already.
+    """
     season = get_object_or_404(
         Season,
         item__media_id=request.POST["media_id"],
@@ -1372,14 +1368,17 @@ def episode_plan_repeat(request):
         user=request.user,
     )
     episode_number = int(request.POST["episode_number"])
-    watched = season.episodes.filter(
-        item__episode_number=episode_number,
-        status__in=WATCHED_STATUSES,
-    ).exists()
-    if watched and episode_number not in season.planned_repeat_episodes:
-        season.planned_repeat_episodes.append(episode_number)
-        Season.objects.filter(pk=season.pk).update(
-            planned_repeat_episodes=season.planned_repeat_episodes,
+    entries = list(season.episodes.filter(item__episode_number=episode_number))
+    statuses = {entry.status for entry in entries}
+    if WATCH_STATUS in statuses and not statuses & set(REPEAT_STATUSES):
+        Episode.objects.bulk_create(
+            [
+                Episode(
+                    related_season=season,
+                    item_id=entries[0].item_id,
+                    status=Status.PLANNING_REPEAT.value,
+                ),
+            ],
         )
         logger.info("Planned to rewatch %s E%s", season, episode_number)
     return helpers.redirect_back(request)

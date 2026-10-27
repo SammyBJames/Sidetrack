@@ -407,20 +407,16 @@ def unreleased(air_date):
 def repeat_state(episode, season):
     """Return where a rewatch of one of a season's episodes is.
 
-    While the season is rewatched, that's "done" once the episode is watched
-    again and "left" while it's still to be. Otherwise, it's "planned" for a
-    watched episode planned to be watched again on its own. It's "" for the
-    rest, like episodes not watched before.
+    While the season is rewatched, that's "left" while the episode has an
+    entry to watch it again and "done" once it's watched. Otherwise, it's
+    "planned" for a watched episode planned to be watched again on its own. It's
+    "" for the rest, like episodes not watched before.
     """
     if season is None or not episode["watched"]:
         return ""
     if season.status in REPEAT_STATUSES:
-        if episode["episode_number"] in season.repeated_episode_numbers:
-            return "done"
-        return "left"
-    if episode["episode_number"] in season.planned_repeat_episodes:
-        return "planned"
-    return ""
+        return "left" if episode["repeat_planned"] else "done"
+    return "planned" if episode["repeat_planned"] else ""
 
 
 @register.simple_tag

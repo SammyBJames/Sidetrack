@@ -257,6 +257,8 @@ class QuickActionViewTests(TestCase):
                     for number in (0, 1, 2)
                 ],
             },
+            # Its seasons, when they're asked for
+            **{f"season/{number}": {"episodes": []} for number in (1, 2)},
         }
         item = Item.objects.create(
             media_id="3",
@@ -297,6 +299,7 @@ class QuickActionViewTests(TestCase):
             },
             # Each season, when one is asked for
             "season/1": {"episodes": [{"episode_number": 1}, {"episode_number": 2}]},
+            "season/2": {"episodes": []},
             "episodes": [{"episode_number": 1}, {"episode_number": 2}],
         }
         item = Item.objects.create(
@@ -321,9 +324,10 @@ class QuickActionViewTests(TestCase):
         self.assertEqual(tv.status, Status.IN_PROGRESS.value)
         season = tv.seasons.get(item__season_number=1)
         self.assertEqual(season.status, Status.IN_PROGRESS.value)
+        # The planned second episode is still to watch
         self.assertEqual(
-            list(season.episodes.values_list("item__episode_number", flat=True)),
-            [1],
+            list(season.episodes.values_list("item__episode_number", "status")),
+            [(1, Status.COMPLETED.value), (2, Status.PLANNING.value)],
         )
         self.assertEqual(
             tv.seasons.get(item__season_number=2).status,
@@ -341,6 +345,8 @@ class QuickActionViewTests(TestCase):
             "related": {
                 "seasons": [{"season_number": 1, "image": "http://example.com/s.jpg"}],
             },
+            # Its season, when it's asked for
+            "season/1": {"episodes": []},
         }
 
         self.client.post(
@@ -414,6 +420,8 @@ class QuickActionViewTests(TestCase):
                     for number in (1, 2, 3)
                 ],
             },
+            # Its seasons, when they're asked for
+            **{f"season/{number}": {"episodes": []} for number in (1, 3)},
         }
 
         self.client.post(
