@@ -412,6 +412,107 @@ class SyncExistingMediaTest(TestCase):
             [2],
         )
 
+    def test_import_leaves_a_rewatch_with_nothing_left_alone(self):
+        """Importing other media doesn't start over a season's rewatch."""
+        season = self.tracked_season(Status.REPEATING.value)
+        Episode.objects.bulk_create(
+            [
+                self.episode_entry(season, 1),
+                self.episode_entry(season, 1),
+                self.episode_entry(season, 2),
+                self.episode_entry(season, 2),
+            ],
+        )
+
+        helpers.bulk_create_media({}, self.user)
+
+        season = Season.objects.get(pk=season.pk)
+        self.assertEqual(season.repeat_entries, [])
+        self.assertEqual(season.repeated_episode_numbers, {1, 2})
+
+    def test_season_an_import_moves_into_a_rewatch_plans_it(self):
+        """An existing season the import sets rewatching rewatches its episodes."""
+        season = self.tracked_season(Status.PLANNING.value)
+        Episode.objects.bulk_create([self.episode_entry(season, 1)])
+        season = Season.objects.get(pk=season.pk)
+        season.status = Status.REPEATING.value
+
+        helpers.bulk_update_media(
+            {MediaTypes.SEASON.value: {season.pk: season}},
+            helpers.EXISTING_MEDIA_UPDATE_FIELDS,
+            self.user,
+        )
+
+        season = Season.objects.get(pk=season.pk)
+        self.assertEqual(
+            [entry.item.episode_number for entry in season.repeat_entries],
+            [1],
+        )
+
+    def test_import_of_the_last_episode_left_to_rewatch_finishes_the_rewatch(self):
+        """A watch imported for the last episode left to rewatch finishes it."""
+        season = self.tracked_season(Status.REPEATING.value)
+        Episode.objects.bulk_create(
+            [
+                self.episode_entry(season, 1),
+                self.episode_entry(season, 1),
+                self.episode_entry(season, 2),
+                self.episode_entry(season, 2, Status.PLANNING_REPEAT.value),
+            ],
+        )
+
+        helpers.bulk_create_media(
+            {MediaTypes.EPISODE.value: [self.episode_entry(season, 2)]},
+            self.user,
+        )
+
+        season = Season.objects.get(pk=season.pk)
+        self.assertEqual(season.status, Status.COMPLETED.value)
+        self.assertEqual(season.plays, 2)
+
+    def test_season_an_import_completes_drops_its_rewatch(self):
+        """An existing season the import sets completed has no rewatch left."""
+        season = self.tracked_season(Status.REPEATING.value)
+        Episode.objects.bulk_create(
+            [
+                self.episode_entry(season, 1),
+                self.episode_entry(season, 1, Status.PLANNING_REPEAT.value),
+            ],
+        )
+        season = Season.objects.get(pk=season.pk)
+        season.status = Status.COMPLETED.value
+
+        helpers.bulk_update_media(
+            {MediaTypes.SEASON.value: {season.pk: season}},
+            helpers.EXISTING_MEDIA_UPDATE_FIELDS,
+            self.user,
+        )
+
+        self.assertEqual(
+            list(Episode.objects.values_list("status", flat=True)),
+            [Status.COMPLETED.value],
+        )
+
+    def test_season_an_import_starts_rewatching_keeps_its_rewatch(self):
+        """A planned rewatch the import sets rewatching keeps what's left of it."""
+        season = self.tracked_season(Status.PLANNING_REPEAT.value)
+        Episode.objects.bulk_create(
+            [
+                self.episode_entry(season, 1),
+                self.episode_entry(season, 1, Status.PLANNING_REPEAT.value),
+            ],
+        )
+        season = Season.objects.get(pk=season.pk)
+        season.status = Status.REPEATING.value
+
+        helpers.bulk_update_media(
+            {MediaTypes.SEASON.value: {season.pk: season}},
+            helpers.EXISTING_MEDIA_UPDATE_FIELDS,
+            self.user,
+        )
+
+        self.assertEqual(len(Season.objects.get(pk=season.pk).repeat_entries), 1)
+
     def test_show_sync_does_not_query_dates(self):
         """Syncing a show doesn't query its episodes for dates it isn't given."""
         item = Item.objects.create(

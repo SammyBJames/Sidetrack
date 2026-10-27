@@ -1462,6 +1462,15 @@ class TV(Media):
 
         bulk_create_with_history(seasons_to_create, Season)
         bulk_update_with_history(seasons_to_update, Season, ["status"])
+        # Completing the show gives up its seasons' rewatches, as `_cancel_repeat`
+        Episode.objects.filter(
+            related_season_id__in=[
+                pk
+                for pk, status in previous_statuses.items()
+                if status in REPEAT_STATUSES
+            ],
+            status__in=REPEAT_STATUSES,
+        ).delete()
 
         for season_instance in seasons_to_create + seasons_to_update:
             season_metadata = tv_with_seasons_metadata[
@@ -2115,6 +2124,28 @@ class Season(Media):
             default=None,
         )
 
+    def finish_repeat_if_done(self):
+        """Finish the season's rewatch when no episode is left to watch again.
+
+        It's reloaded first, to see its entries as saved. Returns whether it
+        was finished, which moves its show on.
+        """
+        self.refresh_from_db()
+        if (
+            self.status not in REPEAT_STATUSES
+            or self.next_repeat_episode_number is not None
+        ):
+            return False
+
+        self.status = Status.COMPLETED.value
+        bulk_update_with_history([self], Season, fields=["status"])
+        self.create_user_message(
+            "was marked as rewatched automatically.",
+            level=UserMessageLevel.SUCCESS,
+        )
+        self.related_tv._handle_completed_season(self.item.season_number)
+        return True
+
     def get_remaining_repeat_eps(self, end_date):
         """Return the entries left to watch again, each made a watch on a date.
 
@@ -2143,16 +2174,13 @@ class Season(Media):
         entries = Episode.objects.filter(related_season=self)
         if self.status in (Status.PAUSED.value, Status.DROPPED.value):
             entries.filter(status__in=UNFINISHED_STATUSES).update(status=self.status)
-        elif self.status == Status.IN_PROGRESS.value:
-            stopped = (Status.PAUSED.value, Status.DROPPED.value)
-            entries.filter(status__in=stopped, start_date__isnull=False).update(
-                status=Status.IN_PROGRESS.value,
-            )
-            entries.filter(status__in=stopped).update(status=Status.PLANNING.value)
-        elif self.status == Status.PLANNING.value:
-            entries.filter(
+        elif self.status in (Status.IN_PROGRESS.value, Status.PLANNING.value):
+            stopped = entries.filter(
                 status__in=(Status.PAUSED.value, Status.DROPPED.value),
-            ).update(status=Status.PLANNING.value)
+            )
+            if self.status == Status.IN_PROGRESS.value:
+                stopped.filter(start_date__isnull=False).update(status=self.status)
+            stopped.update(status=Status.PLANNING.value)
 
         if self.status in REPEAT_STATUSES and previous_status not in REPEAT_STATUSES:
             self.plan_repeat_entries()
@@ -2198,9 +2226,15 @@ class Season(Media):
             ],
         )
 
-    def plan_repeat_entries(self):
-        """Plan to watch again each watched episode not planned to be already."""
-        entries = list(Episode.objects.filter(related_season=self))
+    def plan_repeat_entries(self, episode_number=None):
+        """Plan to watch again each watched episode not planned to be already.
+
+        With `episode_number`, only that episode. Returns the entries added.
+        """
+        entries = Episode.objects.filter(related_season=self)
+        if episode_number is not None:
+            entries = entries.filter(item__episode_number=episode_number)
+        entries = list(entries)
         planned = {
             entry.item_id for entry in entries if entry.status in REPEAT_STATUSES
         }
@@ -2209,7 +2243,7 @@ class Season(Media):
             for entry in entries
             if entry.is_watch and entry.item_id not in planned
         }
-        Episode.objects.bulk_create(
+        return Episode.objects.bulk_create(
             [
                 Episode(
                     related_season=self,
@@ -2254,17 +2288,18 @@ class Season(Media):
         return items
 
     def _get_latest_watched_episode_number(self):
-        """Return the highest watched episode number for the season."""
+        """Return the highest watched episode number for the season.
+
+        An episode only planned or being watched again was watched.
+        """
         if self.pk is None:
             return 0
 
-        latest_watched_ep_num = (
-            Episode.objects.watches()
-            .filter(related_season=self)
-            .aggregate(latest_watched_ep_num=Max("item__episode_number"))[
-                "latest_watched_ep_num"
-            ]
-        )
+        latest_watched_ep_num = Episode.objects.filter(
+            related_season=self, status__in=WATCHED_STATUSES
+        ).aggregate(latest_watched_ep_num=Max("item__episode_number"))[
+            "latest_watched_ep_num"
+        ]
 
         return latest_watched_ep_num or 0
 
@@ -2305,7 +2340,8 @@ class Season(Media):
         if self.status in REPEAT_STATUSES:
             return len(self.repeated_episode_numbers)
 
-        episodes = self.watches
+        # An episode planned or being watched again was watched
+        episodes = self.watched_entries
         if not episodes:
             return 0
 
@@ -2746,26 +2782,25 @@ class Episode(models.Model):
         """Save the entry, moving its season and show on when it becomes a watch.
 
         A watch fulfils the episode's other entries still to do, which are
-        deleted. An entry that stops being a watch moves them back, as deleting
-        it does. Changing anything else leaves their statuses as they are.
+        deleted. A watch that no longer marks its episode watched moves them
+        back, as deleting it does, and an entry to watch the episode again
+        that stops being one may finish its season's rewatch. Changing
+        anything else leaves their statuses as they are.
         """
-        was_watch = (
-            not self._state.adding and self.tracker.previous("status") == WATCH_STATUS
-        )
+        previous = None if self._state.adding else self.tracker.previous("status")
         super().save(*args, **kwargs)
-        if self.is_watch and not was_watch:
-            Episode.objects.filter(
-                related_season_id=self.related_season_id,
-                item_id=self.item_id,
-            ).exclude(status=WATCH_STATUS).delete()
+        if self.is_watch and previous != WATCH_STATUS:
+            settle_plans([self])
             self._move_parents_on()
-        elif was_watch and not self.is_watch:
+        elif previous == WATCH_STATUS and not self.marks_watched:
             season = self.related_season
             self._update_parent_statuses_after_delete(
                 season,
                 season.related_tv,
                 self.item.episode_number,
             )
+        elif previous in REPEAT_STATUSES and self.status not in REPEAT_STATUSES:
+            self.related_season.finish_repeat_if_done()
 
     def _move_parents_on(self):
         """Move the season and show on now that the episode was watched."""
@@ -2845,31 +2880,26 @@ class Episode(models.Model):
 
     def _continue_repeat(self, season):
         """Move a rewatched season on, finishing it once every episode is seen again."""
-        # clear prefetch cache to get the updated episodes
-        season.refresh_from_db()
-        tv = season.related_tv
-
-        if season.next_repeat_episode_number is None:
-            season.status = Status.COMPLETED.value
-            bulk_update_with_history([season], Season, fields=["status"])
-            season.create_user_message(
-                "was marked as rewatched automatically.",
-                level=UserMessageLevel.SUCCESS,
-            )
-            tv._handle_completed_season(season.item.season_number)
+        if season.finish_repeat_if_done():
             return
 
         if season.status != Status.REPEATING.value:
             season.status = Status.REPEATING.value
             bulk_update_with_history([season], Season, fields=["status"])
-        tv.continue_repeat()
+        season.related_tv.continue_repeat()
 
     def delete(self, *args, **kwargs):
-        """Delete the entry, moving its season and show back when it was a watch."""
+        """Delete the entry, moving its season and show back when it was a watch.
+
+        A watch deleted during its season's rewatch leaves its episode to watch
+        again when it has another watch, and deleting the last entry to watch
+        an episode again finishes the rewatch.
+        """
         season = self.related_season
         tv = season.related_tv
         deleted_episode_number = self.item.episode_number
         was_watch = self.is_watch
+        was_repeat = self.status in REPEAT_STATUSES
 
         result = super().delete(*args, **kwargs)
 
@@ -2879,6 +2909,10 @@ class Episode(models.Model):
                 tv,
                 deleted_episode_number,
             )
+            if season.status in REPEAT_STATUSES:
+                season.plan_repeat_entries(deleted_episode_number)
+        elif was_repeat:
+            season.finish_repeat_if_done()
         return result
 
     def _update_parent_statuses_after_delete(self, season, tv, deleted_episode_number):

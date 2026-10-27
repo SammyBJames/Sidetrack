@@ -511,11 +511,24 @@ def bulk_create_media(bulk_media_list, user):
 
     # Seasons imported in a repeat status without a rewatch planned start one,
     # which goes through every episode imported with them
+    imported = bulk_media_list.get(MediaTypes.SEASON.value, [])
     for season in app.models.Season.objects.filter(
-        user=user,
+        pk__in=[season.pk for season in imported],
         status__in=REPEAT_STATUSES,
     ).exclude(episodes__status__in=REPEAT_STATUSES):
         season.plan_repeat_entries()
+
+    # Watches imported may have been the last episodes left to rewatch
+    watched = {
+        episode.related_season_id
+        for episode in bulk_media_list.get(MediaTypes.EPISODE.value, [])
+        if episode.is_watch
+    }
+    for season in app.models.Season.objects.filter(
+        pk__in=watched,
+        status__in=REPEAT_STATUSES,
+    ).exclude(episodes__status__in=REPEAT_STATUSES):
+        season.finish_repeat_if_done()
 
 
 def bulk_update_media(bulk_media_list, fields_by_media_type, user):
@@ -546,6 +559,24 @@ def bulk_update_media(bulk_media_list, fields_by_media_type, user):
             batch_size=500,
             default_user=user,
         )
+        if media_type == MediaTypes.SEASON.value:
+            # Their entries follow, e.g. a season set rewatching plans its rewatch
+            ended = []
+            for season in bulk_media:
+                if season.tracker.has_changed("status"):
+                    previous = season.tracker.previous("status")
+                    season.move_entries(previous)
+                    if (
+                        previous in REPEAT_STATUSES
+                        and season.status not in REPEAT_STATUSES
+                    ):
+                        ended.append(season)
+            # A rewatch the import finished leaves nothing to watch again, as
+            # completing a show does
+            app.models.Episode.objects.filter(
+                related_season__in=ended,
+                status__in=REPEAT_STATUSES,
+            ).delete()
 
 
 def create_import_schedule(

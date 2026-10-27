@@ -548,3 +548,117 @@ class EpisodeEntryCascadeTests(TestCase):
                 (3, Status.COMPLETED.value),
             ],
         )
+
+    def test_a_watch_planned_again_keeps_its_season_finished(self, *_):
+        """An episode's only watch made a planned rewatch still counts as watched."""
+        Season.objects.filter(pk=self.season.pk).update(status=Status.COMPLETED.value)
+        TV.objects.filter(pk=self.tv.pk).update(status=Status.COMPLETED.value)
+        for number in (1, 2):
+            self.add(number, Status.COMPLETED.value)
+        finale = Episode.objects.get(pk=self.add(3, Status.COMPLETED.value).pk)
+
+        finale.status = Status.PLANNING_REPEAT.value
+        finale.save()
+
+        self.assertEqual(
+            self.statuses(),
+            (Status.COMPLETED.value, Status.COMPLETED.value),
+        )
+        season = Season.objects.get(pk=self.season.pk)
+        self.assertEqual(season.progress, 3)
+        self.assertEqual(season._get_latest_watched_episode_number(), 3)
+        # Its plays are still only the watches
+        self.assertEqual(season.episodes.watches().count(), 2)
+        self.assertEqual(season.plays, 1)
+
+    def rewatch(self, count):
+        """Rewatch the first season's first `count` of its three watched episodes."""
+        Season.objects.filter(pk=self.season.pk).update(status=Status.COMPLETED.value)
+        TV.objects.filter(pk=self.tv.pk).update(status=Status.COMPLETED.value)
+        for number in (1, 2, 3):
+            self.add(number, Status.COMPLETED.value)
+        season = self.set_status(Status.REPEATING.value)
+        for _ in range(count):
+            Season.objects.get(pk=season.pk).increase_progress()
+
+    def test_deleting_a_rewatchs_watch_leaves_the_episode_to_watch_again(self, *_):
+        """A watch made in a rewatch and deleted takes back that episode's rewatch."""
+        self.rewatch(2)
+
+        Episode.objects.get(item__episode_number=2, end_date__isnull=False).delete()
+
+        # Only that episode is left to watch again
+        season = Season.objects.get(pk=self.season.pk)
+        self.assertEqual((season.progress, season.next_repeat_episode_number), (1, 2))
+        self.assertEqual(season.episodes.watches().count(), 4)
+        self.assertEqual(len(season.repeat_entries), 2)
+
+    def test_deleting_the_last_rewatch_entry_finishes_the_rewatch(self, *_):
+        """A rewatch with no episode left to watch again is done."""
+        self.rewatch(2)
+
+        Episode.objects.get(status=Status.PLANNING_REPEAT.value).delete()
+
+        self.assertEqual(self.statuses()[1], Status.COMPLETED.value)
+        self.assertEqual(Season.objects.get(pk=self.season.pk).plays, 1)
+
+    def test_dropping_the_last_rewatch_entry_finishes_the_rewatch(self, *_):
+        """An episode's rewatch entry given another status leaves nothing to rewatch."""
+        self.rewatch(2)
+        entry = Episode.objects.get(status=Status.PLANNING_REPEAT.value)
+
+        entry.status = Status.DROPPED.value
+        entry.save()
+
+        self.assertEqual(self.statuses()[1], Status.COMPLETED.value)
+
+    def test_deleting_a_rewatch_entry_with_others_left_keeps_the_rewatch(self, *_):
+        """A planned rewatch left with episodes to watch again isn't started."""
+        Season.objects.filter(pk=self.season.pk).update(status=Status.COMPLETED.value)
+        for number in (1, 2, 3):
+            self.add(number, Status.COMPLETED.value)
+        self.set_status(Status.PLANNING_REPEAT.value)
+
+        Episode.objects.filter(status=Status.PLANNING_REPEAT.value).first().delete()
+
+        self.assertEqual(self.statuses()[1], Status.PLANNING_REPEAT.value)
+        self.assertEqual(
+            len(Season.objects.get(pk=self.season.pk).repeat_entries),
+            2,
+        )
+
+    def test_completing_a_show_drops_its_seasons_rewatch(self, *_):
+        """A season's rewatch is given up, without new plays, by completing the show."""
+        Season.objects.filter(pk=self.season.pk).update(status=Status.COMPLETED.value)
+        for number in (1, 2, 3):
+            self.add(number, Status.COMPLETED.value)
+        self.set_status(Status.PLANNING_REPEAT.value)
+
+        self.tv.refresh_from_db()
+        self.tv.status = Status.COMPLETED.value
+        self.tv.save()
+
+        self.assertEqual(self.statuses()[1], Status.COMPLETED.value)
+        self.assertEqual(
+            self.entries(),
+            [(number, Status.COMPLETED.value) for number in (1, 2, 3)],
+        )
+
+    def test_a_rewatch_watches_the_episodes_entry_to_watch_again(self, *_):
+        """During a rewatch, watching an episode fulfils its rewatch entry first."""
+        Season.objects.filter(pk=self.season.pk).update(status=Status.REPEATING.value)
+        self.add(1, Status.COMPLETED.value)
+        again = self.add(1, Status.PLANNING_REPEAT.value)
+        self.add(1, Status.PLANNING.value)
+
+        Season.objects.get(pk=self.season.pk).watch(
+            1,
+            datetime(2024, 1, 1, tzinfo=UTC),
+        )
+
+        again.refresh_from_db()
+        self.assertEqual(again.status, Status.COMPLETED.value)
+        self.assertEqual(
+            self.entries(),
+            [(1, Status.COMPLETED.value), (1, Status.COMPLETED.value)],
+        )

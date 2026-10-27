@@ -17,7 +17,7 @@ from app.models import (
     Sources,
     Status,
 )
-from integrations.tests.webhook_entries import plan_friends_episode
+from integrations.tests.webhook_entries import friends_item, plan_friends_episode
 from integrations.webhooks.jellyfin import JellyfinWebhookProcessor
 
 
@@ -632,6 +632,47 @@ class JellyfinWebhookTests(TestCase):
             list(Episode.objects.values_list("status", flat=True)),
             [Status.PLANNING_REPEAT.value],
         )
+
+    def test_mark_unplayed_during_a_rewatch_leaves_the_episode_to_watch_again(self):
+        """Unplaying a watch made in a season's rewatch takes back its rewatch."""
+        tv = TV(
+            item=friends_item(MediaTypes.TV.value),
+            user=self.user,
+            status=Status.REPEATING.value,
+        )
+        TV.save_base(tv)
+        season = Season(
+            item=friends_item(MediaTypes.SEASON.value, 1),
+            user=self.user,
+            related_tv=tv,
+            status=Status.REPEATING.value,
+        )
+        Season.save_base(season)
+        first, second = (friends_item(MediaTypes.EPISODE.value, 1, n) for n in (1, 2))
+        Episode.objects.bulk_create(
+            [
+                Episode(
+                    item=first,
+                    related_season=season,
+                    end_date=timezone.now() - timezone.timedelta(days=365),
+                ),
+                # Its watch in the rewatch
+                Episode(item=first, related_season=season, end_date=timezone.now()),
+                Episode(item=second, related_season=season, end_date=timezone.now()),
+                Episode(
+                    item=second,
+                    related_season=season,
+                    status=Status.PLANNING_REPEAT.value,
+                ),
+            ],
+        )
+
+        JellyfinWebhookProcessor()._delete_tv_episode("1668", 1, 1, self.user)
+
+        season = Season.objects.get(pk=season.pk)
+        self.assertEqual(season.next_repeat_episode_number, 1)
+        self.assertEqual(season.progress, 0)
+        self.assertEqual(season.episodes.watches().count(), 2)
 
     def test_mark_unplayed_untracked_movie_does_not_create_item(self):
         """Test Jellyfin MarkUnplayed does not create metadata for missing media."""

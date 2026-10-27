@@ -226,7 +226,11 @@ class EpisodeDetailsViewTests(TestCase):
 
     def test_edit_tracking_opens_the_latest_entry(self, _):
         """The pencil opens the dialog on the entry added last, of any status."""
-        self.watch(1, notes="Loved it")
+        watched = self.watch(1, notes="Loved it")
+        # Watched before the rewatch was planned
+        Episode.objects.filter(pk=watched.pk).update(
+            end_date=datetime(2024, 10, 1, tzinfo=UTC),
+        )
         latest = self.entry(1, Status.PLANNING_REPEAT.value)
         Episode.objects.filter(pk=latest.pk).update(
             start_date=datetime(2024, 10, 5, 12, tzinfo=UTC),
@@ -265,6 +269,27 @@ class EpisodeDetailsViewTests(TestCase):
         self.assertIn(f'hx-post="{reverse("media_save")}', content)
         self.assertIn('aria-label="Delete entry"', content)
         self.assertIn("$dispatch('dialog-ready')", content)
+
+    def test_the_latest_entry_is_the_one_watched_last(self, _):
+        """Entries go by when they were watched, as imports add them in any order."""
+        newer = self.watch(1)
+        Episode.objects.filter(pk=newer.pk).update(
+            end_date=datetime(2025, 6, 1, tzinfo=UTC),
+        )
+        older = self.watch(1)
+        Episode.objects.filter(pk=older.pk).update(
+            end_date=datetime(2024, 1, 1, tzinfo=UTC),
+        )
+
+        page_response = self.client.get(self.episode_url(1))
+        modal_response = self.client.get(
+            self.track_modal_url(1),
+            {"return_url": self.episode_url(1)},
+        )
+
+        self.assertEqual(page_response.context["latest_entry"], newer)
+        self.assertEqual(page_response.context["entries"], [newer, older])
+        self.assertEqual(modal_response.context["media"], newer)
 
     def test_saving_the_edit_dialog_changes_the_entry(self, _):
         """The dialog's fields save the status, dates, notes and rating."""

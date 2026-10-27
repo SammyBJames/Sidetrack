@@ -10,6 +10,7 @@ from django.core.cache import cache
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Prefetch, prefetch_related_objects
+from django.db.models.functions import Coalesce
 from django.http import Http404, HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -657,14 +658,15 @@ def episode_details(
             f"{season_metadata['source_url']}/episode/{episode_number}"
         )
 
-    # Every entry of the episode, the one added last first, as other media list theirs
+    # Every entry of the episode, the one watched last first, as an import may
+    # add them in any order; those not watched yet go by when they were added
     entries = sorted(
         (
             entry
             for entry in episodes_in_db
             if entry.item.episode_number == episode_number
         ),
-        key=lambda entry: (entry.created_at, entry.pk),
+        key=lambda entry: (entry.end_date or entry.created_at, entry.pk),
         reverse=True,
     )
 
@@ -840,7 +842,8 @@ def track_modal(
     """Return the tracking form for a media item.
 
     It edits the entry `instance_id`, else with `is_create` adds a new one, else
-    edits the user's latest entry of the media, or adds the first. A new
+    edits the user's latest entry of the media, or adds the first. An episode's
+    latest is the one watched last, or added last when not watched. A new
     episode entry is saved by `episode_save`, every other form by `media_save`.
     """
     instance_id = request.GET.get("instance_id")
@@ -853,7 +856,12 @@ def track_modal(
     elif request.GET.get("is_create"):
         media = None
     else:
-        # no specific instance, so the one added last
+        # no specific instance, so the latest
+        latest = (
+            Coalesce("end_date", "created_at").desc()
+            if media_type == MediaTypes.EPISODE.value
+            else "-created_at"
+        )
         user_medias = BasicMedia.objects.filter_media(
             request.user,
             media_id,
@@ -861,7 +869,7 @@ def track_modal(
             source,
             season_number=season_number,
             episode_number=episode_number,
-        ).order_by("-created_at", "-pk")
+        ).order_by(latest, "-pk")
         media = user_medias.first()
         if media:
             instance_id = media.id
@@ -1419,18 +1427,7 @@ def episode_plan_repeat(request):
         user=request.user,
     )
     episode_number = int(request.POST["episode_number"])
-    entries = list(season.episodes.filter(item__episode_number=episode_number))
-    statuses = {entry.status for entry in entries}
-    if WATCH_STATUS in statuses and not statuses & set(REPEAT_STATUSES):
-        Episode.objects.bulk_create(
-            [
-                Episode(
-                    related_season=season,
-                    item_id=entries[0].item_id,
-                    status=Status.PLANNING_REPEAT.value,
-                ),
-            ],
-        )
+    if season.plan_repeat_entries(episode_number):
         logger.info("Planned to rewatch %s E%s", season, episode_number)
     return helpers.redirect_back(request)
 
