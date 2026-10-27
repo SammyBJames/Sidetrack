@@ -78,7 +78,6 @@
     {# Track Modal #}
     <div x-cloak
          x-show="trackOpen"
-         @keydown.escape.window="trackOpen = false"
          @dialog-dismiss="trackOpen = false"
          class="dialog-backdrop">
       <div class="dialog-box">
@@ -90,7 +89,6 @@
   {# Lists Modal #}
   <div x-cloak
        x-show="listsOpen"
-       @keydown.escape.window="listsOpen = false"
        @dialog-dismiss="listsOpen = false"
        class="dialog-backdrop">
     <div class="dialog-box dialog-narrow">
@@ -101,7 +99,6 @@
   {# History Modal #}
   <div x-cloak
        x-show="historyOpen"
-       @keydown.escape.window="historyOpen = false"
        @dialog-dismiss="historyOpen = false"
        class="dialog-backdrop">
     <div class="dialog-box dialog-narrow">

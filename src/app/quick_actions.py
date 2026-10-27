@@ -286,11 +286,13 @@ def book_total(book):
     """
     if book.item.length:
         return book.item.length
-    return services.get_media_metadata(
-        book.item.media_type,
-        book.item.media_id,
-        book.item.source,
-    )["max_progress"]
+    return helpers.positive_int_or_none(
+        services.get_media_metadata(
+            book.item.media_type,
+            book.item.media_id,
+            book.item.source,
+        )["max_progress"],
+    )
 
 
 def log_progress(media, amount):

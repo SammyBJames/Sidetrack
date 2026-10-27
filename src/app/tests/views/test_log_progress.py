@@ -141,6 +141,17 @@ class LogProgressViewTests(TestCase):
         book.refresh_from_db()
         self.assertEqual((book.progress, book.status), (250, Status.COMPLETED.value))
 
+    def test_provider_total_that_is_not_a_count_is_unknown(self):
+        """A provider total that isn't a positive whole number is no total."""
+        self.book_item.length = None
+        self.book_item.save()
+        book = self.book()
+
+        self.metadata.return_value = {"max_progress": "250"}
+        self.assertEqual(quick_actions.book_total(book), 250)
+        self.metadata.return_value = {"max_progress": "1); alert(1"}
+        self.assertIsNone(quick_actions.book_total(book))
+
     def test_unknown_total_only_sets_the_progress(self):
         """With no total anywhere, any page is logged and nothing completes."""
         self.book_item.length = None

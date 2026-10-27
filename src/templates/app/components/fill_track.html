@@ -63,7 +63,7 @@
           <div class="flex items-center gap-2">
             <button type="button"
                     aria-label="Decrease progress"
-                    class="dialog-chip flex size-9 items-center justify-center"
+                    class="dialog-step"
                     @click="{% if media_type == 'game' %}addMinutes(-30){% else %}bump(-1){% endif %}">
               {% include "app/icons/minus.svg" with classes="size-4" %}
             </button>
@@ -74,7 +74,7 @@
             {% endif %}
             <button type="button"
                     aria-label="Increase progress"
-                    class="dialog-chip flex size-9 items-center justify-center"
+                    class="dialog-step"
                     @click="{% if media_type == 'game' %}addMinutes(30){% else %}bump(1){% endif %}">
               {% include "app/icons/plus.svg" with classes="size-4" %}
             </button>
@@ -103,7 +103,7 @@
                                 @click="setDate('{{ field.name }}', false)">Clear</button>
                       </span>
                     </div>
-                    {{ field|add_class:"dialog-input h-9 py-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-50 [&::-webkit-calendar-picker-indicator]:hover:opacity-100" }}
+                    {{ field|add_class:"dialog-date" }}
                   </div>
                 {% endif %}
               {% endfor %}

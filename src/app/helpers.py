@@ -81,6 +81,19 @@ def minutes_to_hhmm(total_minutes):
     return f"{hours}h {minutes:02d}min"
 
 
+def positive_int_or_none(value):
+    """Return `value` as an int if it is a positive whole number, else None.
+
+    For counts from providers, e.g. a page total, which templates put into
+    Alpine expressions as numbers.
+    """
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
 def redirect_back(request):
     """Redirect to the previous page, removing the 'page' parameter if present.
 

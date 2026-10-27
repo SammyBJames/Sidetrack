@@ -25,13 +25,12 @@
         <div class="flex items-center gap-2">
           <button type="button"
                   aria-label="{% if media_type == 'book' %}Previous page{% else %}Half an hour less{% endif %}"
-                  class="dialog-chip flex size-9 items-center justify-center"
+                  class="dialog-step"
                   @click="step(-1)">{% include "app/icons/minus.svg" with classes="size-4" %}</button>
           {% if media_type == "book" %}
             <input type="number"
                    name="page"
                    min="0"
-                   {% if total %}max="{{ total }}"{% endif %}
                    inputmode="numeric"
                    required
                    value="{{ media.progress }}"
@@ -49,7 +48,7 @@
           {% endif %}
           <button type="button"
                   aria-label="{% if media_type == 'book' %}Next page{% else %}Half an hour more{% endif %}"
-                  class="dialog-chip flex size-9 items-center justify-center"
+                  class="dialog-step"
                   @click="step(1)">{% include "app/icons/plus.svg" with classes="size-4" %}</button>
           {% if total %}<span class="text-sm text-gray-400">of {{ total }}</span>{% endif %}
         </div>

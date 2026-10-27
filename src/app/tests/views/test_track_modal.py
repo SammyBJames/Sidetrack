@@ -234,6 +234,59 @@ class TrackModalDialogTests(TestCase):
         self.assertContains(response, 'value="120"')
         self.assertRegex(response.content.decode(), r">\s*Save\s*<")
 
+    def test_edit_without_an_item_length_shows_the_provider_total(self):
+        """An existing book with no page count has the same total as its log dialog."""
+        item = Item.objects.create(
+            media_id="b2",
+            source=Sources.OPENLIBRARY.value,
+            media_type=MediaTypes.BOOK.value,
+            title="Book",
+            image="http://example.com/image.jpg",
+        )
+        with patch("app.providers.services.get_media_metadata") as metadata:
+            metadata.return_value = {"max_progress": 412}
+            book = Book.objects.create(
+                item=item,
+                user=self.user,
+                status=Status.IN_PROGRESS.value,
+                progress=120,
+            )
+            response = self.client.get(
+                reverse(
+                    "track_modal",
+                    kwargs={
+                        "source": Sources.OPENLIBRARY.value,
+                        "media_type": MediaTypes.BOOK.value,
+                        "media_id": "b2",
+                    },
+                ),
+                {"return_url": "/home", "instance_id": book.id},
+            )
+
+        self.assertContains(response, "/ 412 pages")
+        self.assertContains(response, "mediaForm(null, 412)")
+
+    def test_provider_total_that_is_not_a_count_is_left_out(self):
+        """Only a positive whole number from the provider reaches the stepper."""
+        kwargs = {
+            "source": Sources.OPENLIBRARY.value,
+            "media_type": MediaTypes.BOOK.value,
+            "media_id": "b3",
+        }
+        for total in ("1); alert(1", "0", None):
+            with (
+                self.subTest(total=total),
+                patch("app.providers.services.get_media_metadata") as metadata,
+            ):
+                metadata.return_value = {"title": "Title", "max_progress": total}
+                response = self.client.get(
+                    reverse("track_modal", kwargs=kwargs),
+                    {"return_url": "/home", "is_create": "1"},
+                )
+
+                self.assertContains(response, "mediaForm(null, null)")
+                self.assertNotContains(response, "alert")
+
     def test_edit_can_delete_only_after_confirming(self):
         """The delete button of an existing entry asks first and never submits."""
         response = self.client.get(

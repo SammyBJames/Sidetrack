@@ -159,8 +159,9 @@ class IntegrationTest(StaticLiveServerTestCase):
         book.refresh_from_db()
         self.assertEqual((book.progress, book.status), (120, Status.IN_PROGRESS))
 
+        # A page past the book's total, as in a longer edition, finishes it at the total
         self.page.get_by_role("button", name="Log pages").click()
-        dialog.locator('input[name="page"]').fill("300")
+        dialog.locator('input[name="page"]').fill("310")
         dialog.get_by_role("button", name="Save").click()
         expect(self.page.get_by_role("button", name="Log pages")).to_have_count(0)
         book.refresh_from_db()
@@ -217,6 +218,44 @@ class IntegrationTest(StaticLiveServerTestCase):
         dialog.locator('input[name="played"]').fill("abc")
         dialog.get_by_role("button", name="Save").click()
         expect(dialog).to_contain_text("Invalid time format")
+
+    def test_only_the_last_opened_log_dialog_shows(self):
+        """Dialogs fetched one after another show and log the last clicked entry."""
+        first = self.add_logged_entry(Game, MediaTypes.GAME.value, "Hades")
+        last = self.add_logged_entry(Game, MediaTypes.GAME.value, "Celeste")
+        self.page.goto(
+            f"{self.live_server_url}"
+            + reverse("medialist", args=["test", MediaTypes.GAME.value]),
+        )
+        held = []
+
+        def hold(route):
+            """Keep the request pending until the test releases it."""
+            held.append(route)
+
+        self.page.route("**/log_modal/**", hold)
+        self.addCleanup(self.page.unroute, "**/log_modal/**")
+        cards = self.page.locator(".media-card")
+        cards.filter(has_text="Hades").get_by_label("Log time").dispatch_event("click")
+        cards.filter(has_text="Celeste").get_by_label("Log time").dispatch_event(
+            "click",
+        )
+        self.page.wait_for_timeout(300)
+        # Release the last request first, then the earlier one
+        for route in reversed(held):
+            route.continue_()
+            self.page.wait_for_timeout(300)
+
+        dialog = self.page.locator("#log-dialog")
+        expect(dialog).to_contain_text("Celeste")
+        expect(dialog).not_to_contain_text("Hades")
+        dialog.get_by_role("button", name="Save").click()
+        expect(dialog).to_be_hidden()
+        first.refresh_from_db()
+        last.refresh_from_db()
+        self.assertEqual((first.progress, last.progress), (0, 60))
+        expect(cards.filter(has_text="Hades")).to_have_count(1)
+        expect(cards.filter(has_text="Celeste")).to_contain_text("1h 00min")
 
     def add_tracked_movie(self):
         """Track a manual movie and return the URL of its page."""
@@ -286,6 +325,22 @@ class IntegrationTest(StaticLiveServerTestCase):
         self.page.mouse.click(2, 2)
         expect(sheet).to_be_hidden()
 
+    def test_escape_closes_the_open_dialog(self):
+        """Escape closes any dialog on the shell, the list form among them."""
+        self.page.goto(f"{self.live_server_url}" + reverse("lists"))
+        self.page.get_by_role("button", name="New List").click()
+        sheet = self.page.locator(".dialog-sheet", has_text="Create New List")
+        expect(sheet).to_be_visible()
+        self.page.keyboard.press("Escape")
+        expect(sheet).to_be_hidden()
+
+        self.page.goto(self.add_tracked_movie())
+        self.page.get_by_role("button", name="Edit tracking").click()
+        sheet = self.page.locator(".dialog-sheet")
+        expect(sheet).to_be_visible()
+        self.page.keyboard.press("Escape")
+        expect(sheet).to_be_hidden()
+
     def test_season_progress_edit(self):
         """Test the progress edit of a season."""
         self.page.get_by_placeholder("Search tv shows...").fill("breaking bad")
@@ -347,17 +402,12 @@ class IntegrationTest(StaticLiveServerTestCase):
 
     def test_tracking_dialog_fold_starts_closed_each_time(self):
         """The Advanced fold of the tracking dialog is closed on every open."""
-        self.page.get_by_placeholder("Search tv shows...").click()
-        self.page.get_by_placeholder("Search tv shows...").fill("breaking bad")
-        self.page.get_by_placeholder("Search tv shows...").press("Enter")
-        expect(self.page.locator("h2")).to_contain_text("Search Results")
-        self.page.get_by_title("Breaking Bad", exact=True).click()
-        expect(self.page.get_by_role("main")).to_contain_text("Breaking Bad")
-
-        notes = self.page.locator("#track-tv-1396 textarea")
+        self.page.goto(self.add_tracked_movie())
+        sheet = self.page.locator(".dialog-sheet")
+        notes = sheet.locator("textarea")
         for _ in range(2):
-            self.page.get_by_role("button", name="Add to tracker").click()
-            fold = self.page.get_by_role("button", name="Advanced")
+            self.page.get_by_role("button", name="Edit tracking").click()
+            fold = sheet.get_by_role("button", name="Advanced")
             expect(fold).to_be_visible()
             # htmx settles a swapped-in dialog's attributes a moment after inserting it
             self.page.wait_for_timeout(300)
@@ -366,7 +416,7 @@ class IntegrationTest(StaticLiveServerTestCase):
             expect(notes).to_be_visible()
             fold.click()
             expect(notes).to_be_hidden()
-            self.page.locator("#track-tv-1396").get_by_label("Close").click()
+            sheet.get_by_label("Close").click()
 
     def test_season_completed(self):
         """Test the completed status of a season."""

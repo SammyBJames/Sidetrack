@@ -3,7 +3,6 @@
 {# The Track Episode dialog, opened by the `trackOpen` flag: the episode, its previous watches (each with a delete asking first) and a form to add a watch, whose date and notes fold into one row. "Add watch" saves with the date as set, and its menu fills the date in other ways #}
 <div x-cloak
      x-show="trackOpen"
-     @keydown.escape.window="trackOpen = false"
      @dialog-dismiss="trackOpen = false"
      class="dialog-backdrop">
   <div class="dialog-box dialog-narrow">
@@ -116,7 +115,7 @@
                           class="cursor-pointer text-xs font-medium text-gray-400 transition-colors hover:text-white"
                           @click="inputDateTime = ''">Clear</button>
                 </div>
-                <input class="dialog-input h-9 py-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-50 [&::-webkit-calendar-picker-indicator]:hover:opacity-100"
+                <input class="dialog-date"
                        id="episode-date-{{ episode.episode_number }}"
                        x-bind:type="inputType"
                        name="end_date"

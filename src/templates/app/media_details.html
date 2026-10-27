@@ -24,8 +24,7 @@
            src="{{ media.image }}">
 
       <div class="flex w-full min-w-0 flex-1 flex-col items-center gap-4 text-center md:w-auto md:items-start md:text-start xl:flex-row xl:items-end xl:justify-between"
-           x-data="{ trackOpen: false }"
-           @keydown.escape.window="trackOpen = false">
+           x-data="{ trackOpen: false }">
         <div class="w-full min-w-0 space-y-3 md:w-auto">
           {% if media.logo %}
             <h1>
@@ -117,8 +116,7 @@
 
             {# Another entry, e.g. for a rewatch; shows and seasons repeat through their episodes #}
             {% if user_medias and media_type != MediaTypes.TV.value and media_type != MediaTypes.SEASON.value %}
-              <div x-data="{ createOpen: false }"
-                   @keydown.escape.window="createOpen = false">
+              <div x-data="{ createOpen: false }">
                 <button class="{{ action_classes }}"
                         data-tooltip="Add new entry"
                         aria-label="Add new entry"

@@ -1,6 +1,6 @@
 {% load app_tags %}
 
-{# The user's five rating stars, in a ratingStars parent, `size` across, size-4.5 unless given #}
+{# The user's five rating stars, `size` across, size-4.5 unless given, inside an Alpine parent with `hovered`, `fill(star)` and `setRating(star)` (ratingStars, or mediaForm in the edit dialog) #}
 <div class="flex"
      role="group"
      aria-label="Your rating"

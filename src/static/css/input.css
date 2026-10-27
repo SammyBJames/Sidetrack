@@ -141,6 +141,12 @@
   @apply w-full rounded-lg bg-white/5 px-3 py-2 text-sm text-white ring-1 ring-white/10 placeholder:text-gray-500 focus:ring-2 focus:ring-indigo-400 focus:outline-none [color-scheme:dark];
 }
 
+/* A dialog-input for a date or a date and time, as tall as the buttons beside it */
+@utility dialog-date {
+  @apply dialog-input h-9 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-50 [&::-webkit-calendar-picker-indicator]:hover:opacity-100;
+  padding-block: 0;
+}
+
 @utility dialog-label {
   @apply mb-1.5 block text-[0.6875rem] font-semibold tracking-wide text-gray-400 uppercase;
 }
@@ -154,9 +160,9 @@
   @apply flex size-9 cursor-pointer items-center justify-center rounded-xl bg-white/5 text-gray-300 ring-1 ring-white/10 transition-colors hover:bg-red-600/20 hover:text-red-300;
 }
 
-/* A small quick-set button beside an input, e.g. Today or +30m */
-@utility dialog-chip {
-  @apply cursor-pointer rounded-lg bg-white/5 px-2.5 py-1 text-xs font-medium text-gray-300 ring-1 ring-white/10 transition-colors hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none;
+/* A progress stepper's square − or + button, beside its input */
+@utility dialog-step {
+  @apply flex size-9 cursor-pointer items-center justify-center rounded-lg bg-white/5 text-gray-300 ring-1 ring-white/10 transition-colors hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none;
 }
 
 /* A label under a button, from its data-tooltip, shown on hover or keyboard focus */

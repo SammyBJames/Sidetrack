@@ -854,11 +854,16 @@ def track_modal(
     }
 
     # What progress counts up to, from what is already known: a saved item's
-    # length, or the metadata fetched for the title of a new entry
+    # length (for a book, as the log dialog has it), or the metadata fetched for
+    # the title of a new entry
     total = None
     if media:
         title = media.item
-        total = media.item.length
+        total = (
+            quick_actions.book_total(media)
+            if media_type == MediaTypes.BOOK.value
+            else media.item.length
+        )
         if media_type == MediaTypes.GAME.value:
             initial_data["progress"] = helpers.minutes_to_hhmm(media.progress)
     else:
@@ -869,7 +874,7 @@ def track_modal(
             [season_number],
         )
         title = metadata["title"]
-        total = metadata.get("max_progress")
+        total = helpers.positive_int_or_none(metadata.get("max_progress"))
         if media_type == MediaTypes.SEASON.value:
             title += f" S{season_number}"
 

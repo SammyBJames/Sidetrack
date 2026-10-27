@@ -1,3 +1,6 @@
+import json
+import re
+from html import unescape
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -100,6 +103,24 @@ class LogModalViewTests(TestCase):
         self.assertContains(response, 'name="title" value="Shown title"')
         self.assertNotContains(response, "bogus")
 
+    def test_home_tile_log_leaves_its_section_once_finished(self):
+        """A home tile's section goes through the dialog, so finishing removes it."""
+        home = self.client.get(reverse("home")).content.decode()
+        modal_url = reverse("log_modal", args=["book", self.book.id])
+        chip = re.search(rf'hx-get="{modal_url}" hx-vals=\'([^\']*)\'', home)
+        vals = json.loads(unescape(chip.group(1)))
+        self.assertEqual(vals["home_status"], Status.IN_PROGRESS.value)
+
+        dialog = self.client.get(modal_url, vals).content.decode()
+        posted = dict(re.findall(r'type="hidden" name="(\w+)" value="([^"]*)"', dialog))
+        posted.pop("csrfmiddlewaretoken")
+        response = self.client.post(
+            reverse("log_progress", args=["book", self.book.id]),
+            {**posted, "page": "300"},
+        )
+
+        self.assertEqual(response["HX-Reswap"], "delete")
+
     def test_entry_not_in_progress_is_stale(self):
         """An entry that is not in progress has no dialog."""
         Book.objects.filter(pk=self.book.pk).update(status=Status.COMPLETED.value)
@@ -136,6 +157,18 @@ class LogModalViewTests(TestCase):
         self.assertIn(reverse("log_modal", args=["book", self.book.id]), content)
         self.assertIn('hx-target="#log-dialog"', content)
         self.assertNotIn('"action": "log"', content)
+
+        # Both layouts send the library's filters with the fetch, so the log's
+        # response knows whether the card still belongs in the list
+        modal_url = reverse("log_modal", args=["book", self.book.id])
+        for layout in ("grid", "table"):
+            with self.subTest(layout=layout):
+                content = self.client.get(
+                    reverse("medialist", args=["test", MediaTypes.BOOK.value]),
+                    {"layout": layout},
+                ).content.decode()
+                chip = re.search(rf'<button[^>]*hx-get="{modal_url}"[^>]*>', content)
+                self.assertIn('hx-include="#filter-form"', chip.group(0))
 
     def test_details_page_has_the_log_and_finish_buttons(self):
         """A book in progress's page offers logging, and marking it read."""

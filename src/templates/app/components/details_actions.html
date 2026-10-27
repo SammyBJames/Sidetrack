@@ -2,8 +2,7 @@
 
 {# The details page actions after the tracking ones: lists, activity history and syncing the metadata from `sync_url`. Takes the buttons' `action_classes` #}
 {# Custom Lists #}
-<div x-data="{ listsOpen: false }"
-     @keydown.escape.window="listsOpen = false">
+<div x-data="{ listsOpen: false }">
   <button class="{{ action_classes }}"
           data-tooltip="Add to lists"
           aria-label="Add to lists"
@@ -24,8 +23,7 @@
 </div>
 
 {# Activity History #}
-<div x-data="{ historyOpen: false }"
-     @keydown.escape.window="historyOpen = false">
+<div x-data="{ historyOpen: false }">
   <button class="{{ action_classes }}"
           data-tooltip="Activity history"
           aria-label="Activity history"
