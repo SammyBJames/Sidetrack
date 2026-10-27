@@ -21,7 +21,6 @@
     --color-orange-700: oklch(55.3% 0.195 38.402);
     --color-amber-300: oklch(87.9% 0.169 91.605);
     --color-amber-400: oklch(82.8% 0.189 84.429);
-    --color-amber-500: oklch(76.9% 0.188 70.08);
     --color-amber-600: oklch(66.6% 0.179 58.318);
     --color-amber-700: oklch(55.5% 0.163 48.998);
     --color-yellow-400: oklch(85.2% 0.199 91.936);
@@ -1119,9 +1118,6 @@
   .h-20 {
     height: calc(var(--spacing) * 20);
   }
-  .h-24 {
-    height: calc(var(--spacing) * 24);
-  }
   .h-48 {
     height: calc(var(--spacing) * 48);
   }
@@ -1633,11 +1629,6 @@
     margin-inline-start: calc(calc(var(--spacing) * 0.5) * var(--tw-space-x-reverse));
     margin-inline-end: calc(calc(var(--spacing) * 0.5) * calc(1 - var(--tw-space-x-reverse)));
   }
-  :where(.space-x-2\.5 > :not(:last-child)) {
-    --tw-space-x-reverse: 0;
-    margin-inline-start: calc(calc(var(--spacing) * 2.5) * var(--tw-space-x-reverse));
-    margin-inline-end: calc(calc(var(--spacing) * 2.5) * calc(1 - var(--tw-space-x-reverse)));
-  }
   :where(.space-x-3 > :not(:last-child)) {
     --tw-space-x-reverse: 0;
     margin-inline-start: calc(calc(var(--spacing) * 3) * var(--tw-space-x-reverse));
@@ -1871,9 +1862,6 @@
   }
   .bg-\[\#4f46e5\] {
     background-color: #4f46e5;
-  }
-  .bg-amber-600 {
-    background-color: var(--color-amber-600);
   }
   .bg-black {
     background-color: var(--color-black);
@@ -3207,15 +3195,6 @@
     margin-bottom: 0px;
   }
   @media (hover: hover) {
-    .hover\:scale-110:hover {
-      --tw-scale-x: 110%;
-      --tw-scale-y: 110%;
-      --tw-scale-z: 110%;
-      scale: var(--tw-scale-x) var(--tw-scale-y);
-    }
-    .hover\:bg-amber-500:hover {
-      background-color: var(--color-amber-500);
-    }
     .hover\:bg-black\/75:hover {
       background-color: color-mix(in srgb, #000 75%, transparent);
     }
@@ -3223,9 +3202,6 @@
       .hover\:bg-black\/75:hover {
         background-color: color-mix(in oklab, var(--color-black) 75%, transparent);
       }
-    }
-    .hover\:bg-emerald-500:hover {
-      background-color: var(--color-emerald-500);
     }
     .hover\:bg-emerald-700:hover {
       background-color: var(--color-emerald-700);
@@ -3385,18 +3361,6 @@
     }
     .hover\:opacity-100:hover {
       opacity: 100%;
-    }
-    .hover\:shadow-\[0_0_15px_rgba\(16\,185\,129\,0\.5\)\]:hover {
-      --tw-shadow: 0 0 15px var(--tw-shadow-color, rgba(16,185,129,0.5));
-      box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
-    }
-    .hover\:shadow-\[0_0_15px_rgba\(99\,102\,241\,0\.5\)\]:hover {
-      --tw-shadow: 0 0 15px var(--tw-shadow-color, rgba(99,102,241,0.5));
-      box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
-    }
-    .hover\:shadow-\[0_0_15px_rgba\(245\,158\,11\,0\.5\)\]:hover {
-      --tw-shadow: 0 0 15px var(--tw-shadow-color, rgba(245,158,11,0.5));
-      box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
     }
     .hover\:shadow-lg:hover {
       --tw-shadow: 0 10px 15px -3px var(--tw-shadow-color, rgb(0 0 0 / 0.1)), 0 4px 6px -4px var(--tw-shadow-color, rgb(0 0 0 / 0.1));
@@ -3912,6 +3876,9 @@
     }
     .xl\:grid-cols-\[3rem_minmax\(0\,1fr\)_9rem_4\.5rem_10rem_11rem\] {
       grid-template-columns: 3rem minmax(0,1fr) 9rem 4.5rem 10rem 11rem;
+    }
+    .xl\:grid-cols-\[3rem_minmax\(0\,1fr\)_9rem_4\.5rem_11rem\] {
+      grid-template-columns: 3rem minmax(0,1fr) 9rem 4.5rem 11rem;
     }
     .xl\:grid-cols-\[3rem_minmax\(0\,1fr\)_9rem_10rem_4\.5rem_10rem_11rem\] {
       grid-template-columns: 3rem minmax(0,1fr) 9rem 10rem 4.5rem 10rem 11rem;

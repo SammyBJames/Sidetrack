@@ -571,6 +571,24 @@ class QuickActionViewTests(TestCase):
         # The list's status counts change with it
         self.assertEqual(response["HX-Trigger"], "libraryChanged")
 
+    def test_search_row_is_returned_as_a_row_without_the_library_columns(self):
+        """A row from a search, for a result not tracked, gets its row back."""
+        response = self.post(
+            self.movie_item,
+            quick_actions.PLAN,
+            card="row",
+            title="Test Movie",
+        )
+
+        self.assertTemplateUsed(response, "app/components/media_row.html")
+        self.assertNotContains(response, "media-card")
+        self.assertContains(response, "Test Movie")
+        self.assertContains(response, "Planning")
+        self.assertContains(response, '"action": "complete"')
+        self.assertNotContains(response, "filter-form")
+        self.assertNotIn("sorted_field", response.context)
+        self.assertNotIn("HX-Trigger", response)
+
     def test_card_stays_caught_up_while_in_progress(self):
         """A list of caught up media keeps an entry still in progress."""
         anime = Anime.objects.create(

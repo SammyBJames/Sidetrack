@@ -1,11 +1,11 @@
 {% load app_tags %}
 
-{# A media's row in a list: its poster and title, status, progress, rating and the value the list sorts by or its last activity. On narrower screens all but the title fold under it. The title's link covers the row, so a click anywhere opens the media; the owner gets the cards' status chip with its quick action above it #}
-{% card_title item item as heading %}
+{# A media's row in a list, in the library or a search's results (a search sets no `sorted_field`, and its `media` is empty for a result not tracked): its poster and title, status, progress, rating and the value the list sorts by or its last activity. On narrower screens all but the title fold under it. The title's link covers the row, so a click anywhere opens the media; the owner gets the cards' status chip with its quick action above it #}
+{% card_title item title|default:item as heading %}
 {% card_details item media progress=False as details %}
 {% firstof item|release_year "" as year %}
 {% with user=target_user|default:user caught=media|caught_up %}
-  <div class="media-row hover-tap relative grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-x-4 px-4 py-3 transition-colors hover:bg-white/[0.03] {% if show_progress %}xl:grid-cols-[3rem_minmax(0,1fr)_9rem_10rem_4.5rem_10rem_11rem]{% else %}xl:grid-cols-[3rem_minmax(0,1fr)_9rem_4.5rem_10rem_11rem]{% endif %}">
+  <div class="media-row hover-tap relative grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-x-4 px-4 py-3 transition-colors hover:bg-white/[0.03] {% if not sorted_field %}xl:grid-cols-[3rem_minmax(0,1fr)_9rem_4.5rem_11rem]{% elif show_progress %}xl:grid-cols-[3rem_minmax(0,1fr)_9rem_10rem_4.5rem_10rem_11rem]{% else %}xl:grid-cols-[3rem_minmax(0,1fr)_9rem_4.5rem_10rem_11rem]{% endif %}">
     <img alt=""
          class="lazyload aspect-2/3 w-12 rounded-md bg-surface-700 object-cover shadow-md ring-1 shadow-black/30 ring-white/10"
          data-src="{{ item.image }}"
@@ -21,24 +21,29 @@
       </div>
 
       {# The columns, under the title where there's no room for them #}
-      <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs xl:hidden">
-        {% include "app/components/media_row_status.html" %}
-        {% if show_progress and media.progress %}
-          <span class="text-gray-300 tabular-nums">
-            {{ media.formatted_progress }}{% if media.max_progress %} / {{ media.max_progress }}{% endif %}
-          </span>
-        {% endif %}
-        {% if media.score|show_media_score:user %}
-          <span class="flex items-center gap-1 text-gray-200">
-            {% include "app/icons/star.svg" with classes="size-3.5 fill-current text-amber-400" %}
-            {{ media.formatted_score }}
-          </span>
-        {% endif %}
-        {% if media.sorted_value %}<span class="text-gray-500">{% if sorted_field.kind == "number" and not sorted_field.unit %}{{ sorted_field.label }} {% endif %}{{ media.sorted_value }}</span>{% endif %}
-      </div>
+      {% if media %}
+        <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs xl:hidden">
+          {% include "app/components/media_row_status.html" %}
+          {% if show_progress and media.progress %}
+            <span class="text-gray-300 tabular-nums">
+              {{ media.formatted_progress }}{% if media.max_progress %} / {{ media.max_progress }}{% endif %}
+            </span>
+          {% endif %}
+          {% if media.score|show_media_score:user %}
+            <span class="flex items-center gap-1 text-gray-200">
+              {% include "app/icons/star.svg" with classes="size-3.5 fill-current text-amber-400" %}
+              {{ media.formatted_score }}
+            </span>
+          {% endif %}
+          {% if sorted_field and media.sorted_value %}<span class="text-gray-500">{% if sorted_field.kind == "number" and not sorted_field.unit %}{{ sorted_field.label }} {% endif %}{{ media.sorted_value }}</span>{% endif %}
+        </div>
+      {% endif %}
     </div>
 
-    <div class="hidden min-w-0 flex-col text-sm xl:flex">{% include "app/components/media_row_status.html" %}</div>
+    <div class="hidden min-w-0 flex-col text-sm xl:flex">
+      {% include "app/components/media_row_status.html" %}
+      {% if not media %}<span class="text-gray-600">—</span>{% endif %}
+    </div>
 
     {% if show_progress %}
       <div class="hidden xl:block">
@@ -67,18 +72,20 @@
       {% endif %}
     </div>
 
-    <div class="hidden text-sm text-gray-300 xl:block">
-      {% if media.sorted_value %}
-        {{ media.sorted_value }}
-      {% else %}
-        <span class="text-gray-600">—</span>
-      {% endif %}
-    </div>
+    {% if sorted_field %}
+      <div class="hidden text-sm text-gray-300 xl:block">
+        {% if media.sorted_value %}
+          {{ media.sorted_value }}
+        {% else %}
+          <span class="text-gray-600">—</span>
+        {% endif %}
+      </div>
+    {% endif %}
 
     {# Its own width, so the chip's label opens over none of the other columns #}
     <div class="@container pointer-events-none relative z-1 flex w-7 justify-end sm:w-44 xl:w-auto">
       {% if request.user == user %}
-        {% include "app/components/quick_action_button.html" with card="row" filtered=True %}
+        {% include "app/components/quick_action_button.html" with card="row" filtered=sorted_field %}
       {% endif %}
     </div>
   </div>

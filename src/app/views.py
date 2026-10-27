@@ -1209,7 +1209,11 @@ def log_progress(request, media_type, instance_id):
 
 
 def _quick_action_card(request, media_type, media_id):
-    """Return an entry's updated card or list row after a quick action."""
+    """Return an entry's updated card or list row after a quick action.
+
+    A posted `status` marks a library list; without it the row is a search
+    result's, which has no sort value or progress column.
+    """
     media = BasicMedia.objects.get_media_prefetch(request.user, media_type, media_id)
     BasicMedia.objects.annotate_releases([media], media_type)
     entries = list(
@@ -1240,15 +1244,17 @@ def _quick_action_card(request, media_type, media_id):
         "active": request.POST.get("active") == "true",
     }
     if request.POST.get("card") == "row":
-        context["sorted_field"] = _annotate_sorted_values(
-            [media],
-            media_type,
-            request.POST.get("sort"),
-            request.user,
-        )
         context["media_type"] = media_type
         context["target_user"] = request.user
-        context["show_progress"] = media_type not in UNPROGRESSED_MEDIA_TYPES
+        # Only the library's rows have these columns
+        if context["filtered"]:
+            context["sorted_field"] = _annotate_sorted_values(
+                [media],
+                media_type,
+                request.POST.get("sort"),
+                request.user,
+            )
+            context["show_progress"] = media_type not in UNPROGRESSED_MEDIA_TYPES
         template_name = "app/components/media_row_response.html"
     else:
         template_name = "app/components/media_card_response.html"

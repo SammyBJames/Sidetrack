@@ -32,18 +32,28 @@
   </div>
 
   {% if data.results %}
-    <div {% if layout == 'grid' %}
-         class="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-4">
-      {% for result in data.results %}
-        {% include "app/components/media_card.html" with item=result.item title=result.item.title media=result.media %}
-      {% endfor %}
+    {% if layout == 'grid' %}
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-4">
+        {% for result in data.results %}
+          {% include "app/components/media_card.html" with item=result.item title=result.item.title media=result.media %}
+        {% endfor %}
+      </div>
     {% else %}
-      class="grid grid-cols-1 gap-4">
-      {% for result in data.results %}
-        {% include "app/components/media_card_list.html" with item=result.item title=result.item.title media=result.media %}
-      {% endfor %}
+      <div class="panel overflow-hidden">
+        <div class="hidden items-center gap-x-4 border-b border-white/5 px-4 py-2.5 text-[0.6875rem] font-semibold tracking-wide text-gray-400 uppercase xl:grid xl:grid-cols-[3rem_minmax(0,1fr)_9rem_4.5rem_11rem]">
+          <span></span>
+          <span>Title</span>
+          <span>Status</span>
+          <span>Rating</span>
+          <span class="sr-only">Actions</span>
+        </div>
+        <div class="divide-y divide-white/5">
+          {% for result in data.results %}
+            {% include "app/components/media_row.html" with item=result.item title=result.item.title media=result.media %}
+          {% endfor %}
+        </div>
+      </div>
     {% endif %}
-  </div>
 
   {% if data.total_pages > 1 %}
     <div class="flex flex-wrap justify-center items-center mt-8 gap-x-2 gap-y-3">
