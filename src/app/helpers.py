@@ -203,7 +203,11 @@ def refresh_item_image_if_missing(item, new_image):
 
 
 def enrich_items_with_user_data(request, items, section_name):
-    """Enrich a list of items with user tracking data."""
+    """Enrich a list of items with user tracking data.
+
+    Returns a list of {"item", "media"} dicts. For TV, items with stored season
+    and episode counts also get them in their metadata.
+    """
     if not items:
         return []
 
@@ -237,7 +241,44 @@ def enrich_items_with_user_data(request, items, section_name):
     if items_to_refresh:
         Item.objects.bulk_update(items_to_refresh, ["image"])
 
+    if media_type == MediaTypes.TV.value:
+        _add_stored_show_counts(enriched_items)
+
     return enriched_items
+
+
+def _add_stored_show_counts(enriched_items):
+    """Give each show's metadata the season and episode counts stored on its Item.
+
+    One query covers all of them. Shows that aren't stored, or are stored without
+    counts, are left as they are, so their cards show the year.
+    """
+    wanted = Q()
+    for entry in enriched_items:
+        wanted |= Q(
+            media_id=entry["item"]["media_id"],
+            source=entry["item"]["source"],
+        )
+    if not wanted:
+        return
+
+    stored = {
+        (item.media_id, item.source): item
+        for item in Item.objects.filter(
+            wanted,
+            media_type=MediaTypes.TV.value,
+            season_count__isnull=False,
+            length__isnull=False,
+        )
+    }
+    for entry in enriched_items:
+        item = stored.get((str(entry["item"]["media_id"]), entry["item"]["source"]))
+        if item:
+            entry["item"] = {
+                **entry["item"],
+                "season_count": item.season_count,
+                "length": item.length,
+            }
 
 
 def get_next_release(entry):

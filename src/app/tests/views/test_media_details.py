@@ -1086,6 +1086,99 @@ class DetailsStoredByPagesTests(TestCase):
         self.assertIsNone(other_season.length)
 
 
+class RecommendationCountsTests(TestCase):
+    """Test the counts on a details page's recommended shows."""
+
+    def setUp(self):
+        """Create a user, a stored show and the page of a movie recommending them."""
+        self.credentials = {"username": "test", "password": "12345"}
+        self.user = get_user_model().objects.create_user(**self.credentials)
+        self.client.login(**self.credentials)
+        Item.objects.create(
+            media_id="10",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Stored Show",
+            image="http://example.com/10.jpg",
+            season_count=4,
+            length=44,
+            release_date=datetime(2019, 1, 1, tzinfo=UTC),
+        )
+        Item.objects.create(
+            media_id="11",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Bare Show",
+            image="http://example.com/11.jpg",
+        )
+
+    def recommended_show(self, media_id):
+        """Return a recommended show's metadata, released in 2021."""
+        return {
+            "media_id": int(media_id),
+            "source": Sources.TMDB.value,
+            "media_type": MediaTypes.TV.value,
+            "title": f"Show {media_id}",
+            "image": "http://example.com/show.jpg",
+            "release_year": 2021,
+        }
+
+    def page(self, shows):
+        """Return the movie page's HTML when it recommends the shows."""
+        with patch("app.providers.services.get_media_metadata") as mock_metadata:
+            mock_metadata.return_value = {
+                "media_id": "238",
+                "title": "Test Movie",
+                "media_type": MediaTypes.MOVIE.value,
+                "source": Sources.TMDB.value,
+                "source_url": "https://www.themoviedb.org/movie/238",
+                "image": "http://example.com/image.jpg",
+                "related": {"recommendations": shows},
+            }
+            response = self.client.get(
+                reverse(
+                    "media_details",
+                    kwargs={
+                        "source": Sources.TMDB.value,
+                        "media_type": MediaTypes.MOVIE.value,
+                        "media_id": "238",
+                        "title": "test-movie",
+                    },
+                ),
+            )
+        return re.sub(r"\s+", " ", response.content.decode())
+
+    def test_stored_show_shows_its_counts_and_others_the_year(self):
+        """A stored show lists bold seasons and episodes; the rest list the year."""
+        content = self.page(
+            [
+                self.recommended_show("10"),
+                self.recommended_show("11"),
+                self.recommended_show("12"),
+            ],
+        )
+
+        self.assertIn("4 Seasons", content)
+        self.assertIn("44 Episodes", content)
+        self.assertIn('<span class="font-semibold text-gray-100">', content)
+        # The show stored without counts and the unstored one keep the year
+        self.assertEqual(len(re.findall(r">\s*2021\s*<", content)), 2)
+
+    def test_counts_cost_one_query_for_all_shows(self):
+        """The page costs the same number of queries for more recommended shows."""
+
+        def queries(shows):
+            """Return how many queries one render of the page runs."""
+            with CaptureQueriesContext(connection) as captured:
+                self.page(shows)
+            return len(captured)
+
+        few = queries([self.recommended_show("10")])
+        many = queries([self.recommended_show(str(n)) for n in range(10, 16)])
+
+        self.assertEqual(many, few)
+
+
 class RunsSectionTests(TestCase):
     """Show and season pages list the times through worked out from watches."""
 

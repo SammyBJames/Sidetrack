@@ -882,8 +882,7 @@ def get_related(related_medias, media_type, parent_response=None):
         else:
             data["media_id"] = media["id"]
             data["title"] = get_title(media)
-            if media_type == MediaTypes.MOVIE.value:
-                data["release_year"] = get_release_year(media)
+            data["release_year"] = get_release_year(media)
         related.append(data)
     return related
 

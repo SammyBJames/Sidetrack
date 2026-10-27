@@ -622,6 +622,20 @@ class Metadata(TestCase):
             2003,
         )
 
+    def test_related_shows_have_their_first_air_year(self):
+        """Related shows carry the year of their first air date for their cards."""
+        show = {
+            "id": 2,
+            "name": "Show",
+            "poster_path": None,
+            "first_air_date": "2020-07-31",
+        }
+
+        self.assertEqual(
+            tmdb.get_related([show], MediaTypes.TV.value)[0]["release_year"],
+            2020,
+        )
+
     @patch("requests.Session.get")
     def test_movie_unknown(self, mock_data):
         """Test the metadata method for movies with mostly unknown data."""
