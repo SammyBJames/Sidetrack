@@ -1,0 +1,36 @@
+{% load app_tags %}
+
+{# The top row of a home card: when the next part comes out, and the release date or status action. Takes media, home_status, caught_up and user from the card #}
+
+{# Caught up media waits like planned media, so it's in its colors #}
+{% if home_status == Status.PLANNING.value or caught_up %}
+  {% firstof "text-sky-400" as clock_color %}
+{% elif home_status == Status.REPEATING.value or home_status == Status.PLANNING_REPEAT.value %}
+  {% firstof "text-teal-300" as clock_color %}
+{% else %}
+  {% firstof "text-indigo-300" as clock_color %}
+{% endif %}
+
+{% with unreleased=media|unreleased_on_home:home_status %}
+  {# Released media with more on the way shows when the next part comes out #}
+  {% if media.next_event and not media.next_event.is_max_datetime and not unreleased %}
+    <div class="card-chip flex min-w-0 items-center gap-1.5 px-2 py-0.5 whitespace-nowrap">
+      {% include "app/icons/clock.svg" with classes="size-3.5 shrink-0 "|add:clock_color %}
+      <span class="truncate text-xs font-medium text-white">{{ media.next_event|release_label:user }}</span>
+    </div>
+  {% endif %}
+
+  <div class="ml-auto">
+    {% if unreleased %}
+      {# Nothing to act on until it comes out, so offer the release date instead #}
+      {% if caught_up %}
+        {% include "app/components/release_button.html" with event=media.next_event home_status=Status.PLANNING.value %}
+      {% else %}
+        {% include "app/components/release_button.html" with event=media.next_event %}
+      {% endif %}
+    {% else %}
+      {# Current status, which turns into the action to the next one; the row header already shows the status, so it waits for hover where there is a mouse #}
+      <div class="hover-reveal">{% include "app/components/quick_action_button.html" with card="home" %}</div>
+    {% endif %}
+  </div>
+{% endwith %}

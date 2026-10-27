@@ -1,3 +1,4 @@
+import re
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -50,6 +51,20 @@ class ProgressEditHomeCardTests(TestCase):
         self.assertContains(response, f'id="home-media-anime-{self.anime.id}"')
         self.assertNotIn("HX-Reswap", response)
         self.assertNotIn("HX-Trigger", response)
+
+    def test_card_is_the_one_the_page_shows(self, *_):
+        """The re-rendered card is the card home draws for the entry."""
+        response = self.increase()
+
+        start = f'<div id="home-media-anime-{self.anime.id}"'
+
+        def card(response):
+            """Return the markup from the card on, without its CSRF token."""
+            html = response.content.decode().split(start)[1]
+            return re.sub(r'"X-CSRFToken": "[^"]*"', "", html).strip()
+
+        updated = card(response)
+        self.assertTrue(card(self.client.get(reverse("home"))).startswith(updated))
 
     def test_card_leaves_section_when_completed(self, *_):
         """Reaching the last episode completes the entry and moves its card."""

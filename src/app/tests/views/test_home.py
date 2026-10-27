@@ -3,6 +3,7 @@ from urllib.parse import quote
 
 from django.contrib.auth import get_user_model
 from django.db import connection
+from django.template.loader import render_to_string
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
@@ -324,6 +325,21 @@ class HomeViewTests(TestCase):
         self.assertRegex(
             response.content.decode(), r"Caught Up\s*<span[^>]*>•</span>\s*Anime"
         )
+
+    def test_caught_up_card_has_a_release_button_and_no_progress_bar(self):
+        """A caught up card offers its next release, and a full bar says nothing."""
+        anime = Anime.objects.get(user=self.user, item__media_id="1")
+        anime.progress = 16
+        anime.save()
+
+        response = self.client.get(reverse("home"))
+
+        card = response.content.decode().split(f'id="home-media-anime-{anime.id}"')[1]
+        card = card.split('id="home-media-')[0]
+        event = Event.objects.get(item=anime.item, content_number=17)
+        self.assertIn(reverse("download_event", args=[event.id]), card)
+        self.assertNotIn("card-chip flex min-w-0", card)
+        self.assertNotIn("h-1 bg-", card)
 
     def track_show(self, media_id, seasons):
         """Track a show by its seasons' numbers, statuses and next release days."""
@@ -682,3 +698,76 @@ class HomeViewTests(TestCase):
         card = response.content.decode().split(f'id="home-media-movie-{movie.id}"')[1]
         card = card.split('id="home-media-')[0]
         self.assertIn("<span>1999</span>", card)
+
+    def test_card_keeps_its_id_chip_and_hover_action(self):
+        """A released card with more on the way has its id, next release and action."""
+        item = Item.objects.create(
+            media_id="chip-card",
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.ANIME.value,
+            title="Chip Anime",
+            image="http://example.com/image.jpg",
+        )
+        anime = Anime.objects.create(
+            item=item,
+            user=self.user,
+            status=Status.IN_PROGRESS.value,
+            progress=1,
+        )
+        Event.objects.create(
+            item=item,
+            content_number=2,
+            datetime=timezone.now() - timezone.timedelta(days=1),
+        )
+        Event.objects.create(
+            item=item,
+            content_number=3,
+            datetime=timezone.now() + timezone.timedelta(days=30),
+        )
+
+        response = self.client.get(reverse("home"))
+
+        card = response.content.decode().split(f'id="home-media-anime-{anime.id}"')[1]
+        card = card.split('id="home-media-')[0]
+        self.assertIn("card-chip flex min-w-0", card)
+        self.assertIn("text-indigo-300", card)
+        self.assertIn('<div class="hover-reveal">', card)
+        self.assertIn(reverse("progress_edit", args=["anime", anime.id]), card)
+        self.assertNotIn("download_event", card)
+
+    def test_home_and_library_cards_share_their_caption(self):
+        """The same entry gets the same title and details on home and elsewhere."""
+        item = Item.objects.create(
+            media_id="caption-card",
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.ANIME.value,
+            title="Caption Anime",
+            image="http://example.com/image.jpg",
+        )
+        anime = Anime.objects.create(
+            item=item,
+            user=self.user,
+            status=Status.IN_PROGRESS.value,
+            progress=3,
+        )
+        anime.max_progress = 12
+
+        def caption(**context):
+            """Return the caption markup of a card rendered with the context."""
+            html = render_to_string(
+                "app/components/media_card.html",
+                {
+                    "item": item,
+                    "media": anime,
+                    "title": anime,
+                    "user": self.user,
+                    "home_status": Status.IN_PROGRESS.value,
+                }
+                | context,
+            )
+            html = html.split("<a href=", 2)[2]
+            return html.split("</a>", 1)[1].split("</div>", 1)[0]
+
+        home = caption(variant="home")
+        self.assertIn("3 / 12", home)
+        self.assertEqual(home, caption())

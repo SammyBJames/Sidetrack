@@ -1,3 +1,4 @@
+{# The cards of a home section, one for each entry of media_list.items; home_status and caught_up pick their colors and actions #}
 {% for media in media_list.items %}
-  {% include "app/components/home_card.html" with media=media home_status=home_status caught_up=caught_up %}
+  {% include "app/components/media_card.html" with variant="home" item=media.item title=media %}
 {% endfor %}
