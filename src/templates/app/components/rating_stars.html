@@ -1,10 +1,15 @@
 {% load app_tags %}
 
-{# The user's five rating stars, `size` across, size-4.5 unless given, inside an Alpine parent with `hovered`, `fill(star)` and `setRating(star)` (ratingStars, or mediaForm in the edit dialog) #}
-<div class="flex"
+{# The user's five rating stars, `size` across, size-4.5 unless given, inside an Alpine parent with `hovered`, `fill(star)` and `setRating(star, toggle)` (ratingStars, or mediaForm in the edit dialog). Pressing and dragging picks a rating (ratingDrag); vertical swipes still scroll the page #}
+<div class="flex touch-pan-y select-none"
      role="group"
      aria-label="Your rating"
-     @mouseleave="hovered = null">
+     x-data="ratingDrag"
+     @pointerdown="press($event)"
+     @pointermove="drag($event)"
+     @pointerup="release($event)"
+     @pointercancel="cancel()"
+     @mouseleave="pressed === null && (hovered = null)">
   {% for star in 5|get_range %}
     {% widthratio star 1 2 as full %}
     <span class="relative {{ size|default:'size-4.5' }}">

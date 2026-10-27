@@ -812,10 +812,15 @@ class MediaDetailsViewTests(TestCase):
         self.assertContains(response, 'title="Rated PG-13">PG-13</span>')
         self.assertContains(response, "Your rating")
         self.assertContains(response, "ratingStars(7.0, ")
-        # Two halves for each of the five stars, a point out of ten apiece
+        # Two halves for each of the five stars, a point out of ten apiece, which a
+        # press and drag across them also picks from
+        self.assertContains(response, 'x-data="ratingDrag"')
         for score in range(1, 11):
             self.assertContains(response, f'aria-label="Rate {score} out of 10"')
-            self.assertContains(response, f'@click="setRating({score})"')
+            self.assertContains(
+                response,
+                f'@click="$event.detail || setRating({score})"',
+            )
 
     @patch("app.providers.services.get_media_metadata")
     def test_people_videos_and_related_media_are_rows(self, mock_get_metadata):

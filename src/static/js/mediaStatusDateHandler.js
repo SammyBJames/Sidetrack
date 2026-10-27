@@ -165,9 +165,9 @@ if (!window.__mediaFormRegistered) {
       return value >= star * 2 ? 100 : value >= star * 2 - 1 ? 50 : 0;
     },
 
-    // Choosing the current rating again clears it (rating_stars.html calls this)
-    setRating(value) {
-      this.score = this.score === value ? null : value;
+    // Choosing the current rating again clears it unless `toggle` is false (rating_stars.html calls this)
+    setRating(value, toggle = true) {
+      this.score = toggle && this.score === value ? null : value;
       this.hovered = null;
     },
 
