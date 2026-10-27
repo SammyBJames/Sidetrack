@@ -1,59 +1,51 @@
 {% load widget_tweaks %}
 
-<div x-show="showModal"
-     x-cloak
-     class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-  <div @click.outside="showModal = false"
-       class="bg-surface-800 p-6 rounded-lg w-152 max-h-[90vh] overflow-y-auto">
-    <div class="flex items-center justify-between mb-6">
-      <h2 class="text-2xl font-bold">
-        {% if form.instance.pk %}
-          Edit List
-        {% else %}
-          Create New List
-        {% endif %}
-      </h2>
-      <button aria-label="Close"
-              @click="showModal = false"
-              class="text-gray-400 hover:text-white transition-colors cursor-pointer">
-        {% include "app/icons/x.svg" with classes="w-6 h-6" %}
-      </button>
-    </div>
-    <form class="space-y-6" method="post">
-      {% csrf_token %}
-      <input type="hidden" name="list_id" value="{{ custom_list.id }}">
-      {% for field in form %}
-        <div>
-          <label class="block text text-sm font-medium mb-2 text-gray-300">{{ field.label }}</label>
-          {% if field.name != 'collaborators' %}
-            {{ field|add_class:"w-full p-2 bg-surface-600 rounded-md text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-focus appearance-none" }}
+{# The dialog to create a list, or to edit or delete the list `custom_list`, opened by the `showModal` flag #}
+<div x-show="showModal" x-cloak class="dialog-backdrop">
+  <div @click.outside="showModal = false" class="dialog-box">
+    <div class="dialog-sheet">
+      {% if form.instance.pk %}
+        {% include "app/components/dialog_header.html" with title="Edit List" close="showModal = false" %}
+      {% else %}
+        {% include "app/components/dialog_header.html" with title="Create New List" close="showModal = false" %}
+      {% endif %}
+      <form class="flex min-h-0 flex-1 flex-col" method="post">
+        {% csrf_token %}
+        <input type="hidden" name="list_id" value="{{ custom_list.id }}">
+        <div class="dialog-body">
+          {% for field in form %}
+            <div>
+              <label class="dialog-label">{{ field.label }}</label>
+              {% if field.name != 'collaborators' %}
+                {{ field|add_class:"dialog-input" }}
+              {% else %}
+                {{ field }}
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+
+        {# Reversed, so the first submit button in the markup, which Enter in a field presses, is Save #}
+        <div class="dialog-footer flex-row-reverse">
+          {% if form.instance.pk %}
+            <button type="submit"
+                    formaction="{% url 'list_edit' %}?next={{ request.path }}"
+                    class="dialog-primary">Save</button>
+            {% if request.user == custom_list.owner %}
+              <button type="submit"
+                      formaction="{% url 'list_delete' %}?next={{ request.path }}"
+                      @click="if (!confirm('Delete this list?')) $event.preventDefault()"
+                      class="dialog-delete"
+                      title="Delete list"
+                      aria-label="Delete list">{% include "app/icons/trashcan.svg" with classes="size-4" %}</button>
+            {% endif %}
           {% else %}
-            {{ field }}
+            <button type="submit"
+                    formaction="{% url 'list_create' %}?next={{ request.path }}"
+                    class="dialog-primary">Create List</button>
           {% endif %}
         </div>
-      {% endfor %}
-
-      {% if form.instance.pk %}
-        <div class="flex flex-row-reverse justify-between mt-6">
-          <button type="submit"
-                  formaction="{% url 'list_edit' %}?next={{ request.path }}"
-                  class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 cursor-pointer">
-            Save
-          </button>
-          <button type="submit"
-                  formaction="{% url 'list_delete' %}?next={{ request.path }}"
-                  class="px-4 py-2 rounded-md transition duration-300 {% if request.user == custom_list.owner %}bg-red-700 text-white hover:bg-red-800 cursor-pointer{% else %}bg-gray-600 text-gray-300 cursor-not-allowed{% endif %}"
-                  {% if not request.user == custom_list.owner %}disabled{% endif %}>Delete</button>
-        </div>
-      {% else %}
-        <div class="flex justify-end pt-4">
-          <button type="submit"
-                  formaction="{% url 'list_create' %}?next={{ request.path }}"
-                  class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors cursor-pointer">
-            Create List
-          </button>
-        </div>
-      {% endif %}
-    </form>
+      </form>
+    </div>
   </div>
 </div>

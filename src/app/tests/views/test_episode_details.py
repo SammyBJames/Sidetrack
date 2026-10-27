@@ -227,6 +227,53 @@ class EpisodeDetailsViewTests(TestCase):
         self.assertContains(response, reverse("media_save"))
         self.assertNotContains(response, "Mark watched")
 
+    def test_watch_tiles_have_no_delete_but_the_dialog_does(self, _):
+        """A watch is deleted from its edit dialog, which asks first, not its tile."""
+        self.watch(1)
+
+        content = self.client.get(self.episode_url(1)).content.decode()
+
+        tiles = content.split("Your Watches")[1].split("Edit Watch</h2>")[0]
+        self.assertNotIn(reverse("media_delete"), tiles)
+        self.assertIn('aria-label="Edit watch"', content)
+        edit_dialog = content.split("Edit Watch</h2>")[1]
+        self.assertRegex(
+            edit_dialog,
+            r'hx-post="'
+            + reverse("media_delete")
+            + r'[^"]*"[^>]*hx-confirm="Delete this watch\?"',
+        )
+        self.assertIn('aria-label="Delete watch"', edit_dialog)
+
+    def test_previous_watches_in_the_track_dialog_ask_before_deleting(self, _):
+        """Previous watches in the Track Episode dialog delete after a confirm."""
+        watch = self.watch(1)
+
+        content = self.client.get(self.episode_url(1)).content.decode()
+
+        track_dialog = content.split("Track Episode</h2>")[1].split("Edit Watch")[0]
+        self.assertIn(f'"instance_id": "{watch.id}"', track_dialog)
+        self.assertIn('hx-confirm="Delete this watch?"', track_dialog)
+
+    def test_the_edit_dialogs_fields_delete_the_watch(self, _):
+        """Posting the Edit Watch form's fields to media_delete removes the watch."""
+        watch = self.watch(1)
+
+        self.client.post(
+            reverse("media_delete") + f"?next={self.episode_url(1)}",
+            {
+                "instance_id": watch.id,
+                "media_type": MediaTypes.EPISODE.value,
+                "media_id": "1396",
+                "source": Sources.TMDB.value,
+                "season_number": 1,
+                "end_date": "2024-10-06",
+                "notes": "",
+            },
+        )
+
+        self.assertFalse(Episode.objects.filter(pk=watch.pk).exists())
+
     def test_editing_a_watch_saves_it(self, _):
         """A watch's edit form changes its notes, keeping its rating and season."""
         watch = self.watch(1, notes="First thoughts")

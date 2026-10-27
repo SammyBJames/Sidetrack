@@ -1,17 +1,13 @@
-{% if has_item %}
-  <button hx-post="{% url 'list_item_toggle' %}"
-          hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-          hx-vals='{"custom_list_id": "{{ custom_list.id }}", "item_id": "{{ item.id }}"}'
-          hx-swap="outerHTML"
-          class="px-3 py-1 rounded transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-opacity-50 bg-emerald-600 hover:bg-emerald-700">
+{# A list's button to add the `item` to it, or to take it out when it has `has_item` #}
+<button type="button"
+        hx-post="{% url 'list_item_toggle' %}"
+        hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+        hx-vals='{"custom_list_id": "{{ custom_list.id }}", "item_id": "{{ item.id }}"}'
+        hx-swap="outerHTML"
+        class="h-8 shrink-0 cursor-pointer rounded-lg px-3 text-xs font-medium ring-1 transition-colors focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none {% if has_item %}bg-emerald-600/20 text-emerald-300 ring-emerald-400/30 hover:bg-red-600/20 hover:text-red-300 hover:ring-red-400/30{% else %}bg-white/5 text-gray-200 ring-white/10 hover:bg-white/10 hover:text-white{% endif %}">
+  {% if has_item %}
     Remove
-  </button>
-{% else %}
-  <button hx-post="{% url 'list_item_toggle' %}"
-          hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-          hx-vals='{"custom_list_id": "{{ custom_list.id }}", "item_id": "{{ item.id }}"}'
-          hx-swap="outerHTML"
-          class="px-3 py-1 rounded transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-opacity-50 bg-gray-500 hover:bg-gray-600">
+  {% else %}
     Add
-  </button>
-{% endif %}
+  {% endif %}
+</button>

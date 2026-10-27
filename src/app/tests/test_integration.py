@@ -179,6 +179,29 @@ class IntegrationTest(StaticLiveServerTestCase):
         self.page.get_by_role("button", name="List", exact=True).click()
         expect(self.page.locator(".media-row")).to_contain_text("62")
 
+    def test_tracking_dialog_fold_starts_closed_each_time(self):
+        """The Advanced fold of the tracking dialog is closed on every open."""
+        self.page.get_by_placeholder("Search tv shows...").click()
+        self.page.get_by_placeholder("Search tv shows...").fill("breaking bad")
+        self.page.get_by_placeholder("Search tv shows...").press("Enter")
+        expect(self.page.locator("h2")).to_contain_text("Search Results")
+        self.page.get_by_title("Breaking Bad", exact=True).click()
+        expect(self.page.get_by_role("main")).to_contain_text("Breaking Bad")
+
+        notes = self.page.locator("#track-tv-1396 textarea")
+        for _ in range(2):
+            self.page.get_by_role("button", name="Add to tracker").click()
+            fold = self.page.get_by_role("button", name="Advanced")
+            expect(fold).to_be_visible()
+            # htmx settles a swapped-in dialog's attributes a moment after inserting it
+            self.page.wait_for_timeout(300)
+            expect(notes).to_be_hidden()
+            fold.click()
+            expect(notes).to_be_visible()
+            fold.click()
+            expect(notes).to_be_hidden()
+            self.page.locator("#track-tv-1396").get_by_label("Close").click()
+
     def test_season_completed(self):
         """Test the completed status of a season."""
         self.page.get_by_placeholder("Search tv shows...").fill("breaking bad")

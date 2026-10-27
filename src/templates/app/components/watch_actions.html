@@ -1,78 +1,63 @@
 {% load app_tags %}
 
-{# A watch tile's buttons for its `entry`: one opens the form to change its date and notes, and the other deletes it #}
-<div class="flex gap-2"
-     x-data="{ editOpen: false }"
+{# A watch tile's button, which opens the form to change its date and notes, or delete it, for its `entry` #}
+<div x-data="{ editOpen: false }"
      @keydown.escape.window="editOpen = false">
-  {% with button_classes="tooltip flex size-8 cursor-pointer items-center justify-center rounded-lg bg-white/5 text-gray-300 ring-1 ring-white/10 transition-colors" %}
-    <button type="button"
-            class="{{ button_classes }} hover:bg-white/10 hover:text-white"
-            data-tooltip="Edit watch"
-            aria-label="Edit watch"
-            @click="editOpen = true">{% include "app/icons/edit.svg" with classes="size-4" %}</button>
-    <form hx-post="{% url 'media_delete' %}?next={{ request.get_full_path|urlencode }}"
-          hx-swap="none"
-          hx-confirm="Delete this watch?">
-      {% csrf_token %}
-      <input type="hidden" name="instance_id" value="{{ entry.id }}">
-      <input type="hidden"
-             name="media_type"
-             value="{{ MediaTypes.EPISODE.value }}">
-      <button type="submit"
-              class="{{ button_classes }} hover:bg-red-600/20 hover:text-red-300"
-              data-tooltip="Delete watch"
-              aria-label="Delete watch">{% include "app/icons/trashcan.svg" with classes="size-4" %}</button>
-    </form>
-  {% endwith %}
+  <button type="button"
+          class="tooltip flex size-8 cursor-pointer items-center justify-center rounded-lg bg-white/5 text-gray-300 ring-1 ring-white/10 transition-colors hover:bg-white/10 hover:text-white"
+          data-tooltip="Edit watch"
+          aria-label="Edit watch"
+          @click="editOpen = true">{% include "app/icons/edit.svg" with classes="size-4" %}</button>
 
   {# Edit form #}
-  <div x-cloak
-       x-show="editOpen"
-       class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-    <div class="relative z-60 max-h-[90vh] w-100 px-4 md:px-0"
-         @click.outside="editOpen = false">
-      <form class="rounded-lg bg-surface-800 p-6"
-            hx-post="{% url 'media_save' %}?next={{ request.get_full_path|urlencode }}"
-            hx-swap="none">
-        {% csrf_token %}
-        <input type="hidden" name="instance_id" value="{{ entry.id }}">
-        <input type="hidden"
-               name="media_type"
-               value="{{ MediaTypes.EPISODE.value }}">
-        <input type="hidden" name="media_id" value="{{ media.media_id }}">
-        <input type="hidden" name="source" value="{{ media.source }}">
-        <input type="hidden" name="season_number" value="{{ media.season_number }}">
+  <div x-cloak x-show="editOpen" class="dialog-backdrop">
+    <div class="dialog-box dialog-narrow" @click.outside="editOpen = false">
+      <div class="dialog-sheet">
+        {% include "app/components/dialog_header.html" with title="Edit Watch" close="editOpen = false" %}
+        <form class="flex min-h-0 flex-1 flex-col"
+              hx-post="{% url 'media_save' %}?next={{ request.get_full_path|urlencode }}"
+              hx-swap="none">
+          {% csrf_token %}
+          <input type="hidden" name="instance_id" value="{{ entry.id }}">
+          <input type="hidden"
+                 name="media_type"
+                 value="{{ MediaTypes.EPISODE.value }}">
+          <input type="hidden" name="media_id" value="{{ media.media_id }}">
+          <input type="hidden" name="source" value="{{ media.source }}">
+          <input type="hidden" name="season_number" value="{{ media.season_number }}">
 
-        <div class="mb-4 flex items-center justify-between">
-          <h2 class="text-xl font-bold text-white">Edit Watch</h2>
-          <button type="button"
-                  class="cursor-pointer text-gray-400 transition-colors hover:text-white"
-                  aria-label="Close"
-                  @click="editOpen = false">{% include "app/icons/x.svg" with classes="w-5 h-5" %}</button>
-        </div>
+          <div class="dialog-body">
+            <div>
+              <label class="dialog-label" for="watch-date-{{ entry.id }}">Watch date</label>
+              <input class="dialog-input h-9 py-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-50 [&::-webkit-calendar-picker-indicator]:hover:opacity-100"
+                     id="watch-date-{{ entry.id }}"
+                     name="end_date"
+                     {% if TRACK_TIME %}type="datetime-local" value="{{ entry.end_date|date:'Y-m-d\TH:i' }}"{% else %}type="date" value="{{ entry.end_date|date:'Y-m-d' }}"{% endif %}>
+            </div>
+            <div>
+              <label class="dialog-label" for="watch-notes-{{ entry.id }}">Notes</label>
+              <textarea class="dialog-input"
+                        id="watch-notes-{{ entry.id }}"
+                        name="notes"
+                        rows="3"
+                        placeholder="Add any notes or comments...">{{ entry.notes }}</textarea>
+            </div>
+          </div>
 
-        <label class="mb-2 block text-sm font-medium text-gray-300"
-               for="watch-date-{{ entry.id }}">Watch Date</label>
-        <input class="w-full appearance-none rounded-md border border-gray-600 bg-surface-650 p-3 text-white focus:ring-2 focus:ring-focus focus:outline-none"
-               id="watch-date-{{ entry.id }}"
-               name="end_date"
-               {% if TRACK_TIME %}type="datetime-local" value="{{ entry.end_date|date:'Y-m-d\TH:i' }}"{% else %}type="date" value="{{ entry.end_date|date:'Y-m-d' }}"{% endif %}>
-
-        <label class="mt-4 mb-2 block text-sm font-medium text-gray-300"
-               for="watch-notes-{{ entry.id }}">Notes</label>
-        <textarea class="w-full rounded-md border border-gray-600 bg-surface-650 p-3 text-white focus:ring-2 focus:ring-focus focus:outline-none"
-                  id="watch-notes-{{ entry.id }}"
-                  name="notes"
-                  rows="3"
-                  placeholder="Add any notes or comments...">{{ entry.notes }}</textarea>
-
-        <div class="mt-6 flex justify-end">
-          <button type="submit"
-                  class="cursor-pointer rounded-md bg-indigo-600 px-4 py-2 font-medium text-white transition-colors hover:bg-indigo-700">
-            Save
-          </button>
-        </div>
-      </form>
+          <div class="dialog-footer">
+            {# Not a submit button, so Enter in a field saves instead of deleting #}
+            <button type="button"
+                    hx-post="{% url 'media_delete' %}?next={{ request.get_full_path|urlencode }}"
+                    hx-include="closest form"
+                    hx-swap="none"
+                    hx-confirm="Delete this watch?"
+                    class="dialog-delete"
+                    title="Delete watch"
+                    aria-label="Delete watch">{% include "app/icons/trashcan.svg" with classes="size-4" %}</button>
+            <button type="submit" class="dialog-primary ml-auto">Save</button>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
 </div>

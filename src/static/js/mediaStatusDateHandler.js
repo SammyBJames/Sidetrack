@@ -7,9 +7,9 @@ if (!window.__mediaFormRegistered) {
   Alpine.data("mediaForm", (score = null, total = null) => ({
     score,
     hovered: null,
-    // The "Dates & notes" row: whether it is open and what the fields hold
+    // The "Advanced" fold: whether it is open and the dates its summary follows
     open: false,
-    extra: { start_date: "", end_date: "", notes: "" },
+    extra: { start_date: "", end_date: "" },
     autoFilled: {
       start_date: false,
       end_date: false,
@@ -131,7 +131,7 @@ if (!window.__mediaFormRegistered) {
       this.syncExtra();
     },
 
-    // Copy the dates and notes into `extra`, which the row's summary follows
+    // Copy the dates into `extra`, which the row's summary follows
     syncExtra() {
       for (const name of Object.keys(this.extra)) {
         this.extra[name] = this.$root.querySelector(`[name="${name}"]`)?.value ?? "";
@@ -146,20 +146,13 @@ if (!window.__mediaFormRegistered) {
       return new Date(year, month - 1, day).toLocaleDateString(undefined, options);
     },
 
-    // One line naming the dates and notes set, or "None"; shown on the row when closed
+    // The dates in a few words: nothing, one with what it is, or the two as a range
     get summary() {
-      const { start_date: start, end_date: end, notes } = this.extra;
-      const parts = [
-        start && `Started ${this.shortDate(start)}`,
-        end && `Finished ${this.shortDate(end)}`,
-        notes.trim() && "Notes",
-      ].filter(Boolean);
-      return parts.join(" \u00b7 ") || "None";
-    },
-
-    // Whether the "Dates & notes" row holds anything
-    get active() {
-      return this.summary !== "None";
+      const { start_date: start, end_date: end } = this.extra;
+      if (start && end) return `${this.shortDate(start)} \u2013 ${this.shortDate(end)}`;
+      if (start) return `Started ${this.shortDate(start)}`;
+      if (end) return `Finished ${this.shortDate(end)}`;
+      return "";
     },
 
     // How full a star is, as a percentage, for the hovered rating or else the form's
@@ -181,7 +174,7 @@ if (!window.__mediaFormRegistered) {
       field.value = total ? Math.min(next, total) : next;
     },
 
-    // Add `delta` minutes to a duration typed as "1h 30min", "1:30", "45min" or "1.5"
+    // Add `delta` minutes (floored at 0) to a duration typed as "1h 30min", "1:30", "45min" or "1.5"
     addMinutes(delta) {
       const field = this.$refs.progress;
       const text = field.value.trim();
@@ -194,7 +187,7 @@ if (!window.__mediaFormRegistered) {
         else if (!isNaN(text)) minutes = Math.round(text * 60);
         else return;
       }
-      minutes += delta;
+      minutes = Math.max(0, minutes + delta);
       const hours = Math.floor(minutes / 60);
       field.value = hours ? `${hours}h ${String(minutes % 60).padStart(2, "0")}min` : `${minutes}min`;
     },

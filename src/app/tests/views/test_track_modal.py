@@ -134,7 +134,8 @@ class TrackModalDialogTests(TestCase):
                 self.assertContains(response, 'type="radio"', count=7)
                 self.assertContains(response, 'name="status"', count=7)
                 self.assertContains(response, 'name="score"')
-                self.assertContains(response, "track-extra")
+                self.assertContains(response, "$id('fold')")
+                self.assertContains(response, ">Advanced<")
                 self.assertContains(response, "dialog-sheet")
 
     def test_status_chips_follow_the_lifecycle(self):
@@ -248,6 +249,7 @@ class TrackModalDialogTests(TestCase):
         )
 
         self.assertContains(response, "hx-confirm=")
+        self.assertContains(response, 'aria-label="Delete entry"')
         self.assertContains(response, reverse("media_delete"))
         self.assertNotContains(response, "bump(")
 
@@ -262,8 +264,8 @@ class TrackModalDialogTests(TestCase):
         )
         return Movie.objects.create(item=item, user=self.user)
 
-    def test_game_keeps_the_duration_text_input_with_chips(self):
-        """A game's progress is the duration text, with quick chips, and no stepper."""
+    def test_game_keeps_the_duration_text_input_with_half_hour_steps(self):
+        """A game's progress is the duration text, stepped by 30 minutes both ways."""
         item = Item.objects.create(
             media_id="g1",
             source=Sources.IGDB.value,
@@ -289,6 +291,8 @@ class TrackModalDialogTests(TestCase):
 
         self.assertContains(response, 'value="5h 07min"')
         self.assertContains(response, "addMinutes(30)")
-        self.assertContains(response, "addMinutes(60)")
+        self.assertContains(response, "addMinutes(-30)")
+        self.assertNotContains(response, "addMinutes(60)")
+        self.assertNotContains(response, "Time Played")
         self.assertNotContains(response, "bump(")
         self.assertContains(response, "mediaForm(null, null)")

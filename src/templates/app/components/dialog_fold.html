@@ -1,0 +1,14 @@
+{# A dialog section's fold header, styled as the dialog's other section labels: its `label`, a short Alpine `summary` and a chevron. It opens the section whose id is `$id('fold')`, and needs `open`, `summary` and `x-id="['fold']"` in its Alpine scope. The id is set by Alpine because htmx, swapping a dialog in again, copies attributes between elements with the same id and would undo the hiding #}
+<button type="button"
+        @click="open = !open"
+        aria-expanded="false"
+        :aria-expanded="open"
+        x-bind:aria-controls="$id('fold')"
+        class="flex w-full cursor-pointer items-center gap-3 text-[0.6875rem] font-semibold tracking-wide text-gray-400 uppercase transition-colors hover:text-white">
+  <span>{{ label }}</span>
+  <span class="ml-auto min-w-0 truncate text-xs font-medium tracking-normal normal-case"
+        x-text="summary"></span>
+  <span class="shrink-0 text-gray-500 transition-transform"
+        :class="open && 'rotate-180'"
+        aria-hidden="true">{% include "app/icons/chevron-down.svg" with classes="size-4" %}</span>
+</button>
