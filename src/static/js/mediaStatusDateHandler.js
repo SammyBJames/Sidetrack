@@ -146,7 +146,8 @@ if (!window.__mediaFormRegistered) {
       return new Date(year, month - 1, day).toLocaleDateString(undefined, options);
     },
 
-    // The dates in a few words: nothing, one with what it is, the day when both are the same, or the two as a range
+    // The dates in a few words: nothing, one with what it is, the day when both
+    // are the same, or the two as a range
     get summary() {
       const { start_date: start, end_date: end } = this.extra;
       if (start && end) {
