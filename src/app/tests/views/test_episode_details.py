@@ -626,6 +626,63 @@ class EpisodeDetailsViewTests(TestCase):
         )
         self.assertContains(response, "The Sopranos")
 
+    def entry(self, number, status):
+        """Add an entry of an episode of the first season in a status."""
+        watch = self.watch(number)
+        Episode.objects.filter(pk=watch.pk).update(status=status)
+        return watch
+
+    def test_unfinished_entries_are_not_watches_on_the_episode_page(self, _):
+        """Only completed entries are listed and counted as the episode's watches."""
+        self.entry(1, Status.PLANNING.value)
+
+        response = self.client.get(self.episode_url(1))
+
+        self.assertEqual(response.context["media"]["history"], [])
+        self.assertNotContains(response, "Your Watches")
+        self.assertContains(response, "Mark watched")
+
+    def test_one_click_watches_an_episode_only_planned(self, _):
+        """A planned entry doesn't stop one click from adding the watch."""
+        self.entry(2, Status.PLANNING.value)
+
+        self.client.post(
+            reverse("episode_save"),
+            {
+                "media_id": "1396",
+                "source": Sources.TMDB.value,
+                "season_number": 1,
+                "episode_number": 2,
+                "quick": "1",
+            },
+        )
+
+        self.assertEqual(
+            Episode.objects.filter(
+                item__episode_number=2,
+                status=Status.COMPLETED.value,
+            ).count(),
+            1,
+        )
+
+    def test_rewatch_is_planned_for_episodes_watched_before(self, _):
+        """An episode being rewatched can be planned again, and a planned one can't."""
+        self.entry(1, Status.REPEATING.value)
+        self.entry(2, Status.PLANNING.value)
+        data = {
+            "media_id": "1396",
+            "source": Sources.TMDB.value,
+            "season_number": 1,
+        }
+
+        for number in (1, 2):
+            self.client.post(
+                reverse("episode_plan_repeat"),
+                {**data, "episode_number": number},
+            )
+
+        self.assertEqual(Season.objects.get().planned_repeat_episodes, [1])
+
 
 class ManualShowTests(TestCase):
     """Test the pages of a show made by hand, whose metadata has no air dates."""

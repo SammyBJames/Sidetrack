@@ -61,7 +61,7 @@
     
         // Episode fields
         else if (this.mediaType === 'episode') {
-          return ['parentSeason', 'image', 'episodeNumber', 'endDate'].includes(field);
+          return ['parentSeason', 'image', 'episodeNumber', 'status', 'startDate', 'endDate'].includes(field);
         }
     
         // Movie, Anime, Manga, Game, Book fields
@@ -311,7 +311,7 @@
           </div>
         </div>
 
-        <!-- Status field (TV, Movie, Anime, Manga, Game, Book, Season) -->
+        <!-- Status field (TV, Movie, Anime, Manga, Game, Book, Season, Episode) -->
         <div x-cloak
              x-show="showField('status')">
           <label class="block text-sm font-medium mb-2 text-gray-300">Status</label>
@@ -326,7 +326,7 @@
           </div>
         </div>
 
-        <!-- Start Date field (Movie, Anime, Manga, Game, Book) -->
+        <!-- Start Date field (Episode, Movie, Anime, Manga, Game, Book) -->
         <div x-cloak
              x-show="showField('startDate')">
           <label class="block text-sm font-medium mb-2 text-gray-300">Start Date</label>

@@ -244,6 +244,43 @@ class LibraryFieldsTests(TestCase):
                 sort,
             )
 
+    def test_unfinished_episode_entries_leave_shows_values_alone(self):
+        """Only watches count for a show's or season's progress, dates and plays."""
+        few = self.watched_show("Few", [(1, 1), (1, 1)])
+        self.watched_show("Many", [(1, 1), (1, 2), (1, 3)])
+        season = few.seasons.get()
+        Episode.objects.bulk_create(
+            [
+                Episode(
+                    related_season=season,
+                    item=Item.objects.create(
+                        media_id=few.item.media_id,
+                        source=Sources.MANUAL.value,
+                        media_type=MediaTypes.EPISODE.value,
+                        title="Few",
+                        season_number=1,
+                        episode_number=number,
+                    ),
+                    status=status,
+                    end_date=datetime(2024, 2, 1, tzinfo=UTC),
+                )
+                for number, status in (
+                    (2, Status.PLANNING.value),
+                    (3, Status.IN_PROGRESS.value),
+                )
+            ],
+        )
+
+        for media_type in (MediaTypes.TV.value, MediaTypes.SEASON.value):
+            for sort, order, titles in (
+                (SORTS.PROGRESS, "desc", ["Many", "Few"]),
+                (SORTS.END_DATE, "desc", ["Many", "Few"]),
+                (SORTS.RECENT, "desc", ["Many", "Few"]),
+                (SORTS.PLAYS, "asc", ["Many", "Few"]),
+            ):
+                with self.subTest(media_type=media_type, sort=sort):
+                    self.assertEqual(self.titles(media_type, sort, order), titles)
+
     def test_airing_status_goes_from_airing_to_ended(self):
         """Upcoming sits between airing and ended, and unknown comes last."""
         anime = MediaTypes.ANIME.value

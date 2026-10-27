@@ -1028,6 +1028,12 @@ class Status(models.TextChoices):
 # The statuses of media being gone through again after it was finished
 REPEAT_STATUSES = (Status.PLANNING_REPEAT.value, Status.REPEATING.value)
 
+# An episode's entry is a watch, one play of it, when it's completed. The
+# episode has been watched when it has an entry in any of these, as one planned
+# or being watched again was watched before.
+WATCH_STATUS = Status.COMPLETED.value
+WATCHED_STATUSES = (WATCH_STATUS, *REPEAT_STATUSES)
+
 # The order a list sorted by status starts in
 STATUS_SORT_ORDER = (
     Status.IN_PROGRESS.value,
@@ -1303,7 +1309,7 @@ class TV(Media):
         plays = [
             season.plays
             for season in self.seasons.all()
-            if season.item.season_number != 0 and season.episodes.all()
+            if season.item.season_number != 0 and season.watches
         ]
         return min(plays) if plays else 0
 
@@ -1317,8 +1323,8 @@ class TV(Media):
                 "end_date": episode.end_date,
             }
             for season in self.seasons.all()
-            if hasattr(season, "episodes") and season.item.season_number != 0
-            for episode in season.episodes.all()
+            if season.item.season_number != 0
+            for episode in season.watches
             if episode.end_date is not None
         ]
 
@@ -1546,7 +1552,7 @@ class TV(Media):
                 )
             elif (
                 season.status in (Status.IN_PROGRESS.value, Status.PAUSED.value)
-                and not season.episodes.all()
+                and not season.watched_entries
             ):
                 season.status = Status.PLANNING.value
                 seasons_to_update.append(season)
@@ -1557,7 +1563,10 @@ class TV(Media):
     def _plan_repeat(self):
         """Plan to rewatch the show's watched seasons, other than specials."""
         seasons = list(
-            self.seasons.filter(item__season_number__gt=0, episodes__isnull=False)
+            self.seasons.filter(
+                item__season_number__gt=0,
+                episodes__status__in=WATCHED_STATUSES,
+            )
             .exclude(status__in=REPEAT_STATUSES)
             .distinct(),
         )
@@ -2020,9 +2029,25 @@ class Season(Media):
         self.related_tv._handle_completed_season(self.item.season_number)
 
     @property
+    def watches(self):
+        """Return the season's episode entries that are watches.
+
+        Reads its `episodes` prefetch when there is one.
+        """
+        return [episode for episode in self.episodes.all() if episode.is_watch]
+
+    @property
+    def watched_entries(self):
+        """Return the season's entries that make their episodes watched.
+
+        Unlike `watches`, these include those planned or being watched again.
+        """
+        return [episode for episode in self.episodes.all() if episode.marks_watched]
+
+    @property
     def plays(self):
         """Return how many times every watched episode of the season was watched."""
-        counts = Counter(episode.item.episode_number for episode in self.episodes.all())
+        counts = Counter(episode.item.episode_number for episode in self.watches)
         return min(counts.values()) if counts else 0
 
     @property
@@ -2032,7 +2057,7 @@ class Season(Media):
             return []
         return [
             episode
-            for episode in self.episodes.all()
+            for episode in self.watches
             if episode.created_at >= self.repeat_started_at
         ]
 
@@ -2048,7 +2073,7 @@ class Season(Media):
         A rewatch goes through the episodes watched before.
         """
         left = {
-            episode.item.episode_number for episode in self.episodes.all()
+            episode.item.episode_number for episode in self.watched_entries
         } - self.repeated_episode_numbers
         return min(left) if left else None
 
@@ -2057,7 +2082,7 @@ class Season(Media):
         rewatched = self.repeated_episode_numbers
         items = {
             episode.item.episode_number: episode.item
-            for episode in self.episodes.all()
+            for episode in self.watched_entries
             if episode.item.episode_number not in rewatched
         }
         return [
@@ -2070,9 +2095,13 @@ class Season(Media):
         if self.pk is None:
             return 0
 
-        latest_watched_ep_num = Episode.objects.filter(related_season=self).aggregate(
-            latest_watched_ep_num=Max("item__episode_number"),
-        )["latest_watched_ep_num"]
+        latest_watched_ep_num = (
+            Episode.objects.watches()
+            .filter(related_season=self)
+            .aggregate(latest_watched_ep_num=Max("item__episode_number"))[
+                "latest_watched_ep_num"
+            ]
+        )
 
         return latest_watched_ep_num or 0
 
@@ -2113,7 +2142,7 @@ class Season(Media):
         if self.status in REPEAT_STATUSES:
             return len(self.repeated_episode_numbers)
 
-        episodes = self.episodes.all()
+        episodes = self.watches
         if not episodes:
             return 0
 
@@ -2141,9 +2170,7 @@ class Season(Media):
     def progressed_at(self):
         """Return the date when the last episode was watched."""
         dates = [
-            episode.end_date
-            for episode in self.episodes.all()
-            if episode.end_date is not None
+            episode.end_date for episode in self.watches if episode.end_date is not None
         ]
         return max(dates) if dates else None
 
@@ -2151,9 +2178,7 @@ class Season(Media):
     def start_date(self):
         """Return the date of the first episode watched."""
         dates = [
-            episode.end_date
-            for episode in self.episodes.all()
-            if episode.end_date is not None
+            episode.end_date for episode in self.watches if episode.end_date is not None
         ]
         return min(dates) if dates else None
 
@@ -2161,9 +2186,7 @@ class Season(Media):
     def end_date(self):
         """Return the date of the last episode watched."""
         dates = [
-            episode.end_date
-            for episode in self.episodes.all()
-            if episode.end_date is not None
+            episode.end_date for episode in self.watches if episode.end_date is not None
         ]
         return max(dates) if dates else None
 
@@ -2234,10 +2257,14 @@ class Season(Media):
         """Unwatch the episode instance."""
         item = self.get_episode_item(episode_number)
 
-        episodes = Episode.objects.filter(
-            related_season=self,
-            item=item,
-        ).order_by("-end_date")
+        episodes = (
+            Episode.objects.watches()
+            .filter(
+                related_season=self,
+                item=item,
+            )
+            .order_by("-end_date")
+        )
 
         episode = episodes.first()
 
@@ -2387,8 +2414,16 @@ class Season(Media):
         return item
 
 
+class EpisodeQuerySet(models.QuerySet):
+    """Queries of episode entries."""
+
+    def watches(self):
+        """Return the entries that are watches, the plays of their episodes."""
+        return self.filter(status=WATCH_STATUS)
+
+
 class Episode(models.Model):
-    """Model for episodes of a season."""
+    """Model for an entry of an episode of a season, e.g. one watch of it."""
 
     history = HistoricalRecords(
         cascade_delete_history=True,
@@ -2402,6 +2437,13 @@ class Episode(models.Model):
         on_delete=models.CASCADE,
         related_name="episodes",
     )
+    status = models.CharField(
+        max_length=20,
+        choices=Status,
+        default=Status.COMPLETED.value,
+        db_index=True,
+    )
+    start_date = models.DateTimeField(null=True, blank=True)
     end_date = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True, default="")
     # The user's rating of this watch of the episode
@@ -2416,6 +2458,8 @@ class Episode(models.Model):
             MaxValueValidator(10),
         ],
     )
+
+    objects = EpisodeQuerySet.as_manager()
 
     class Meta:
         """Meta options for the model."""
@@ -2453,7 +2497,7 @@ class Episode(models.Model):
             return
         if (
             season.status == Status.COMPLETED.value
-            and season.episodes.filter(item=self.item).count() > 1
+            and season.episodes.watches().filter(item=self.item).count() > 1
         ):
             # Watching a finished season's episode again leaves it finished
             return
@@ -2507,6 +2551,16 @@ class Episode(models.Model):
                 TV,
                 fields=["status"],
             )
+
+    @property
+    def is_watch(self):
+        """Return whether the entry is a watch, one play of its episode."""
+        return self.status == WATCH_STATUS
+
+    @property
+    def marks_watched(self):
+        """Return whether the entry shows its episode was watched, e.g. a watch."""
+        return self.status in WATCHED_STATUSES
 
     def _continue_repeat(self, season):
         """Move a rewatched season on, finishing it once every episode is seen again."""

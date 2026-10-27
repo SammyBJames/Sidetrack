@@ -224,6 +224,18 @@ class ManualItemForm(forms.ModelForm):
         return instance
 
 
+# The statuses as entry forms list them, by lifecycle
+STATUS_FORM_ORDER = (
+    Status.PLANNING,
+    Status.IN_PROGRESS,
+    Status.COMPLETED,
+    Status.PAUSED,
+    Status.DROPPED,
+    Status.REPEATING,
+    Status.PLANNING_REPEAT,
+)
+
+
 class MediaForm(forms.ModelForm):
     """Base form for all media types."""
 
@@ -236,18 +248,9 @@ class MediaForm(forms.ModelForm):
         """Order the statuses by lifecycle, in the words of the form's media type."""
         super().__init__(*args, **kwargs)
         media_type = self._meta.model._meta.model_name
-        order = [
-            Status.PLANNING,
-            Status.IN_PROGRESS,
-            Status.COMPLETED,
-            Status.PAUSED,
-            Status.DROPPED,
-            Status.REPEATING,
-            Status.PLANNING_REPEAT,
-        ]
         self.fields["status"].choices = [
             (status.value, config.get_status_label(status.value, media_type))
-            for status in order
+            for status in STATUS_FORM_ORDER
         ]
 
     class Meta:
@@ -402,26 +405,37 @@ class SeasonForm(MediaForm):
 
 
 class EpisodeForm(forms.ModelForm):
-    """Form for episodes."""
+    """Form for an episode's entries.
+
+    A form without a status, e.g. one only changing a watch's date or notes,
+    keeps the entry's, which for a new one is Completed.
+    """
 
     class Meta:
         """Bind form to model."""
 
         model = Episode
-        fields = ("end_date", "notes")
-        widgets = {
-            "end_date": forms.DateInput(attrs={"type": "date"}),
-        }
+        fields = ("status", "start_date", "end_date", "notes")
 
     def __init__(self, *args, **kwargs):
-        """Initialize the form."""
+        """Order the statuses as media forms do, with date or date and time inputs."""
         super().__init__(*args, **kwargs)
+        self.fields["status"].required = False
+        self.fields["status"].choices = [
+            (
+                status.value,
+                config.get_status_label(status.value, MediaTypes.EPISODE.value),
+            )
+            for status in STATUS_FORM_ORDER
+        ]
+        for field in ("start_date", "end_date"):
+            if settings.TRACK_TIME:
+                self.fields[field].widget = forms.DateTimeInput(
+                    attrs={"type": "datetime-local"},
+                )
+            else:
+                self.fields[field].widget = forms.DateInput(attrs={"type": "date"})
 
-        if settings.TRACK_TIME:
-            self.fields["end_date"].widget = forms.DateTimeInput(
-                attrs={"type": "datetime-local"},
-            )
-        else:
-            self.fields["end_date"].widget = forms.DateInput(
-                attrs={"type": "date"},
-            )
+    def clean_status(self):
+        """Return the posted status, or the entry's when none was posted."""
+        return self.cleaned_data["status"] or self.instance.status

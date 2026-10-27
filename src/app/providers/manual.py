@@ -129,7 +129,11 @@ def episode(media_id, season_number, episode_number):
 
 
 def process_episodes(season_metadata, episodes_in_db):
-    """Process the episodes for the selected season."""
+    """Process the episodes for the selected season, with the user's entries.
+
+    Each episode's `history` is its watches, and `watched` is whether it has
+    been watched, which entries planned or being watched again also show.
+    """
     # Convert the queryset to a dictionary for efficient lookups
     tracked_episodes = {}
     for ep in episodes_in_db:
@@ -142,6 +146,7 @@ def process_episodes(season_metadata, episodes_in_db):
 
     for episode in season_metadata["episodes"]:
         episode_number = episode["episode_number"]
+        entries = tracked_episodes.get(episode_number, [])
 
         episode_data = {
             "source": Sources.MANUAL.value,
@@ -153,7 +158,8 @@ def process_episodes(season_metadata, episodes_in_db):
             "image": episode["image"],
             "title": episode["title"],
             "overview": "No synopsis available.",
-            "history": tracked_episodes.get(episode_number, []),
+            "history": [ep for ep in entries if ep.is_watch],
+            "watched": any(ep.marks_watched for ep in entries),
         }
         episodes_metadata.append(episode_data)
 

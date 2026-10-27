@@ -177,3 +177,22 @@ class ExportCSVTest(TestCase):
             self.assertIn(media_id, db_media_ids)
             if row["media_type"] == MediaTypes.EPISODE.value:
                 self.assertEqual(row["notes"], "Favorite episode")
+
+    def test_episode_entries_export_their_status_and_start_date(self):
+        """Episode rows carry their status and start date like other media."""
+        Episode.objects.update(
+            status=Status.IN_PROGRESS.value,
+            start_date=datetime(2023, 5, 30, tzinfo=UTC),
+        )
+
+        response = self.client.get(reverse("export_csv"))
+        content = b"".join(response.streaming_content).decode("utf-8")
+        reader = csv.DictReader(StringIO(content))
+
+        header = reader.fieldnames
+        self.assertEqual(header.index("end_date"), header.index("start_date") + 1)
+        episode = next(
+            row for row in reader if row["media_type"] == MediaTypes.EPISODE.value
+        )
+        self.assertEqual(episode["status"], Status.IN_PROGRESS.value)
+        self.assertTrue(episode["start_date"].startswith("2023-05-30"))

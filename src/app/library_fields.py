@@ -31,7 +31,13 @@ from django.db.models.functions import Coalesce, FirstValue, Lower
 from django.utils import timezone
 
 from app import config
-from app.models import STATUS_SORT_ORDER, AiringStatus, Episode, MediaTypes
+from app.models import (
+    STATUS_SORT_ORDER,
+    WATCH_STATUS,
+    AiringStatus,
+    Episode,
+    MediaTypes,
+)
 from users.models import MediaSortChoices, SortOrderChoices, default_sort_order
 
 # The sort a list starts with, and falls back to when its sort doesn't exist for
@@ -225,12 +231,15 @@ def _episode_values(media_type):
     """Return the expression each sort of the entry's own dates and progress takes.
 
     Shows and seasons have no dates or progress columns, so they're those of
-    their watched episodes, specials aside.
+    their episodes' watches, specials aside.
     """
     sorts = MediaSortChoices
     if media_type == MediaTypes.TV.value:
         episodes = "seasons__episodes"
-        regular = Q(seasons__item__season_number__gt=0)
+        regular = Q(
+            seasons__item__season_number__gt=0,
+            seasons__episodes__status=WATCH_STATUS,
+        )
         return {
             sorts.RECENT: Max(f"{episodes}__end_date", filter=regular),
             sorts.PROGRESS: Count(episodes, filter=regular),
@@ -238,11 +247,12 @@ def _episode_values(media_type):
             sorts.END_DATE: Max(f"{episodes}__end_date", filter=regular),
         }
     if media_type == MediaTypes.SEASON.value:
+        watches = Q(episodes__status=WATCH_STATUS)
         return {
-            sorts.RECENT: Max("episodes__end_date"),
-            sorts.PROGRESS: Max("episodes__item__episode_number"),
-            sorts.START_DATE: Min("episodes__end_date"),
-            sorts.END_DATE: Max("episodes__end_date"),
+            sorts.RECENT: Max("episodes__end_date", filter=watches),
+            sorts.PROGRESS: Max("episodes__item__episode_number", filter=watches),
+            sorts.START_DATE: Min("episodes__end_date", filter=watches),
+            sorts.END_DATE: Max("episodes__end_date", filter=watches),
         }
     return {sorts.RECENT: F("progressed_at")}
 
@@ -269,13 +279,19 @@ def _plays(media_type):
     entries, annotated by the media list as `completed_entries`.
     """
     if media_type == MediaTypes.TV.value:
-        watches = Episode.objects.filter(
-            related_season__related_tv=OuterRef("pk"),
-            related_season__item__season_number__gt=0,
-        ).values("related_season", "item__episode_number")
+        watches = (
+            Episode.objects.watches()
+            .filter(
+                related_season__related_tv=OuterRef("pk"),
+                related_season__item__season_number__gt=0,
+            )
+            .values("related_season", "item__episode_number")
+        )
     elif media_type == MediaTypes.SEASON.value:
-        watches = Episode.objects.filter(related_season=OuterRef("pk")).values(
-            "item__episode_number",
+        watches = (
+            Episode.objects.watches()
+            .filter(related_season=OuterRef("pk"))
+            .values("item__episode_number")
         )
     else:
         return F("completed_entries")

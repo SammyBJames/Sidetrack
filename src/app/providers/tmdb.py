@@ -939,7 +939,11 @@ def filter_providers(all_providers, region):
 
 
 def process_episodes(season_metadata, episodes_in_db):
-    """Process the episodes for the selected season."""
+    """Process the episodes for the selected season, with the user's entries.
+
+    Each episode's `history` is its watches, and `watched` is whether it has
+    been watched, which entries planned or being watched again also show.
+    """
     episodes_metadata = []
 
     # Convert the queryset to a dictionary for efficient lookups
@@ -952,6 +956,7 @@ def process_episodes(season_metadata, episodes_in_db):
 
     for episode in season_metadata["episodes"]:
         episode_number = episode["episode_number"]
+        entries = tracked_episodes.get(episode_number, [])
 
         episodes_metadata.append(
             {
@@ -964,7 +969,8 @@ def process_episodes(season_metadata, episodes_in_db):
                 "image": get_image_url(episode["still_path"]),
                 "title": episode["name"],
                 "overview": episode["overview"],
-                "history": tracked_episodes.get(episode_number, []),
+                "history": [ep for ep in entries if ep.is_watch],
+                "watched": any(ep.marks_watched for ep in entries),
                 "runtime": get_readable_duration(episode["runtime"]),
                 "runtime_minutes": episode["runtime"],
             },

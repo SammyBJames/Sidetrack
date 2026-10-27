@@ -36,6 +36,7 @@ from app.forms import (
 from app.models import (
     REPEAT_STATUSES,
     TV,
+    WATCHED_STATUSES,
     BasicMedia,
     Episode,
     Item,
@@ -931,7 +932,7 @@ def media_save(request):
         model = apps.get_model(app_label="app", model_name=media_type)
         instance = model(item=item, user=request.user)
 
-    # Only shows cascade, and episode watches have no status
+    # Whether the show was already planned, so only a move to Planning plans its seasons
     was_planned = (
         media_type == MediaTypes.TV.value
         and instance.pk is not None
@@ -1344,7 +1345,7 @@ def episode_save(request):
     # One click is only offered for an unwatched episode, so a second one, e.g.
     # while the page reloads, doesn't add another watch
     # While the season is rewatched, that's an episode not watched again yet
-    already_watched = Episode.objects.filter(
+    already_watched = Episode.objects.watches().filter(
         related_season=related_season,
         item__episode_number=episode_number,
     )
@@ -1371,7 +1372,10 @@ def episode_plan_repeat(request):
         user=request.user,
     )
     episode_number = int(request.POST["episode_number"])
-    watched = season.episodes.filter(item__episode_number=episode_number).exists()
+    watched = season.episodes.filter(
+        item__episode_number=episode_number,
+        status__in=WATCHED_STATUSES,
+    ).exists()
     if watched and episode_number not in season.planned_repeat_episodes:
         season.planned_repeat_episodes.append(episode_number)
         Season.objects.filter(pk=season.pk).update(

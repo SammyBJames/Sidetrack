@@ -60,16 +60,16 @@ def get_user_media(user, start_date, end_date):
     user_media = {}
     media_count = {"total": 0}
 
-    # Cache the base episodes query
+    # Cache the base episodes query, of watches only
     base_episodes = None
     if TV in media_models or Season in media_models:
         if start_date is None and end_date is None:
             # No date filtering for "All Time"
-            base_episodes = Episode.objects.filter(
+            base_episodes = Episode.objects.watches().filter(
                 related_season__user=user,
             )
         else:
-            base_episodes = Episode.objects.filter(
+            base_episodes = Episode.objects.watches().filter(
                 related_season__user=user,
                 end_date__range=(start_date, end_date),
             )
@@ -381,7 +381,7 @@ def _consumed_value_and_unit(media_type, queryset, item_count):
     if media_type == MediaTypes.SEASON.value:
         # ``episodes`` are prefetched in get_user_media, so this reuses the
         # cache instead of issuing a query per season.
-        value = sum(len(season.episodes.all()) for season in queryset)
+        value = sum(len(season.watches) for season in queryset)
     elif media_type == MediaTypes.MOVIE.value:
         # Whole movies are counted; reuse the count get_user_media already ran.
         value = item_count

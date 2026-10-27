@@ -282,6 +282,19 @@ class LibraryFiltersTests(TestCase):
         self.assertEqual(self.titles("plays_max=0", tv), ["None"])
         self.assertEqual(self.titles("plays_min=2", tv), [])
 
+    def test_shows_filter_by_their_watches_only(self):
+        """A show's planned episode entries don't count for its filters."""
+        show = self.watched_show("Planned", [1])
+        Episode.objects.filter(related_season__related_tv=show).update(
+            status=Status.PLANNING.value,
+        )
+        self.watched_show("Watched", [10])
+        tv = MediaTypes.TV.value
+
+        self.assertEqual(self.titles("progress_min=1", tv), ["Watched"])
+        self.assertEqual(self.titles("end_date_max=2024-01-05", tv), [])
+        self.assertEqual(self.titles("plays_max=0", tv), ["Planned"])
+
     def test_bad_params_are_ignored(self):
         """Invalid values, unknown params and fields the type lacks filter nothing."""
         self.entry(

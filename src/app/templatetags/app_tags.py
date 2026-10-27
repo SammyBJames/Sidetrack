@@ -412,7 +412,7 @@ def repeat_state(episode, season):
     watched episode planned to be watched again on its own. It's "" for the
     rest, like episodes not watched before.
     """
-    if season is None or not episode["history"]:
+    if season is None or not episode["watched"]:
         return ""
     if season.status in REPEAT_STATUSES:
         if episode["episode_number"] in season.repeated_episode_numbers:
