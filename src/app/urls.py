@@ -56,6 +56,11 @@ urlpatterns = [
         views.progress_edit,
         name="progress_edit",
     ),
+    path(
+        "log_progress/<media_type:media_type>/<int:instance_id>",
+        views.log_progress,
+        name="log_progress",
+    ),
     path("media_save", views.media_save, name="media_save"),
     path("quick_action", views.quick_action, name="quick_action"),
     path("media_delete", views.media_delete, name="media_delete"),

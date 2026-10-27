@@ -92,6 +92,31 @@ class CustomDurationField(forms.CharField):
             raise forms.ValidationError(msg) from e
 
 
+# Bounds on what one log may add, so a typo can't fill the progress
+MAX_LOG_PAGE = 100_000
+MAX_LOG_MINUTES = 24 * 60
+
+
+class BookLogForm(forms.Form):
+    """The page a book's reader has got to."""
+
+    page = forms.IntegerField(min_value=0, max_value=MAX_LOG_PAGE)
+
+
+class GameLogForm(forms.Form):
+    """The time played in one session, in the formats of the tracking form."""
+
+    played = CustomDurationField()
+
+    def clean_played(self):
+        """Return the session's minutes, which must be some and at most a day."""
+        minutes = self.cleaned_data["played"]
+        if not 0 < minutes <= MAX_LOG_MINUTES:
+            msg = "Log between a minute and 24 hours of play at a time."
+            raise forms.ValidationError(msg)
+        return minutes
+
+
 class ManualItemForm(forms.ModelForm):
     """Form for adding items to the database."""
 

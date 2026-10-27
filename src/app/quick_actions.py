@@ -7,8 +7,9 @@ from django.db import transaction
 from django.db.models import Min
 from django.utils import timezone
 
-from app import config
+from app import config, helpers
 from app.models import REPEAT_STATUSES, BasicMedia, MediaTypes, Status
+from app.providers import services
 from events.models import Event
 
 PLAN = "plan"
@@ -18,9 +19,13 @@ COMPLETE = "complete"
 NEXT = "next"
 PLAN_REPEAT = "plan_repeat"
 REPEAT = "repeat"
+LOG = "log"
 
 # Media that is usually finished in one sitting, so planning leads to completing
 SINGLE_SITTING_TYPES = {MediaTypes.MOVIE.value}
+
+# Media whose in progress action logs where they are up to, with what that is
+LOGGED_TYPES = {MediaTypes.BOOK.value: "pages", MediaTypes.GAME.value: "time"}
 
 # Media whose progress counts episodes, chapters or issues one at a time
 COUNTED_TYPES = {
@@ -80,6 +85,8 @@ ACTIONS = {
         "app/icons/states/completed.svg",
         Status.COMPLETED.value,
     ),
+    # Not one click: it asks for the page or time, and keeps the status
+    LOG: ("Log {logged}", "app/icons/edit.svg", Status.IN_PROGRESS.value),
 }
 
 
@@ -90,7 +97,8 @@ def get_quick_action(media_type, media):
     None when there is nothing sensible to offer, e.g. for episodes, caught up
     entries, or entries that are dropped. Finished media is planned to be
     repeated, which then marks a new play. Shows and seasons, planned or not,
-    watch their next episode.
+    watch their next episode. Books and games in progress or repeating get the
+    log action, which asks for a page or time and keeps the status.
     """
     if media_type == MediaTypes.EPISODE.value:
         return None
@@ -120,31 +128,39 @@ def get_quick_action(media_type, media):
 
     label, icon = _label_and_icon(key, media_type, media)
     target_status = ACTIONS[key][2]
-    if key == NEXT and status in REPEAT_STATUSES:
+    if key in (NEXT, LOG) and status in REPEAT_STATUSES:
         target_status = Status.REPEATING.value
     return QuickAction(key, label, icon, target_status)
 
 
 def get_finish_action(media_type, media):
-    """Return the action that marks a whole show or season watched, or None.
+    """Return the action that marks a whole show, season, book or game done, or None.
 
-    It's offered beside watching the next episode, so for shows and seasons
-    planned, in progress or repeated, which it finishes as a new play.
+    It's offered beside watching the next episode or logging progress, so for
+    shows and seasons planned, in progress or repeated, and for books and games
+    in progress or repeated, which it finishes as a new play.
     """
-    if (
-        media_type not in EPISODIC_TYPES
-        or media is None
-        or media.status not in EPISODE_STATUSES
-    ):
+    if media is None:
+        return None
+    if media_type in LOGGED_TYPES:
+        statuses = (Status.IN_PROGRESS.value, *REPEAT_STATUSES)
+    elif media_type in EPISODIC_TYPES:
+        statuses = EPISODE_STATUSES
+    else:
+        return None
+    if media.status not in statuses:
         return None
 
     key = REPEAT if media.status in REPEAT_STATUSES else COMPLETE
-    noun = "show" if media_type == MediaTypes.TV.value else "season"
+    noun = {MediaTypes.TV.value: " show", MediaTypes.SEASON.value: " season"}.get(
+        media_type,
+        "",
+    )
     again = "re" if key == REPEAT else ""
     past = config.get_verb(media_type, past_tense=True)
     return QuickAction(
         key,
-        f"Mark {noun} {again}{past}",
+        f"Mark{noun} {again}{past}",
         "app/icons/states/completed.svg",
         Status.COMPLETED.value,
     )
@@ -184,6 +200,8 @@ def _progress_action_key(media_type, media):
     if media_type == MediaTypes.TV.value:
         # A show's progress comes from its seasons, so act on a season instead
         return None
+    if media_type in LOGGED_TYPES:
+        return LOG
     return REPEAT if media.status == Status.REPEATING.value else COMPLETE
 
 
@@ -205,6 +223,7 @@ def _label_and_icon(key, media_type, media):
         past=config.get_verb(media_type, past_tense=True),
         # Only counted media has a unit
         unit=config.get_unit(media_type, short=False).lower() if key == NEXT else "",
+        logged=LOGGED_TYPES.get(media_type, ""),
     )
     return label, icon
 
@@ -247,6 +266,43 @@ def apply_quick_action(action, media):
         if action.key == PLAN and media.item.media_type == MediaTypes.TV.value:
             media.plan_seasons()
     return media
+
+
+def book_total(book):
+    """Return a book's page count, or None when it isn't known.
+
+    The item's own length goes first, else the provider's, which is fetched.
+    """
+    if book.item.length:
+        return book.item.length
+    return services.get_media_metadata(
+        book.item.media_type,
+        book.item.media_id,
+        book.item.source,
+    )["max_progress"]
+
+
+def log_progress(media, amount):
+    """Log a book's page or a game session's minutes on an in progress entry.
+
+    `amount` is the absolute page for a book, which finishes it from its last
+    page on, and the minutes to add for a game. Saves `media`, which must be in
+    progress or repeating, and returns the confirmation message.
+    """
+    if media.item.media_type == MediaTypes.GAME.value:
+        media.progress += amount
+        media.save()
+        return f"Logged {helpers.minutes_to_hhmm(amount)} of {media.item}."
+
+    total = book_total(media)
+    if total and amount >= total:
+        finish = get_finish_action(media.item.media_type, media)
+        media.progress = total
+        apply_quick_action(finish, media)
+        return success_message(finish, media)
+    media.progress = amount
+    media.save()
+    return f"{media.item} is now on page {amount}."
 
 
 def _watch_show_next_episode(tv):

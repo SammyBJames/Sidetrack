@@ -26,7 +26,13 @@ from app import (
 )
 from app import home as home_helpers
 from app import statistics as stats
-from app.forms import EpisodeForm, ManualItemForm, get_form_class
+from app.forms import (
+    BookLogForm,
+    EpisodeForm,
+    GameLogForm,
+    ManualItemForm,
+    get_form_class,
+)
 from app.models import (
     REPEAT_STATUSES,
     TV,
@@ -115,17 +121,24 @@ def progress_edit(request, media_type, instance_id):
             ),
         )
 
+    return _home_card_response(request, media, media_type, home_status)
+
+
+def _home_card_response(request, media, media_type, home_status):
+    """Return a home card after its entry changed, or its removal.
+
+    The card leaves its section when the entry is no longer in it, e.g. after
+    reaching the last episode marks it completed, or the latest released one
+    leaves it caught up, and the sections refresh, so the entry shows up where
+    it belongs now.
+    """
     BasicMedia.objects.annotate_max_progress([media], media_type)
     BasicMedia.objects._annotate_next_event([media])
 
-    # The card leaves its section when the entry is no longer in it, e.g. after
-    # reaching the last episode marks it completed, or the latest released one
-    # leaves it caught up
     if home_status is not None and (media.status != home_status or is_caught_up(media)):
         response = render(request, "app/components/messages/messages_oob.html")
         response["HX-Retarget"] = f"#home-media-{media.item.media_type}-{media.id}"
         response["HX-Reswap"] = "delete"
-        # Refresh the sections, so the entry shows up where it belongs now
         response["HX-Trigger"] = "mediaChanged"
         return response
 
@@ -952,10 +965,11 @@ def quick_action(request):
 
     The entry is the one given by `instance_id`, else the user's entry for the
     media, which is created if missing. `action` is the key the card showed, or
-    with `finish`, that of the button marking a whole show or season watched. If
-    it no longer matches, nothing is changed. Removes the card instead of
-    updating it when the entry left the section or status filter it was shown in,
-    and reloads the page when the action came from a details page.
+    with `finish`, that of the button marking a whole show, season, book or game
+    done. If it no longer matches, or is the log action, which `log_progress`
+    handles, nothing is changed. Removes the card instead of updating it when
+    the entry left the section or status filter it was shown in, and reloads the
+    page when the action came from a details page.
     """
     media_id = request.POST["media_id"]
     source = request.POST["source"]
@@ -996,7 +1010,10 @@ def quick_action(request):
         action = None
     # The card may be stale, e.g. after a double click, so only act on what it showed
     if action is None or action.key != expected_action:
-        messages.info(request, "This entry has already changed. Reload to see it.")
+        return _stale_response(request)
+    if action.key == quick_actions.LOG:
+        # Logging asks for the page or time, so it goes to `log_progress`
+        messages.info(request, "Log your progress to update this entry.")
         response = render(request, "app/components/messages/messages_oob.html")
         response["HX-Reswap"] = "none"
         return response
@@ -1022,8 +1039,20 @@ def quick_action(request):
         response["HX-Trigger"] = "mediaChanged"
         return response
 
-    status_filter = request.POST.get("status")
-    if not _matches_status_filter(media, status_filter):
+    return _list_card_response(request, media_type, media)
+
+
+def _stale_response(request):
+    """Return the message that an entry changed since its card was shown."""
+    messages.info(request, "This entry has already changed. Reload to see it.")
+    response = render(request, "app/components/messages/messages_oob.html")
+    response["HX-Reswap"] = "none"
+    return response
+
+
+def _list_card_response(request, media_type, media):
+    """Return an entry's updated card or row, or its removal from a filtered list."""
+    if not _matches_status_filter(media, request.POST.get("status")):
         # The entry no longer matches the list's status filter
         response = render(request, "app/components/messages/messages_oob.html")
         response["HX-Reswap"] = "delete"
@@ -1031,6 +1060,56 @@ def quick_action(request):
         return response
 
     return _quick_action_card(request, media_type, media.id)
+
+
+@require_POST
+def log_progress(request, media_type, instance_id):
+    """Log the page a book is on or the time played in a game session.
+
+    `page` or `played` (a duration like "1:30" or "45min") is posted for the
+    user's own entry in progress or repeating, which finishes a book logged at
+    its last page. Invalid input gets a 422 with the form's `errors` as JSON,
+    and an entry no longer in progress changes nothing. The response follows
+    `card` as a quick action's does, with the home card as progress_edit's.
+    """
+    form_class = {
+        MediaTypes.BOOK.value: BookLogForm,
+        MediaTypes.GAME.value: GameLogForm,
+    }.get(media_type)
+    if form_class is None:
+        return HttpResponseBadRequest("Only books and games log progress.")
+    media = helpers.get_owned_media_or_404(
+        request,
+        media_type,
+        instance_id,
+        prefetch=True,
+    )
+    action = quick_actions.get_quick_action(media_type, media)
+    if action is None or action.key != quick_actions.LOG:
+        return _stale_response(request)
+
+    form = form_class(request.POST)
+    if not form.is_valid():
+        return JsonResponse({"errors": form.errors.get_json_data()}, status=422)
+
+    amount = next(iter(form.cleaned_data.values()))
+    message = quick_actions.log_progress(media, amount)
+    logger.info("Logged %s on %s", amount, media)
+    messages.success(request, message)
+
+    card = request.POST.get("card")
+    if card == "details":
+        response = HttpResponse()
+        response["HX-Refresh"] = "true"
+        return response
+    if card == "home":
+        return _home_card_response(
+            request,
+            media,
+            media_type,
+            request.POST.get("home_status"),
+        )
+    return _list_card_response(request, media_type, media)
 
 
 def _quick_action_card(request, media_type, media_id):

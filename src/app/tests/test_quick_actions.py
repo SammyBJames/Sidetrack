@@ -105,14 +105,60 @@ class GetQuickActionTests(TestCase):
             quick_actions.NEXT,
         )
 
-    def test_in_progress_book_is_completed(self):
-        """A book in progress offers to mark it read rather than add a page."""
-        action = quick_actions.get_quick_action(
-            MediaTypes.BOOK.value,
-            entry(Status.IN_PROGRESS.value),
-        )
-        self.assertEqual(action.key, quick_actions.COMPLETE)
-        self.assertEqual(action.label, "Mark read")
+    def test_in_progress_book_and_game_log_their_progress(self):
+        """Books and games in progress or repeating log pages or time instead."""
+        for media_type, label in (
+            (MediaTypes.BOOK.value, "Log pages"),
+            (MediaTypes.GAME.value, "Log time"),
+        ):
+            for status in (Status.IN_PROGRESS.value, Status.REPEATING.value):
+                action = quick_actions.get_quick_action(media_type, entry(status))
+                self.assertEqual(
+                    (action.key, action.label, action.target_status),
+                    (quick_actions.LOG, label, status),
+                )
+
+    def test_books_and_games_can_be_finished_in_progress(self):
+        """A book or game in progress or repeating can be marked done at once."""
+        cases = {
+            (MediaTypes.BOOK.value, Status.IN_PROGRESS.value): (
+                quick_actions.COMPLETE,
+                "Mark read",
+            ),
+            (MediaTypes.BOOK.value, Status.REPEATING.value): (
+                quick_actions.REPEAT,
+                "Mark reread",
+            ),
+            (MediaTypes.GAME.value, Status.IN_PROGRESS.value): (
+                quick_actions.COMPLETE,
+                "Mark played",
+            ),
+            (MediaTypes.GAME.value, Status.REPEATING.value): (
+                quick_actions.REPEAT,
+                "Mark replayed",
+            ),
+        }
+        for (media_type, status), expected in cases.items():
+            action = quick_actions.get_finish_action(media_type, entry(status))
+            self.assertEqual((action.key, action.label), expected)
+            self.assertEqual(action.target_status, Status.COMPLETED.value)
+
+        for status in (Status.PLANNING.value, Status.COMPLETED.value):
+            self.assertIsNone(
+                quick_actions.get_finish_action(MediaTypes.BOOK.value, entry(status)),
+            )
+
+    def test_planned_and_finished_books_keep_their_actions(self):
+        """Only books and games in progress log; the other statuses are as before."""
+        for status, key in (
+            (Status.PLANNING.value, quick_actions.START),
+            (Status.COMPLETED.value, quick_actions.PLAN_REPEAT),
+            (Status.PAUSED.value, quick_actions.RESUME),
+        ):
+            action = quick_actions.get_quick_action(
+                MediaTypes.BOOK.value, entry(status)
+            )
+            self.assertEqual(action.key, key)
 
     def test_paused_media_is_resumed(self):
         """Paused media offers to resume it."""
@@ -148,6 +194,7 @@ class GetQuickActionTests(TestCase):
             (MediaTypes.TV.value, Status.COMPLETED.value),
             (MediaTypes.SEASON.value, Status.DROPPED.value),
             (MediaTypes.MOVIE.value, Status.IN_PROGRESS.value),
+            (MediaTypes.ANIME.value, Status.IN_PROGRESS.value),
         ):
             self.assertIsNone(
                 quick_actions.get_finish_action(media_type, entry(status)),
