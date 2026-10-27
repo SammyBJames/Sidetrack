@@ -190,6 +190,16 @@ class RunTests(TestCase):
         self.assertEqual(run.status, Status.IN_PROGRESS.value)
         self.assertEqual((run.start_date, run.end_date), (day(1, 1), day(1, 4)))
 
+    def test_in_progress_show_with_only_one_episode_watched_twice_is_one_run(self):
+        """Every watched episode watched as often still makes no completed play."""
+        self.watch(self.season, 1, day(1, 1))
+        self.watch(self.season, 1, day(1, 3))
+
+        (run,) = self.show_runs(Status.IN_PROGRESS.value)
+
+        self.assertEqual(run.status, Status.IN_PROGRESS.value)
+        self.assertEqual((run.start_date, run.end_date), (day(1, 1), day(1, 3)))
+
     def test_planning_show_with_a_watched_season_keeps_its_dates(self):
         """Only a planned rewatch has its run cleared of dates."""
         self.watch(self.season, 1, day(1, 1))

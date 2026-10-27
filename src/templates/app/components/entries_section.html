@@ -5,13 +5,7 @@
     {% include "app/components/section_heading.html" with title=media_type|plays_heading count=entries|length %}
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
       {% for entry in entries %}
-        {% if entry.id %}
-          {% url 'update_media_score' media_type entry.id as score_url %}
-          {% include "app/components/entry_tile.html" with entry=entry status=entry.status score_url=score_url actions="app/components/repeat_actions.html" %}
-        {% else %}
-          {# An earlier time through of a show or season, which has no entry of its own #}
-          {% include "app/components/entry_tile.html" with entry=entry status=entry.status score_url="" actions="" %}
-        {% endif %}
+        {% include "app/components/entry_tile.html" %}
       {% endfor %}
     </div>
   </section>
