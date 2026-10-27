@@ -198,8 +198,10 @@ class YamtrackImporter:
             instance.user = self.user
 
         row["item"] = item
+        # An episode watch is kept without an invalid rating, so its form
+        # doesn't see the rating, which is checked on its own below
         form = app.forms.get_form_class(media_type)(
-            row,
+            {**row, "score": ""} if media_type == MediaTypes.EPISODE.value else row,
             instance=instance,
         )
 
@@ -219,8 +221,8 @@ class YamtrackImporter:
                     row.get("created_at"),
                 )
 
-            # Episode watches are rated outside their form, so the score
-            # comes from the row, and an invalid one is left out
+            # An episode watch's rating comes from the row, and an invalid
+            # one is left out
             if media_type == MediaTypes.EPISODE.value and row.get("score"):
                 score_field = form.instance._meta.get_field("score")
                 with contextlib.suppress(ValidationError):

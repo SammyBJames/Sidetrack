@@ -7,7 +7,17 @@ from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from django.urls import reverse
 from playwright.sync_api import expect, sync_playwright
 
-from app.models import BoardGame, Book, Game, Item, MediaTypes, Movie, Sources, Status
+from app.models import (
+    BoardGame,
+    Book,
+    Episode,
+    Game,
+    Item,
+    MediaTypes,
+    Movie,
+    Sources,
+    Status,
+)
 
 
 class IntegrationTest(StaticLiveServerTestCase):
@@ -352,11 +362,12 @@ class IntegrationTest(StaticLiveServerTestCase):
         expect(self.page.get_by_role("main")).to_contain_text("Season 1")
         # The episode's own page has the form, and leads back to the season
         self.page.get_by_role("link", name="Pilot", exact=True).click()
-        self.page.get_by_role("button", name="Track episode").click()
-        expect(self.page.get_by_role("main")).to_contain_text("Track Episode")
-        self.page.get_by_role("button", name="More date options").first.click()
-        self.page.get_by_role("button", name="Fill in air date").click()
-        self.page.get_by_role("button", name="Add watch").click()
+        self.page.get_by_role("button", name="Add to tracker", exact=True).click()
+        sheet = self.page.locator(".dialog-sheet")
+        expect(sheet).to_contain_text("Breaking Bad S1E1")
+        sheet.get_by_role("button", name="Advanced").click()
+        sheet.locator('[name="end_date"]').fill("2008-01-20T12:00")
+        sheet.get_by_role("button", name="Add", exact=True).click()
         expect(self.page.get_by_role("main")).to_contain_text("Your Watches\n1")
 
         # Episode 1 air date is 2008-01-20
@@ -383,6 +394,62 @@ class IntegrationTest(StaticLiveServerTestCase):
         expect(
             self.page.locator("article").get_by_label("Plan to rewatch", exact=True),
         ).to_have_count(2)
+
+    def test_episode_entry_dialogs(self):
+        """An episode's first entry, another one, and the latest edited."""
+        common = {
+            "media_id": "m1",
+            "source": Sources.MANUAL.value,
+            "image": "https://example.com/image.jpg",
+            "title": "Home Movies",
+        }
+        Item.objects.create(**common, media_type=MediaTypes.TV.value)
+        Item.objects.create(
+            **common, media_type=MediaTypes.SEASON.value, season_number=1
+        )
+        for number in (1, 2):
+            Item.objects.create(
+                **common,
+                media_type=MediaTypes.EPISODE.value,
+                season_number=1,
+                episode_number=number,
+            )
+        self.page.goto(
+            f"{self.live_server_url}"
+            + reverse(
+                "episode_details",
+                args=[Sources.MANUAL.value, "m1", "home-movies", 1, 1],
+            ),
+        )
+        main = self.page.get_by_role("main")
+        sheet = self.page.locator(".dialog-sheet")
+
+        # The first entry is a watch unless another status is chosen
+        self.page.get_by_role("button", name="Add to tracker", exact=True).click()
+        expect(sheet.get_by_role("radio", name="Completed")).to_be_checked()
+        sheet.get_by_role("button", name="Add", exact=True).click()
+        expect(main).to_contain_text("Your Watches\n1")
+
+        self.page.get_by_role("button", name="Add new entry").click()
+        sheet.get_by_text("Planning Rewatch", exact=True).click()
+        sheet.get_by_role("button", name="Add", exact=True).click()
+        expect(main).to_contain_text("Your Watches\n2")
+
+        # Edit tracking opens the entry added last
+        self.page.get_by_role("button", name="Edit tracking").click()
+        expect(sheet.get_by_role("radio", name="Planning Rewatch")).to_be_checked()
+        sheet.get_by_text("Completed", exact=True).click()
+        sheet.get_by_role("button", name="Advanced").click()
+        sheet.locator("textarea").fill("Better the second time")
+        sheet.get_by_role("button", name="Save").click()
+        expect(main).to_contain_text("Better the second time")
+        self.assertEqual(
+            sorted(Episode.objects.values_list("status", "notes")),
+            [
+                (Status.COMPLETED.value, ""),
+                (Status.COMPLETED.value, "Better the second time"),
+            ],
+        )
 
     def test_tv_completed(self):
         """Test the completed status of a TV show."""

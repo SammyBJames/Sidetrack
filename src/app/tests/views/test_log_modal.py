@@ -83,7 +83,7 @@ class LogModalViewTests(TestCase):
         """The dialog opens itself, so the previous one never shows while it loads."""
         response = self.modal(self.book)
 
-        self.assertContains(response, 'x-init="logOpen = true"')
+        self.assertContains(response, "x-init=\"$dispatch('dialog-ready')\"")
         self.assertContains(response, 'hx-disabled-elt="find [type=submit]"')
 
     def test_dialog_carries_the_cards_display_state(self):

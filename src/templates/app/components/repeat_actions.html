@@ -14,6 +14,7 @@
   <div x-cloak
        x-show="trackOpen"
        @dialog-dismiss="trackOpen = false"
+       @dialog-ready="trackOpen = true"
        class="dialog-backdrop">
     <div class="dialog-box">
       <div id="{% component_id 'track' media entry.id %}"></div>

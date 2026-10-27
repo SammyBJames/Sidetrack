@@ -404,37 +404,27 @@ class SeasonForm(MediaForm):
         ]
 
 
-class EpisodeForm(forms.ModelForm):
+class EpisodeForm(MediaForm):
     """Form for an episode's entries.
 
     A form without a status, e.g. one only changing a watch's date or notes,
-    keeps the entry's, which for a new one is Completed.
+    keeps the entry's, which for a new one is Completed. The season and episode
+    numbers carry the episode of a new entry to `episode_save`.
     """
 
-    class Meta:
+    season_number = forms.IntegerField(widget=forms.HiddenInput(), required=False)
+    episode_number = forms.IntegerField(widget=forms.HiddenInput(), required=False)
+
+    class Meta(MediaForm.Meta):
         """Bind form to model."""
 
         model = Episode
-        fields = ("status", "start_date", "end_date", "notes")
+        fields = ["score", "status", "start_date", "end_date", "notes"]
 
     def __init__(self, *args, **kwargs):
-        """Order the statuses as media forms do, with date or date and time inputs."""
+        """Let a form leave the status out, to keep the entry's."""
         super().__init__(*args, **kwargs)
         self.fields["status"].required = False
-        self.fields["status"].choices = [
-            (
-                status.value,
-                config.get_status_label(status.value, MediaTypes.EPISODE.value),
-            )
-            for status in STATUS_FORM_ORDER
-        ]
-        for field in ("start_date", "end_date"):
-            if settings.TRACK_TIME:
-                self.fields[field].widget = forms.DateTimeInput(
-                    attrs={"type": "datetime-local"},
-                )
-            else:
-                self.fields[field].widget = forms.DateInput(attrs={"type": "date"})
 
     def clean_status(self):
         """Return the posted status, or the entry's when none was posted."""

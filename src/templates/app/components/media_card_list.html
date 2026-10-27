@@ -72,19 +72,16 @@
     </div>
   </div>
 
-  {% if item.media_type == MediaTypes.EPISODE.value %}
-    {% include "app/components/fill_track_episode.html" with request=request media=item episode=item episode_title=title csrf_token=csrf_token TRACK_TIME=TRACK_TIME only %}
-  {% else %}
-    {# Track Modal #}
-    <div x-cloak
-         x-show="trackOpen"
-         @dialog-dismiss="trackOpen = false"
-         class="dialog-backdrop">
-      <div class="dialog-box">
-        <div id="{% component_id 'track' item media.id %}"></div>
-      </div>
+  {# Track Modal #}
+  <div x-cloak
+       x-show="trackOpen"
+       @dialog-dismiss="trackOpen = false"
+       @dialog-ready="trackOpen = true"
+       class="dialog-backdrop">
+    <div class="dialog-box">
+      <div id="{% component_id 'track' item media.id %}"></div>
     </div>
-  {% endif %}
+  </div>
 
   {# Lists Modal #}
   <div x-cloak

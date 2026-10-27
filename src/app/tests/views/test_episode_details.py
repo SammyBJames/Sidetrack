@@ -148,7 +148,7 @@ class EpisodeDetailsViewTests(TestCase):
         )
 
     def watch(self, number, notes=""):
-        """Track the first season and watch one of its episodes."""
+        """Track the first season and add a watch of one of its episodes."""
         season_item, _ = Item.objects.get_or_create(
             media_id="1396",
             source=Sources.TMDB.value,
@@ -161,14 +161,13 @@ class EpisodeDetailsViewTests(TestCase):
             user=self.user,
             defaults={"status": Status.IN_PROGRESS.value},
         )
-        episode_item = Item.objects.create(
+        episode_item, _ = Item.objects.get_or_create(
             media_id="1396",
             source=Sources.TMDB.value,
             media_type=MediaTypes.EPISODE.value,
             season_number=1,
             episode_number=number,
-            title="Breaking Bad",
-            image="http://example.com/e.jpg",
+            defaults={"title": "Breaking Bad", "image": "http://example.com/e.jpg"},
         )
         # bulk_create skips the save that looks up the season's metadata
         return Episode.objects.bulk_create(
@@ -212,51 +211,97 @@ class EpisodeDetailsViewTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
-    def test_watches_can_be_edited(self, _):
-        """Each watch of the episode has a form to change its date and notes."""
-        watch = self.watch(1, notes="Loved it")
-
-        response = self.client.get(self.episode_url(1))
-
-        self.assertRegex(
-            response.content.decode(),
-            r"Your Watches</h2>\s*<span[^>]*>1</span>",
+    def track_modal_url(self, number):
+        """Return the URL of the entry dialog of an episode of the first season."""
+        return reverse(
+            "track_modal",
+            kwargs={
+                "source": Sources.TMDB.value,
+                "media_type": MediaTypes.EPISODE.value,
+                "media_id": "1396",
+                "season_number": 1,
+                "episode_number": number,
+            },
         )
-        self.assertContains(response, "Loved it")
-        self.assertContains(response, f'name="instance_id" value="{watch.id}"')
-        self.assertContains(response, reverse("media_save"))
-        self.assertNotContains(response, "Mark watched")
 
-    def test_watch_tiles_have_no_delete_but_the_dialog_does(self, _):
-        """A watch is deleted from its edit dialog, which asks first, not its tile."""
-        self.watch(1)
-
-        content = self.client.get(self.episode_url(1)).content.decode()
-
-        tiles = content.split("Your Watches")[1].split("Edit Watch</h2>")[0]
-        self.assertNotIn(reverse("media_delete"), tiles)
-        self.assertIn('aria-label="Edit watch"', content)
-        edit_dialog = content.split("Edit Watch</h2>")[1]
-        self.assertRegex(
-            edit_dialog,
-            r'hx-post="'
-            + reverse("media_delete")
-            + r'[^"]*"[^>]*hx-confirm="Delete this watch\?"',
+    def test_edit_tracking_opens_the_latest_entry(self, _):
+        """The pencil opens the dialog on the entry added last, of any status."""
+        self.watch(1, notes="Loved it")
+        latest = self.entry(1, Status.PLANNING_REPEAT.value)
+        Episode.objects.filter(pk=latest.pk).update(
+            start_date=datetime(2024, 10, 5, 12, tzinfo=UTC),
+            score=7,
+            notes="Again",
         )
-        self.assertIn('aria-label="Delete watch"', edit_dialog)
+        # Another episode's entry, added later, isn't this one's
+        self.watch(2)
 
-    def test_previous_watches_in_the_track_dialog_ask_before_deleting(self, _):
-        """Previous watches in the Track Episode dialog delete after a confirm."""
-        watch = self.watch(1)
+        page_response = self.client.get(self.episode_url(1))
+        self.assertEqual(page_response.context["latest_entry"], latest)
+        page = page_response.content.decode()
+        self.assertIn('aria-label="Edit tracking"', page)
+        self.assertIn(self.track_modal_url(1), page)
+        self.assertIn(f'"instance_id": "{latest.id}"', page)
 
-        content = self.client.get(self.episode_url(1)).content.decode()
+        response = self.client.get(
+            self.track_modal_url(1),
+            {"return_url": self.episode_url(1)},
+        )
 
-        track_dialog = content.split("Track Episode</h2>")[1].split("Edit Watch")[0]
-        self.assertIn(f'"instance_id": "{watch.id}"', track_dialog)
-        self.assertIn('hx-confirm="Delete this watch?"', track_dialog)
+        self.assertTemplateUsed(response, "app/components/fill_track.html")
+        self.assertEqual(response.context["media"], latest)
+        self.assertEqual(str(response.context["title"]), "Breaking Bad S1E1")
+        content = response.content.decode()
+        self.assertRegex(
+            content,
+            r'value="Planning repeat"\s*checked>',
+        )
+        self.assertRegex(content, r"</svg>\s*Planning Rewatch\s*</span>")
+        self.assertIn("mediaForm(7.0, null)", content)
+        for name in ("start_date", "end_date", "notes"):
+            self.assertIn(f'name="{name}"', content)
+        self.assertIn('value="2024-10-05', content)
+        self.assertIn(f'name="instance_id" value="{latest.id}"', content)
+        self.assertIn(f'hx-post="{reverse("media_save")}', content)
+        self.assertIn('aria-label="Delete entry"', content)
+        self.assertIn("$dispatch('dialog-ready')", content)
 
-    def test_the_edit_dialogs_fields_delete_the_watch(self, _):
-        """Posting the Edit Watch form's fields to media_delete removes the watch."""
+    def test_saving_the_edit_dialog_changes_the_entry(self, _):
+        """The dialog's fields save the status, dates, notes and rating."""
+        planned = self.entry(1, Status.PLANNING.value)
+
+        response = self.client.post(
+            reverse("media_save") + f"?next={self.episode_url(1)}",
+            {
+                "instance_id": planned.id,
+                "media_type": MediaTypes.EPISODE.value,
+                "media_id": "1396",
+                "source": Sources.TMDB.value,
+                "season_number": 1,
+                "episode_number": 1,
+                "status": Status.COMPLETED.value,
+                "start_date": "2024-10-05",
+                "end_date": "2024-10-06",
+                "notes": "Second thoughts",
+                "score": "8.5",
+            },
+        )
+
+        self.assertRedirects(response, self.episode_url(1))
+        planned.refresh_from_db()
+        self.assertEqual(planned.status, Status.COMPLETED.value)
+        self.assertEqual(planned.start_date.date().isoformat(), "2024-10-05")
+        self.assertEqual(planned.end_date.date().isoformat(), "2024-10-06")
+        self.assertEqual(planned.notes, "Second thoughts")
+        self.assertEqual(float(planned.score), 8.5)
+        # Watching it moved the season on, as adding a watch does
+        self.assertEqual(
+            Season.objects.get(user=self.user).status,
+            Status.IN_PROGRESS.value,
+        )
+
+    def test_deleting_from_the_edit_dialog_removes_the_entry(self, _):
+        """Posting the dialog's fields to media_delete removes the entry."""
         watch = self.watch(1)
 
         self.client.post(
@@ -267,41 +312,208 @@ class EpisodeDetailsViewTests(TestCase):
                 "media_id": "1396",
                 "source": Sources.TMDB.value,
                 "season_number": 1,
+                "episode_number": 1,
+                "status": Status.COMPLETED.value,
                 "end_date": "2024-10-06",
                 "notes": "",
+                "score": "",
             },
         )
 
         self.assertFalse(Episode.objects.filter(pk=watch.pk).exists())
 
-    def test_editing_a_watch_saves_it(self, _):
-        """A watch's edit form changes its notes, keeping its rating and season."""
-        watch = self.watch(1, notes="First thoughts")
-        Episode.objects.filter(pk=watch.pk).update(score=8)
-        Season.objects.filter(user=self.user).update(status=Status.COMPLETED.value)
+    def test_an_episode_without_entries_offers_to_add_one(self, _):
+        """With no entry yet, the pencil opens the dialog to add the first."""
+        page = self.client.get(self.episode_url(1)).content.decode()
 
-        response = self.client.post(
-            reverse("media_save") + f"?next={self.episode_url(1)}",
+        self.assertIn('aria-label="Add to tracker"', page)
+        self.assertNotIn('aria-label="Add new entry"', page)
+        response = self.client.get(
+            self.track_modal_url(1),
+            {"return_url": self.episode_url(1), "instance_id": ""},
+        )
+        self.assertIsNone(response.context["media"])
+        self.assertContains(response, reverse("episode_save"))
+
+    def test_add_new_entry_opens_an_empty_dialog(self, _):
+        """Add new entry opens the dialog for a watch, to post to episode_save."""
+        self.watch(1)
+
+        page = self.client.get(self.episode_url(1)).content.decode()
+        self.assertIn('aria-label="Add new entry"', page)
+
+        response = self.client.get(
+            self.track_modal_url(1),
+            {"return_url": self.episode_url(1), "is_create": "1"},
+        )
+
+        self.assertIsNone(response.context["media"])
+        self.assertEqual(response.context["title"], "Breaking Bad S1E1")
+        content = response.content.decode()
+        self.assertRegex(content, r'value="Completed"\s*checked>')
+        self.assertIn(f'hx-post="{reverse("episode_save")}', content)
+        self.assertIn('name="episode_number" value="1"', content)
+        self.assertIn('name="instance_id"', content)
+        self.assertNotIn('name="instance_id" value="', content)
+        self.assertNotIn("Delete entry", content)
+        self.assertIn('name="start_date"', content)
+        self.assertIn("mediaForm(null, null)", content)
+
+    def add_entry(self, number, **fields):
+        """Post the add-entry dialog of an episode of the first season."""
+        return self.client.post(
+            reverse("episode_save") + f"?next={self.episode_url(number)}",
             {
-                "instance_id": watch.id,
                 "media_type": MediaTypes.EPISODE.value,
                 "media_id": "1396",
                 "source": Sources.TMDB.value,
                 "season_number": 1,
-                "end_date": "2024-10-06",
-                "notes": "Second thoughts",
+                "episode_number": number,
+                "instance_id": "",
+                "status": Status.COMPLETED.value,
+                "start_date": "",
+                "end_date": "",
+                "notes": "",
+                "score": "",
+                **fields,
             },
         )
 
+    def test_adding_an_entry_records_another_watch(self, _):
+        """A new watch of a watched episode is another entry, with all its fields."""
+        first = self.watch(1)
+
+        response = self.add_entry(
+            1,
+            start_date="2024-10-05",
+            end_date="2024-10-06",
+            notes="Better the second time",
+            score="9",
+        )
+
         self.assertRedirects(response, self.episode_url(1))
-        watch.refresh_from_db()
-        self.assertEqual(watch.notes, "Second thoughts")
-        self.assertEqual(watch.end_date.date().isoformat(), "2024-10-06")
-        self.assertEqual(watch.score, 8)
+        entry = Episode.objects.exclude(pk=first.pk).get()
+        self.assertEqual(entry.status, Status.COMPLETED.value)
+        self.assertEqual(entry.start_date.date().isoformat(), "2024-10-05")
+        self.assertEqual(entry.end_date.date().isoformat(), "2024-10-06")
+        self.assertEqual(entry.notes, "Better the second time")
+        self.assertEqual(entry.score, 9)
+
+    def test_adding_a_watch_turns_the_pending_entry_into_it(self, _):
+        """A watch added for a planned episode is its plan, watched, not another."""
+        planned = self.entry(2, Status.PLANNING.value)
+
+        self.add_entry(2, end_date="2024-10-06", score="6")
+
+        entry = Episode.objects.get()
+        self.assertEqual(entry.pk, planned.pk)
+        self.assertEqual(entry.status, Status.COMPLETED.value)
+        self.assertEqual(entry.score, 6)
+        self.assertEqual(entry.end_date.date().isoformat(), "2024-10-06")
+
+    def test_adding_an_entry_in_another_status(self, _):
+        """An entry added in a status that isn't a watch is added as it is."""
+        season = self.watch(1).related_season
+        self.watch(2)
+
+        self.add_entry(2, status=Status.PLANNING_REPEAT.value, notes="Soon")
+
+        self.assertEqual(
+            sorted(Episode.objects.values_list("status", "notes")),
+            [
+                (Status.COMPLETED.value, ""),
+                (Status.COMPLETED.value, ""),
+                (Status.PLANNING_REPEAT.value, "Soon"),
+            ],
+        )
+        added = Episode.objects.get(status=Status.PLANNING_REPEAT.value)
+        self.assertEqual(added.item.episode_number, 2)
+        season.refresh_from_db()
+        self.assertEqual(season.status, Status.IN_PROGRESS.value)
+
+    def test_a_first_planned_entry_plans_its_season(self, _):
+        """Planning an episode of a season not tracked yet plans the season."""
+        self.add_entry(1, status=Status.PLANNING.value)
+
         self.assertEqual(
             Season.objects.get(user=self.user).status,
-            Status.COMPLETED.value,
+            Status.PLANNING.value,
         )
+        self.assertEqual(Episode.objects.get().status, Status.PLANNING.value)
+
+    def test_an_invalid_entry_is_refused(self, _):
+        """A status episodes don't have isn't saved."""
+        response = self.add_entry(1, status="Watched")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Episode.objects.exists())
+
+    def test_completing_a_season_settles_an_episodes_other_plans(self, _):
+        """With two entries planning an episode, completing its season keeps one."""
+        self.watch(2)
+        self.add_entry(1, status=Status.PLANNING.value)
+        self.add_entry(1, status=Status.IN_PROGRESS.value, start_date="2024-10-05")
+        season = Season.objects.get(user=self.user)
+        self.assertEqual(season.episodes.filter(item__episode_number=1).count(), 2)
+
+        self.client.post(
+            reverse("quick_action"),
+            {
+                "media_id": "1396",
+                "source": Sources.TMDB.value,
+                "media_type": MediaTypes.SEASON.value,
+                "season_number": 1,
+                "instance_id": season.id,
+                "action": "complete",
+                "finish": "1",
+                "card": "details",
+            },
+        )
+
+        self.assertEqual(
+            list(
+                season.episodes.filter(item__episode_number=1).values_list(
+                    "status",
+                    flat=True,
+                ),
+            ),
+            [Status.COMPLETED.value],
+        )
+
+    def test_tiles_are_the_episodes_entries(self, _):
+        """Your Watches lists every entry with its status, each opening its dialog."""
+        watch = self.watch(1, notes="Loved it")
+        planned = self.entry(1, Status.PLANNING_REPEAT.value)
+        other = self.watch(2)
+
+        response = self.client.get(self.episode_url(1))
+
+        self.assertEqual(response.context["entries"], [planned, watch])
+        content = response.content.decode()
+        self.assertRegex(content, r"Your Watches</h2>\s*<span[^>]*>2</span>")
+        self.assertContains(response, "Loved it")
+        tiles = content.split("Your Watches</h2>")[1]
+        self.assertIn('title="Planning Rewatch"', tiles)
+        self.assertIn('title="Completed"', tiles)
+        for entry in (watch, planned):
+            self.assertIn(f'"instance_id": "{entry.id}"', tiles)
+        self.assertNotIn(f'"instance_id": "{other.id}"', tiles)
+        self.assertIn('aria-label="Edit entry"', tiles)
+        # The tiles don't delete; their dialogs do
+        self.assertNotIn(reverse("media_delete"), content)
+        # The watches count only the completed entry
+        self.assertEqual(len(response.context["media"]["history"]), 1)
+
+    def test_episode_page_has_only_entry_dialogs(self, _):
+        """The episode page has only the entry dialogs, which fetch their forms."""
+        self.watch(1)
+
+        content = self.client.get(self.episode_url(1)).content.decode()
+
+        for old in ("Track Episode", "Edit Watch", "Add watch", "Fill in air date"):
+            self.assertNotIn(old, content)
+        self.assertNotIn('@click="trackOpen = true"', content)
+        self.assertNotIn(reverse("media_save"), content)
 
     def test_one_click_watch_adds_one_watch(self, _):
         """A second click, e.g. while the page reloads, doesn't watch it again."""

@@ -1,13 +1,13 @@
-{# The dialog's sheet to log progress on `media`, a book or a game in progress, to go in the log dialog's host: the page a book is on, or the time played in a session. It opens the host (`logOpen`) once it has arrived, and posts to log_progress with the `carried` display state #}
-<div class="dialog-sheet" x-init="logOpen = true">
-  {% include "app/components/dialog_header.html" with title=media.item.title close="logOpen = false" %}
+{# The dialog's sheet to log progress on `media`, a book or a game in progress, to go in the log dialog's host: the page a book is on, or the time played in a session. Once it has arrived it sends the `dialog-ready` event its host opens on, and posts to log_progress with the `carried` display state #}
+<div class="dialog-sheet" x-init="$dispatch('dialog-ready')">
+  {% include "app/components/dialog_header.html" with title=media.item.title %}
   <form action="{% url 'log_progress' media_type media.id %}"
         method="post"
         hx-disabled-elt="find [type=submit]"
         x-id="['log']"
         x-data="logForm('{{ media_type }}'{% if total %}, {{ total }}{% endif %})"
         @submit.prevent="submit()"
-        @htmx:after-request="if ($event.detail.successful) logOpen = false"
+        @htmx:after-request="if ($event.detail.successful) $dispatch('dialog-dismiss')"
         @htmx:response-error="showError($event.detail.xhr)"
         class="flex min-h-0 flex-1 flex-col">
     {% csrf_token %}

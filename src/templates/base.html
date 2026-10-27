@@ -254,6 +254,7 @@
          x-cloak
          x-show="logOpen"
          @dialog-dismiss="logOpen = false"
+         @dialog-ready="logOpen = true"
          class="dialog-backdrop">
       <div class="dialog-box dialog-narrow">
         <div id="log-dialog"></div>

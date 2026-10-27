@@ -115,6 +115,7 @@ class CreateMedia(TestCase):
                 "season_number": 1,
                 "episode_number": 1,
                 "source": Sources.TMDB.value,
+                "media_type": MediaTypes.EPISODE.value,
                 "date": "2023-06-01T00:00",
             },
         )
@@ -136,6 +137,7 @@ class CreateMedia(TestCase):
                 "season_number": 1,
                 "episode_number": 1,
                 "source": Sources.TMDB.value,
+                "media_type": MediaTypes.EPISODE.value,
                 "end_date": "2023-06-01",
                 "notes": "Great episode",
             },

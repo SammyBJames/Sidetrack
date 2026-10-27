@@ -1,11 +1,10 @@
 {% load app_tags l10n widget_tweaks %}
 
-{# The tracking dialog's sheet for an entry, to add or edit, which goes in a dialog-box and opens its host once it has arrived, so the old dialog never shows while the new one loads. It posts the form's own fields to media_save and, with confirmation, to media_delete; the mediaForm component (mediaStatusDateHandler.js) runs the stars, stepper and date shortcuts #}
-<div class="dialog-sheet"
-     x-init="{% if is_create %}createOpen{% else %}trackOpen{% endif %} = true">
-  {% include "app/components/dialog_header.html" with title=title close="trackOpen = false; createOpen = false" %}
+{# The tracking dialog's sheet for an entry, to add or edit, which goes in a dialog-box. Once it has arrived it sends the `dialog-ready` event its host opens on, so the old dialog never shows while the new one loads. It posts the form's own fields to `save_url` and, with confirmation, to media_delete; the mediaForm component (mediaStatusDateHandler.js) runs the stars, stepper and date shortcuts #}
+<div class="dialog-sheet" x-init="$dispatch('dialog-ready')">
+  {% include "app/components/dialog_header.html" with title=title %}
 
-  <form hx-post="{% url 'media_save' %}?next={{ return_url }}"
+  <form hx-post="{{ save_url }}?next={{ return_url }}"
         hx-swap="none"
         x-id="['fold']"
         x-data="mediaForm({% if form.score.value is not None %}{{ form.score.value|unlocalize }}{% else %}null{% endif %}, {% if progress_total %}{{ progress_total|unlocalize }}{% else %}null{% endif %})"
@@ -18,6 +17,7 @@
     {{ form.source }}
     {{ form.media_id }}
     {{ form.season_number }}
+    {{ form.episode_number }}
 
     <div class="dialog-body">
       <fieldset>

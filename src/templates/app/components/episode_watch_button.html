@@ -1,12 +1,14 @@
 {% load app_tags %}
 
-{# An episode page's tracking button: marks it watched now in one click. Once it is, it shows how often until hover offers to plan watching it again, which one click then does in the same way. While its season is rewatched, one click watches it again until it is, and after that it opens the form #}
+{# An episode page's tracking button: marks it watched now in one click. Once it is, it shows how often until hover offers to plan watching it again, which one click then does in the same way. While its season is rewatched, one click watches it again until it is, and after that it opens the form of the `latest_entry` from `track_url`, as the page's Edit tracking does #}
 {% with repeat=media|repeat_state:season_instance watches=media.history|length %}
   <div class="flex h-10 w-full overflow-hidden rounded-xl shadow-lg ring-1 shadow-black/30 ring-white/10 md:w-auto md:min-w-56">
     {% if repeat == "done" %}
       <button type="button"
               class="flex flex-1 cursor-pointer items-center justify-center gap-2 px-5 text-sm font-semibold text-white transition-colors {{ Status.COMPLETED.value|status_button_color }}"
-              @click="trackOpen = true">
+              hx-get="{{ track_url }}"
+              hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}", "instance_id": "{{ latest_entry.id }}"}'
+              hx-target="#{% component_id 'track' media %}">
         {% include "app/icons/states/completed.svg" with classes="size-4 shrink-0" %}
         Watched{% if watches > 1 %} {{ watches }} times{% endif %}
       </button>

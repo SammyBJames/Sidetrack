@@ -8,9 +8,9 @@
   <div class="dialog-box">
     <div class="dialog-sheet">
       {% if form.instance.pk %}
-        {% include "app/components/dialog_header.html" with title="Edit List" close="showModal = false" %}
+        {% include "app/components/dialog_header.html" with title="Edit List" %}
       {% else %}
-        {% include "app/components/dialog_header.html" with title="Create New List" close="showModal = false" %}
+        {% include "app/components/dialog_header.html" with title="Create New List" %}
       {% endif %}
       <form class="flex min-h-0 flex-1 flex-col" method="post">
         {% csrf_token %}

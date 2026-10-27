@@ -657,9 +657,22 @@ def episode_details(
             f"{season_metadata['source_url']}/episode/{episode_number}"
         )
 
+    # Every entry of the episode, the one added last first, as other media list theirs
+    entries = sorted(
+        (
+            entry
+            for entry in episodes_in_db
+            if entry.item.episode_number == episode_number
+        ),
+        key=lambda entry: (entry.created_at, entry.pk),
+        reverse=True,
+    )
+
     context = {
         "media": media,
         "media_type": MediaTypes.EPISODE.value,
+        "entries": entries,
+        "latest_entry": entries[0] if entries else None,
         "season_instance": season_instance,
         "episodes": episodes,
         "previous_episode": episodes[index - 1] if index > 0 else None,
@@ -822,8 +835,14 @@ def track_modal(
     media_type,
     media_id,
     season_number=None,
+    episode_number=None,
 ):
-    """Return the tracking form for a media item."""
+    """Return the tracking form for a media item.
+
+    It edits the entry `instance_id`, else with `is_create` adds a new one, else
+    edits the user's latest entry of the media, or adds the first. A new
+    episode entry is saved by `episode_save`, every other form by `media_save`.
+    """
     instance_id = request.GET.get("instance_id")
     if instance_id:
         media = BasicMedia.objects.get_media(
@@ -834,14 +853,15 @@ def track_modal(
     elif request.GET.get("is_create"):
         media = None
     else:
-        # no specific instance, try to find the first one
+        # no specific instance, so the one added last
         user_medias = BasicMedia.objects.filter_media(
             request.user,
             media_id,
             media_type,
             source,
             season_number=season_number,
-        )
+            episode_number=episode_number,
+        ).order_by("-created_at", "-pk")
         media = user_medias.first()
         if media:
             instance_id = media.id
@@ -851,6 +871,7 @@ def track_modal(
         "source": source,
         "media_type": media_type,
         "season_number": season_number,
+        "episode_number": episode_number,
         "instance_id": instance_id,
     }
 
@@ -873,11 +894,14 @@ def track_modal(
             media_id,
             source,
             [season_number],
+            episode_number,
         )
         title = metadata["title"]
         total = helpers.positive_int_or_none(metadata.get("max_progress"))
         if media_type == MediaTypes.SEASON.value:
             title += f" S{season_number}"
+        elif media_type == MediaTypes.EPISODE.value:
+            title += f" S{season_number}E{episode_number}"
 
     form = get_form_class(media_type)(instance=media, initial=initial_data)
     # Games count time and movies nothing, so only the counted types have a total
@@ -891,7 +915,9 @@ def track_modal(
             "form": form,
             "media": media,
             "media_type": media_type,
-            "is_create": bool(request.GET.get("is_create")),
+            "save_url": reverse("episode_save")
+            if media is None and media_type == MediaTypes.EPISODE.value
+            else reverse("media_save"),
             "progress_total": total if counted else None,
             "progress_unit": f"{config.get_unit(media_type, short=False)}s"
             if counted
@@ -1284,7 +1310,12 @@ def mark_user_messages_shown(request):
 
 @require_POST
 def episode_save(request):
-    """Handle the creation, deletion, and updating of episodes for a season."""
+    """Add an entry of an episode, tracking its season if it isn't yet.
+
+    `quick` watches it now in one click. Otherwise the posted EpisodeForm is
+    the entry: a watch turns an entry planning the episode into it, as
+    `Season.watch` does, and any other status adds an entry as it is.
+    """
     media_id = request.POST["media_id"]
     season_number = int(request.POST["season_number"])
     episode_number = int(request.POST["episode_number"])
@@ -1294,6 +1325,7 @@ def episode_save(request):
         # One click marks it watched now, like a season's next episode action
         end_date = timezone.now().replace(second=0, microsecond=0)
         notes = ""
+        status = WATCH_STATUS
     else:
         form = EpisodeForm(request.POST)
         if not form.is_valid():
@@ -1301,6 +1333,7 @@ def episode_save(request):
             return HttpResponseBadRequest("Invalid form data")
         end_date = form.cleaned_data["end_date"]
         notes = form.cleaned_data["notes"]
+        status = form.cleaned_data["status"]
 
     try:
         related_season = Season.objects.get(
@@ -1321,7 +1354,7 @@ def episode_save(request):
 
         item, _ = Item.objects.get_or_create(
             media_id=media_id,
-            source=Sources.TMDB.value,
+            source=source,
             media_type=MediaTypes.SEASON.value,
             season_number=season_number,
             defaults={
@@ -1329,11 +1362,14 @@ def episode_save(request):
                 "image": season_metadata["image"],
             },
         )
+        # An episode only planned plans its season
         related_season = Season.objects.create(
             item=item,
             user=request.user,
             score=None,
-            status=Status.IN_PROGRESS.value,
+            status=Status.PLANNING.value
+            if status == Status.PLANNING.value
+            else Status.IN_PROGRESS.value,
             notes="",
         )
 
@@ -1348,8 +1384,23 @@ def episode_save(request):
         ).values_list("status", flat=True),
     )
     already_watched = WATCH_STATUS in statuses and not statuses & set(REPEAT_STATUSES)
-    if not (request.POST.get("quick") and already_watched):
-        related_season.watch(episode_number, end_date, notes)
+    if request.POST.get("quick"):
+        if not already_watched:
+            related_season.watch(episode_number, end_date, notes)
+    elif status == WATCH_STATUS:
+        related_season.watch(
+            episode_number,
+            end_date,
+            notes,
+            start_date=form.cleaned_data["start_date"],
+            score=form.cleaned_data["score"],
+        )
+    else:
+        entry = form.save(commit=False)
+        entry.related_season = related_season
+        entry.item = related_season.get_episode_item(episode_number)
+        entry.save()
+        logger.info("%s added as %s.", entry, status)
 
     return helpers.redirect_back(request)
 

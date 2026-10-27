@@ -24,9 +24,12 @@
             {# Nothing to act on until it comes out, so it shows when that is #}
             {% include "app/components/release_button.html" with event=None label=upcoming_label home_status=Status.PLANNING.value clock_color="text-sky-400" %}
           {% elif item.media_type == MediaTypes.EPISODE.value %}
-            <button @click="trackOpen = true"
-                    title="Track Episode"
-                    aria-label="Track Episode"
+            {# Opens the episode's latest entry, or adds its first #}
+            <button title="{% if media %}Edit tracking{% else %}Add to tracker{% endif %}"
+                    aria-label="{% if media %}Edit tracking{% else %}Add to tracker{% endif %}"
+                    hx-get="{% media_view_url 'track_modal' item %}"
+                    hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}"}'
+                    hx-target="#{% component_id 'track' item %}"
                     class="card-chip pointer-events-auto flex size-7 cursor-pointer items-center justify-center text-white transition hover:bg-indigo-600">
               {% if media %}
                 {% include "app/icons/eye.svg" with classes="size-3.5" %}
@@ -93,6 +96,14 @@
   {% endwith %}
 
   {% if item.media_type == MediaTypes.EPISODE.value %}
-    {% include "app/components/fill_track_episode.html" with request=request media=item episode=item episode_title=title csrf_token=csrf_token TRACK_TIME=TRACK_TIME only %}
+    <div x-cloak
+         x-show="trackOpen"
+         @dialog-dismiss="trackOpen = false"
+         @dialog-ready="trackOpen = true"
+         class="dialog-backdrop">
+      <div class="dialog-box">
+        <div id="{% component_id 'track' item %}"></div>
+      </div>
+    </div>
   {% endif %}
 </div>

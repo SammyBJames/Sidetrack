@@ -97,6 +97,9 @@ class BasicMediaForm(TestCase):
     def test_valid_episode_form(self):
         """Test the episode form with valid data."""
         form_data = {
+            "media_type": MediaTypes.EPISODE.value,
+            "source": Sources.TMDB.value,
+            "media_id": "1668",
             "end_date": "2023-06-01",
         }
         form = EpisodeForm(data=form_data)
@@ -105,6 +108,9 @@ class BasicMediaForm(TestCase):
     def test_valid_episode_datetime_form(self):
         """Test the episode form with valid data."""
         form_data = {
+            "media_type": MediaTypes.EPISODE.value,
+            "source": Sources.TMDB.value,
+            "media_id": "1668",
             "end_date": "2023-06-01T12:00:00Z",
         }
         form = EpisodeForm(data=form_data)

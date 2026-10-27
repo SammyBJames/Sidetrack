@@ -1,6 +1,6 @@
 {# The add-to-lists dialog's sheet for an entry, to go in a dialog-box #}
 <div class="dialog-sheet">
-  {% include "app/components/dialog_header.html" with title="Lists" close="listsOpen = false" %}
+  {% include "app/components/dialog_header.html" with title="Lists" %}
   <ul class="dialog-body space-y-2">
     {% for custom_list in custom_lists %}
       <li class="flex items-center justify-between gap-2 rounded-xl bg-white/5 p-3 ring-1 ring-white/10">

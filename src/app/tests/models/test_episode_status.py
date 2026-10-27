@@ -295,6 +295,14 @@ class EpisodeStatusTests(TestCase):
         self.assertEqual(media_count[MediaTypes.TV.value], 0)
 
 
+# The fields every episode form posts besides the entry's own
+EPISODE_FIELDS = {
+    "media_type": MediaTypes.EPISODE.value,
+    "source": Sources.MANUAL.value,
+    "media_id": "1",
+}
+
+
 class EpisodeFormStatusTests(TestCase):
     """The episode form sets an entry's status, or keeps it when it's left out."""
 
@@ -341,7 +349,8 @@ class EpisodeFormStatusTests(TestCase):
     def test_form_without_a_status_keeps_the_entrys(self):
         """Changing only the date and notes leaves the status as it was."""
         form = EpisodeForm(
-            {"end_date": "2024-01-02", "notes": "Hi"}, instance=self.entry
+            {**EPISODE_FIELDS, "end_date": "2024-01-02", "notes": "Hi"},
+            instance=self.entry,
         )
 
         self.assertTrue(form.is_valid(), form.errors)
@@ -349,7 +358,7 @@ class EpisodeFormStatusTests(TestCase):
 
     def test_new_entry_without_a_status_is_completed(self):
         """A form only dating a new watch completes it, as adding a watch did."""
-        form = EpisodeForm({"end_date": "2024-01-02"})
+        form = EpisodeForm({**EPISODE_FIELDS, "end_date": "2024-01-02"})
 
         self.assertTrue(form.is_valid(), form.errors)
         self.assertEqual(form.cleaned_data["status"], Status.COMPLETED.value)
@@ -358,6 +367,7 @@ class EpisodeFormStatusTests(TestCase):
         """A posted status and start date are saved, and an unknown status isn't."""
         form = EpisodeForm(
             {
+                **EPISODE_FIELDS,
                 "status": Status.IN_PROGRESS.value,
                 "start_date": "2024-01-01",
                 "end_date": "",
@@ -369,7 +379,9 @@ class EpisodeFormStatusTests(TestCase):
         entry = form.save()
         self.assertEqual(entry.status, Status.IN_PROGRESS.value)
         self.assertEqual(entry.start_date.date().isoformat(), "2024-01-01")
-        self.assertFalse(EpisodeForm({"status": "Watched"}).is_valid())
+        self.assertFalse(
+            EpisodeForm({**EPISODE_FIELDS, "status": "Watched"}).is_valid(),
+        )
 
     def test_statuses_are_in_episodes_words(self):
         """The repeat statuses read as rewatching."""

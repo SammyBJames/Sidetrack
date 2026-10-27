@@ -107,6 +107,7 @@
             <div x-cloak
                  x-show="trackOpen"
                  @dialog-dismiss="trackOpen = false"
+                 @dialog-ready="trackOpen = true"
                  class="dialog-backdrop">
               {# Stops clicks from reaching the buttons, which would reload the form #}
               <div class="dialog-box" @click.stop>
@@ -114,7 +115,7 @@
               </div>
             </div>
 
-            {# Another entry, e.g. for a rewatch; shows and seasons repeat through their episodes #}
+            {# Another entry, e.g. for a rewatch, fetched on each click so its dates start from now; shows and seasons repeat through their episodes #}
             {% if user_medias and media_type != MediaTypes.TV.value and media_type != MediaTypes.SEASON.value %}
               <div x-data="{ createOpen: false }">
                 <button class="{{ action_classes }}"
@@ -122,15 +123,14 @@
                         aria-label="Add new entry"
                         hx-get="{% media_view_url 'track_modal' media %}"
                         hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}", "is_create": true}'
-                        hx-target="#{% component_id 'track' media %}"
-                        hx-trigger="click once"
-                        @click="createOpen = true">
+                        hx-target="#{% component_id 'track' media %}">
                   {% include "app/icons/circle-plus.svg" with classes="size-4" %}
                 </button>
 
                 <div x-cloak
                      x-show="createOpen"
                      @dialog-dismiss="createOpen = false"
+                     @dialog-ready="createOpen = true"
                      class="dialog-backdrop">
                   <div class="dialog-box">
                     <div id="{% component_id 'track' media %}"></div>

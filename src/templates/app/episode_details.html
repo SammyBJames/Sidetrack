@@ -22,6 +22,7 @@
            @click="obfuscated = false"
            src="{{ media.image }}">
 
+      {% media_view_url 'track_modal' media as track_url %}
       <div class="flex w-full min-w-0 flex-1 flex-col items-center gap-4 text-center md:w-auto md:items-start md:text-start xl:flex-row xl:items-end xl:justify-between"
            x-data="{ trackOpen: false }">
         <div class="w-full min-w-0 space-y-3 md:w-auto">
@@ -55,13 +56,52 @@
         {# The other actions as icon buttons, starting with the tracking form #}
         <div class="flex shrink-0 flex-wrap items-center justify-center gap-2">
           {% with action_classes="tooltip flex size-10 cursor-pointer items-center justify-center rounded-xl bg-surface-800/80 text-gray-200 shadow-lg ring-1 shadow-black/30 ring-white/10 backdrop-blur transition-colors hover:bg-surface-650 hover:text-white disabled:cursor-wait" %}
-            {# Tracking form, to add a watch with its date and notes #}
+            {# Tracking form, for the entry added last, or the first #}
             <button type="button"
                     class="{{ action_classes }}"
-                    data-tooltip="Track episode"
-                    aria-label="Track episode"
-                    @click="trackOpen = true">{% include "app/icons/edit.svg" with classes="size-4" %}</button>
-            {% include "app/components/fill_track_episode.html" with request=request media=media episode=media episode_title=media.episode_title csrf_token=csrf_token TRACK_TIME=TRACK_TIME only %}
+                    data-tooltip="{% if latest_entry %}Edit tracking{% else %}Add to tracker{% endif %}"
+                    aria-label="{% if latest_entry %}Edit tracking{% else %}Add to tracker{% endif %}"
+                    hx-get="{{ track_url }}"
+                    hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}", "instance_id": "{{ latest_entry.id }}"}'
+                    hx-target="#{% component_id 'track' media %}">
+              {% include "app/icons/edit.svg" with classes="size-4" %}
+            </button>
+
+            <div x-cloak
+                 x-show="trackOpen"
+                 @dialog-dismiss="trackOpen = false"
+                 @dialog-ready="trackOpen = true"
+                 class="dialog-backdrop">
+              {# Stops clicks from reaching the buttons, which would reload the form #}
+              <div class="dialog-box" @click.stop>
+                <div id="{% component_id 'track' media %}"></div>
+              </div>
+            </div>
+
+            {# Another entry, e.g. for a rewatch, fetched on each click so its dates start from now #}
+            {% if latest_entry %}
+              <div x-data="{ createOpen: false }">
+                <button type="button"
+                        class="{{ action_classes }}"
+                        data-tooltip="Add new entry"
+                        aria-label="Add new entry"
+                        hx-get="{{ track_url }}"
+                        hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}", "is_create": true}'
+                        hx-target="#{% component_id 'track' media 'new' %}">
+                  {% include "app/icons/circle-plus.svg" with classes="size-4" %}
+                </button>
+
+                <div x-cloak
+                     x-show="createOpen"
+                     @dialog-dismiss="createOpen = false"
+                     @dialog-ready="createOpen = true"
+                     class="dialog-backdrop">
+                  <div class="dialog-box" @click.stop>
+                    <div id="{% component_id 'track' media 'new' %}"></div>
+                  </div>
+                </div>
+              </div>
+            {% endif %}
 
             {# Its metadata comes with the season #}
             {% url 'sync_metadata' media.source MediaTypes.SEASON.value media.media_id media.season_number as sync_url %}
@@ -84,14 +124,14 @@
 
         {# Sections, after the side panel on narrower screens #}
         <div class="order-1 min-w-0 xl:order-none">
-          {# Your watches, each with its rating to change #}
-          {% if media.history %}
+          {# Every entry of the episode, the current one too, as other media list theirs, each with its rating to change #}
+          {% if entries|length > 1 or latest_entry.status == Status.COMPLETED.value %}
             <section class="mb-8">
-              {% include "app/components/section_heading.html" with title="Your Watches" count=media.history|length %}
+              {% include "app/components/section_heading.html" with title=media_type|plays_heading count=entries|length %}
               <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-                {% for watch in media.history %}
-                  {% url 'update_media_score' MediaTypes.EPISODE.value watch.id as score_url %}
-                  {% include "app/components/entry_tile.html" with entry=watch status=Status.COMPLETED.value score_url=score_url actions="app/components/watch_actions.html" %}
+                {% for entry in entries %}
+                  {% url 'update_media_score' media_type entry.id as score_url %}
+                  {% include "app/components/entry_tile.html" with entry=entry status=entry.status score_url=score_url actions="app/components/repeat_actions.html" %}
                 {% endfor %}
               </div>
             </section>

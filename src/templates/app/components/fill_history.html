@@ -2,7 +2,7 @@
 
 {# The activity history dialog's sheet for an entry, to go in a dialog-box, with a button to delete each record #}
 <div class="dialog-sheet">
-  {% include "app/components/dialog_header.html" with title="Activity History" close="historyOpen = false" %}
+  {% include "app/components/dialog_header.html" with title="Activity History" %}
   <ul class="dialog-body space-y-3">
     {% for entry in timeline %}
       <li id="history-{{ entry.id }}"

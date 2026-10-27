@@ -2,6 +2,7 @@ import re
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.template import loader
 from django.test import TestCase
 from django.urls import reverse
 
@@ -349,3 +350,28 @@ class TrackModalDialogTests(TestCase):
         self.assertNotContains(response, "Time Played")
         self.assertNotContains(response, "bump(")
         self.assertContains(response, "mediaForm(null, null)")
+
+
+class DialogEventTests(TestCase):
+    """Dialog sheets talk to their hosts through events, not the hosts' flags."""
+
+    def test_sheets_name_no_host_flag(self):
+        """The fetched sheets and the header close and open by events only."""
+        for name in (
+            "app/components/dialog_header.html",
+            "app/components/fill_track.html",
+            "app/components/fill_log.html",
+            "app/components/fill_history.html",
+            "lists/components/fill_lists.html",
+        ):
+            with self.subTest(name=name):
+                source = loader.get_template(name).template.source
+                self.assertNotRegex(source, r"\w+Open\b|showModal|is_create")
+
+        header = loader.get_template("app/components/dialog_header.html")
+        self.assertIn("$dispatch('dialog-dismiss')", header.template.source)
+        for name in ("app/components/fill_track.html", "app/components/fill_log.html"):
+            self.assertIn(
+                "x-init=\"$dispatch('dialog-ready')\"",
+                loader.get_template(name).template.source,
+            )
