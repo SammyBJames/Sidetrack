@@ -317,10 +317,11 @@ class TVWebhookMixin:
                     )
 
             if should_create:
-                app.models.Episode.objects.create(
-                    item=episode_item,
-                    related_season=season_instance,
-                    end_date=now,
+                # A planned or started entry of the episode becomes the watch
+                season_instance.watch(
+                    episode_number,
+                    now,
+                    season_metadata=season_metadata,
                 )
                 logger.info(
                     "Marked episode as played: %s S%02dE%02d",

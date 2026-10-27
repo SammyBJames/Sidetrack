@@ -5,6 +5,7 @@ from django.test import Client, TestCase
 from django.urls import reverse
 
 from app.models import TV, Anime, Episode, Item, MediaTypes, Movie, Season, Status
+from integrations.tests.webhook_entries import plan_friends_episode
 from integrations.webhooks.emby import EmbyWebhookProcessor
 
 
@@ -428,3 +429,40 @@ class EmbyWebhookTests(TestCase):
         result = EmbyWebhookProcessor()._get_episode_number(payload)
 
         self.assertEqual(result, 7)
+
+    def test_play_turns_the_episodes_entry_into_the_watch(self):
+        """A play of a planned, started or rewatch-planned episode is its watch."""
+        for status in (
+            Status.PLANNING.value,
+            Status.IN_PROGRESS.value,
+            Status.PLANNING_REPEAT.value,
+        ):
+            with self.subTest(status=status):
+                TV.objects.all().delete()
+                entry = plan_friends_episode(self.user, status)
+                payload = {
+                    "Event": "playback.stop",
+                    "Item": {
+                        "Type": "Episode",
+                        "Name": "The One Where Monica Gets a Roommate",
+                        "ProductionYear": 1994,
+                        "ProviderIds": {"Tvdb": "303821", "Imdb": "tt0583459"},
+                        "SeriesName": "Friends",
+                        "ParentIndexNumber": 1,
+                        "IndexNumber": 1,
+                    },
+                    "PlaybackInfo": {"PlayedToCompletion": True},
+                }
+
+                response = self.client.post(
+                    self.url,
+                    data={"data": json.dumps(payload)},
+                    format="multipart",
+                )
+
+                self.assertEqual(response.status_code, 200)
+                watch = Episode.objects.get()
+                self.assertEqual(watch.pk, entry.pk)
+                self.assertEqual(watch.status, Status.COMPLETED.value)
+                self.assertEqual(watch.notes, "Pilot")
+                self.assertIsNotNone(watch.end_date)

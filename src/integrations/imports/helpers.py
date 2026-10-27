@@ -155,7 +155,8 @@ def get_existing_watches(user):
     """Get the dates of the movie and episode watches the user already has.
 
     Used in "new" mode to import only the watches missing from Yamtrack, instead
-    of skipping every movie or show that already exists.
+    of skipping every movie or show that already exists. Episode entries that
+    aren't watches, like planned ones, aren't counted.
     """
     watches = defaultdict(list)
 
@@ -168,14 +169,16 @@ def get_existing_watches(user):
         watch_key = get_watch_key(MediaTypes.MOVIE.value, source, media_id)
         watches[watch_key].append(end_date)
 
-    episodes = app.models.Episode.objects.filter(
-        related_season__user=user,
-    ).values_list(
-        "item__source",
-        "item__media_id",
-        "item__season_number",
-        "item__episode_number",
-        "end_date",
+    episodes = (
+        app.models.Episode.objects.watches()
+        .filter(related_season__user=user)
+        .values_list(
+            "item__source",
+            "item__media_id",
+            "item__season_number",
+            "item__episode_number",
+            "end_date",
+        )
     )
     for source, media_id, season_number, episode_number, end_date in episodes:
         watch_key = get_watch_key(
@@ -189,6 +192,39 @@ def get_existing_watches(user):
 
     logger.debug("Existing watched items for user %s: %s", user.username, len(watches))
     return watches
+
+
+def get_existing_episode_plans(user):
+    """Get the episode entries the user already has that aren't watches.
+
+    Returns a set of their watch keys, each with whether the entry is to watch
+    the episode again, so "new" mode imports a plan of the episode only when
+    Yamtrack doesn't have one of its kind, whatever its status.
+    """
+    entries = (
+        app.models.Episode.objects.filter(related_season__user=user)
+        .exclude(status=Status.COMPLETED.value)
+        .values_list(
+            "item__source",
+            "item__media_id",
+            "item__season_number",
+            "item__episode_number",
+            "status",
+        )
+    )
+    return {
+        (
+            get_watch_key(
+                MediaTypes.EPISODE.value,
+                source,
+                media_id,
+                season_number,
+                episode_number,
+            ),
+            status in REPEAT_STATUSES,
+        )
+        for source, media_id, season_number, episode_number, status in entries
+    }
 
 
 def is_same_watch_date(date, other_date):

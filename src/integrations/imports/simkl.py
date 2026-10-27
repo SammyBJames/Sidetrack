@@ -435,6 +435,7 @@ class SimklImporter:
                 episode_instance = app.models.Episode(
                     item=episode_item,
                     related_season=season_instance,
+                    status=Status.COMPLETED.value,
                     end_date=self._get_date(episode.get("watched_at")),
                 )
                 episode_instance._history_date = (

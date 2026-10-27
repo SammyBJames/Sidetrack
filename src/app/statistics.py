@@ -14,7 +14,16 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from app import config
-from app.models import TV, BasicMedia, Episode, MediaManager, MediaTypes, Season, Status
+from app.models import (
+    TV,
+    WATCH_STATUS,
+    BasicMedia,
+    Episode,
+    MediaManager,
+    MediaTypes,
+    Season,
+    Status,
+)
 from app.templatetags import app_tags
 from users.models import WeekStartDayChoices
 
@@ -607,6 +616,9 @@ def get_filtered_historical_data(start_date, end_date, user):
         model = apps.get_model("app", model_name)
 
         qs = model.objects.filter(history_user_id=user)
+        if model_name == f"historical{MediaTypes.EPISODE.value}":
+            # Episodes count their watches, not their plans
+            qs = qs.filter(status=WATCH_STATUS)
 
         if start_date:
             qs = qs.filter(history_date__gte=start_date)

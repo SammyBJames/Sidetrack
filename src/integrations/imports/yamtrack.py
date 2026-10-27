@@ -11,7 +11,7 @@ from django.utils.dateparse import parse_datetime
 
 import app
 from app import config
-from app.models import MediaTypes, Sources, Status
+from app.models import REPEAT_STATUSES, MediaTypes, Sources, Status
 from app.providers import services
 from app.templatetags import app_tags
 from integrations.imports import helpers
@@ -49,10 +49,12 @@ class YamtrackImporter:
         # in "new" mode
         self.existing_seasons = {}
         self.existing_watches = {}
+        self.existing_episode_plans = set()
         self.existing_entries = {}
         if mode == "new":
             self.existing_seasons = helpers.get_existing_seasons(user)
             self.existing_watches = helpers.get_existing_watches(user)
+            self.existing_episode_plans = helpers.get_existing_episode_plans(user)
             # Each row of the file is a single entry, so rows are matched to the
             # entries already in Yamtrack instead of to the media
             self.existing_entries = helpers.get_existing_entries(
@@ -277,7 +279,13 @@ class YamtrackImporter:
         return True
 
     def _is_existing_episode(self, episode):
-        """Return whether the watch of an episode is already in Yamtrack."""
+        """Return whether the entry of an episode is already in Yamtrack.
+
+        A watch is matched by its date to the watches. Another entry, like a
+        planned one, is matched by its kind to the entries that aren't watches,
+        as a season moves its unfinished entries together, and a plan to watch
+        an episode watched already is left out.
+        """
         item = episode.item
         watch_key = helpers.get_watch_key(
             MediaTypes.EPISODE.value,
@@ -286,6 +294,12 @@ class YamtrackImporter:
             item.season_number,
             item.episode_number,
         )
+        if not episode.is_watch:
+            repeat = episode.status in REPEAT_STATUSES
+            return (watch_key, repeat) in self.existing_episode_plans or (
+                not repeat and watch_key in self.existing_watches
+            )
+
         if helpers.is_existing_watch(
             self.existing_watches,
             watch_key,

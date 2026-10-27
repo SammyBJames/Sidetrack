@@ -272,29 +272,48 @@ def _fetch_prev_records(records):
 def _episode_changes(record, prev_record, info):
     """Build a change description for an episode history record.
 
-    An entry that became a watch, created as one or turned into one from a plan
-    that has no history of its own, is a completion of that episode, so it is
-    tagged ``end_date`` to earn the completed accent; other changes are treated
-    as progress. Notes added with the watch follow as their own change, like
-    they do for other media.
+    An entry created or moved to a status reads as what it now is, e.g.
+    "Watched episode 4" or "Planned episode 4". A watch, created as one or
+    turned into one from a plan that has no history of its own, is a completion
+    of that episode, so it is tagged ``end_date`` to earn the completed accent;
+    the others carry their status's. Other changes are treated as progress.
+    Notes added with a new entry follow as their own change, like they do for
+    other media.
     """
     episode_number = info["episode_number"]
-    became_watch = record.status == WATCH_STATUS and (
-        prev_record is None or prev_record.status != WATCH_STATUS
-    )
-    if became_watch:
-        description = f"Watched episode {episode_number}"
-        changes = [{"description": description, "field": "end_date"}]
-        if record.notes:
-            changes.append(
-                {
-                    "description": format_description("notes", None, record.notes),
-                    "field": "notes",
-                },
-            )
-        return changes
-    description = f"Updated episode {episode_number}"
-    return [{"description": description, "field": "progress"}]
+    if prev_record is not None and prev_record.status == record.status:
+        description = f"Updated episode {episode_number}"
+        return [{"description": description, "field": "progress"}]
+
+    verb = config.get_verb(MediaTypes.EPISODE.value, past_tense=False)
+    if record.status == WATCH_STATUS:
+        changes = [
+            {"description": f"Watched episode {episode_number}", "field": "end_date"},
+        ]
+    else:
+        wording = {
+            Status.PLANNING.value: "Planned episode",
+            Status.IN_PROGRESS.value: "Started episode",
+            Status.PAUSED.value: "Paused episode",
+            Status.DROPPED.value: "Dropped episode",
+            Status.PLANNING_REPEAT.value: f"Planned re{verb} of episode",
+            Status.REPEATING.value: f"Re{verb}ing episode",
+        }
+        changes = [
+            {
+                "description": f"{wording[record.status]} {episode_number}",
+                "field": "status",
+                "new": record.status,
+            },
+        ]
+    if prev_record is None and record.notes:
+        changes.append(
+            {
+                "description": format_description("notes", None, record.notes),
+                "field": "notes",
+            },
+        )
+    return changes
 
 
 def process_history_entries(history_records, media_type, media_entry_number, user):

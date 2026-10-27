@@ -2386,15 +2386,15 @@ class Season(Media):
         else:
             logger.info("No more episodes to watch.")
 
-    def watch(self, episode_number, end_date, notes=""):
+    def watch(self, episode_number, end_date, notes="", season_metadata=None):
         """Watch an episode of the season, turning the entry planning it into a watch.
 
         While the season is rewatched, that's its entry to watch it again, else
         its first watch's, else one planning to watch it again on its own. An
         episode without one gets a new watch. Notes, when given, replace the
-        entry's.
+        entry's. `season_metadata` is fetched when it isn't given.
         """
-        item = self.get_episode_item(episode_number)
+        item = self.get_episode_item(episode_number, season_metadata)
         first = (
             REPEAT_STATUSES if self.status in REPEAT_STATUSES else UNFINISHED_STATUSES
         )

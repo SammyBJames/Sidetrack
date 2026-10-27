@@ -654,6 +654,7 @@ class TraktImporter:
         episode_obj = app.models.Episode(
             item=episode_item,
             related_season=season_obj,
+            status=Status.COMPLETED.value,
             end_date=end_date,
         )
         episode_obj._history_date = parse_datetime(watched_at)

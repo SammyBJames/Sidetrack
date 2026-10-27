@@ -21,6 +21,7 @@ from app.models import (
     Sources,
     Status,
 )
+from integrations import exports
 from integrations.imports import (
     yamtrack,
 )
@@ -784,4 +785,175 @@ class ImportYamtrackAddedDates(TestCase):
         self.assertGreater(
             Movie.objects.get(user=self.user).created_at,
             datetime(2025, 1, 1, tzinfo=UTC),
+        )
+
+
+class ImportYamtrackEpisodeStatuses(TestCase):
+    """Test that episode entries keep their statuses through an import."""
+
+    HEADER = ImportYamtrackNewMode.HEADER
+    setUp = ImportYamtrackNewMode.setUp
+    get_item = ImportYamtrackNewMode.get_item
+    create_show = ImportYamtrackNewMode.create_show
+    row = ImportYamtrackNewMode.row
+    run_import = ImportYamtrackNewMode.run_import
+
+    def episode_row(self, number, status="", **fields):
+        """Return a CSV row of an entry of an episode of season 1."""
+        return self.row(
+            MediaTypes.EPISODE.value,
+            season_number=1,
+            episode_number=number,
+            status=status,
+            **fields,
+        )
+
+    def show_rows(self):
+        """Return the CSV rows of the show and its first season."""
+        return (
+            self.row(MediaTypes.TV.value, status=Status.IN_PROGRESS.value),
+            self.row(
+                MediaTypes.SEASON.value,
+                season_number=1,
+                status=Status.IN_PROGRESS.value,
+            ),
+        )
+
+    def entries(self):
+        """Return the user's episode entries as (number, status), in order."""
+        return sorted(
+            Episode.objects.filter(related_season__user=self.user).values_list(
+                "item__episode_number",
+                "status",
+            ),
+        )
+
+    def test_statuses_and_start_dates_are_imported(self):
+        """Rows keep their status and start date, and those without are watches."""
+        _, warnings = self.run_import(
+            *self.show_rows(),
+            self.episode_row(1, end_date="2024-02-09 12:00:00+00:00"),
+            self.episode_row(
+                2,
+                Status.IN_PROGRESS.value,
+                start_date="2024-02-10 12:00:00+00:00",
+            ),
+            self.episode_row(3, Status.PLANNING.value),
+            # Not a status, so the row is left out with a warning
+            self.episode_row(4, "Watched"),
+        )
+
+        self.assertEqual(
+            self.entries(),
+            [
+                (1, Status.COMPLETED.value),
+                (2, Status.IN_PROGRESS.value),
+                (3, Status.PLANNING.value),
+            ],
+        )
+        started = Episode.objects.get(item__episode_number=2)
+        self.assertEqual(started.start_date, datetime(2024, 2, 10, 12, tzinfo=UTC))
+        self.assertIn("Watched", warnings)
+
+    def test_a_watch_and_a_planned_rewatch_of_an_episode_are_both_kept(self):
+        """The plans imported with a watch aren't fulfilled by it."""
+        self.run_import(
+            *self.show_rows(),
+            self.episode_row(1, end_date="2024-02-09 12:00:00+00:00"),
+            self.episode_row(1, Status.PLANNING_REPEAT.value),
+        )
+
+        self.assertEqual(
+            self.entries(),
+            [(1, Status.COMPLETED.value), (1, Status.PLANNING_REPEAT.value)],
+        )
+
+    def test_planned_entries_are_not_watches_in_new_mode(self):
+        """A planned entry already there neither hides a watch nor is added twice."""
+        self.create_show(Status.IN_PROGRESS.value, [])
+        season = Season.objects.get(user=self.user)
+        Episode.objects.bulk_create(
+            [
+                Episode(
+                    item=self.get_item(MediaTypes.EPISODE.value, "1668", 1, number),
+                    related_season=season,
+                    status=Status.PLANNING.value,
+                )
+                for number in (1, 2)
+            ],
+        )
+
+        self.run_import(
+            *self.show_rows(),
+            self.episode_row(1, end_date=""),
+            self.episode_row(2, Status.PLANNING.value),
+        )
+
+        # The watch fulfils the first episode's plan, and the second stays planned
+        self.assertEqual(
+            self.entries(),
+            [(1, Status.COMPLETED.value), (2, Status.PLANNING.value)],
+        )
+
+    def test_plans_match_existing_ones_of_their_kind_in_new_mode(self):
+        """A plan already there in another status, or of a watched episode, is kept."""
+        self.create_show(Status.PAUSED.value, [(3, None)])
+        season = Season.objects.get(user=self.user)
+        Episode.objects.bulk_create(
+            [
+                Episode(
+                    item=self.get_item(MediaTypes.EPISODE.value, "1668", 1, number),
+                    related_season=season,
+                    status=Status.PAUSED.value,
+                )
+                for number in (1, 2)
+            ],
+        )
+
+        self.run_import(
+            *self.show_rows(),
+            *(self.episode_row(number, Status.PLANNING.value) for number in (1, 2, 3)),
+            # A plan to watch the third again is of another kind
+            self.episode_row(3, Status.PLANNING_REPEAT.value),
+        )
+
+        self.assertEqual(
+            self.entries(),
+            [
+                (1, Status.PAUSED.value),
+                (2, Status.PAUSED.value),
+                (3, Status.COMPLETED.value),
+                (3, Status.PLANNING_REPEAT.value),
+            ],
+        )
+
+    def test_reimported_export_keeps_episode_statuses(self):
+        """An export imported again over the same library gives the same entries."""
+        self.run_import(
+            *self.show_rows(),
+            self.episode_row(1, end_date="2024-02-09 12:00:00+00:00"),
+            self.episode_row(1, Status.PLANNING_REPEAT.value),
+            self.episode_row(
+                2,
+                Status.PAUSED.value,
+                start_date="2024-02-10 12:00:00+00:00",
+            ),
+            self.episode_row(3, Status.PLANNING.value),
+        )
+        before = sorted(
+            Episode.objects.values_list("item__episode_number", "status", "start_date"),
+        )
+        exported = "".join(exports.generate_rows(self.user))
+
+        yamtrack.importer(BytesIO(exported.encode()), self.user, "overwrite")
+
+        self.assertEqual(
+            sorted(
+                Episode.objects.values_list(
+                    "item__episode_number",
+                    "status",
+                    "start_date",
+                ),
+            ),
+            before,
         )

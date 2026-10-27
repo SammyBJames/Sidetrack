@@ -375,6 +375,23 @@ class SyncExistingMediaTest(TestCase):
             [(1, Status.COMPLETED.value), (2, Status.PLANNING.value)],
         )
 
+    def test_existing_watches_leave_out_planned_entries(self):
+        """Only watches count as the episodes already watched."""
+        season = self.tracked_season(Status.IN_PROGRESS.value)
+        Episode.objects.bulk_create(
+            [
+                self.episode_entry(season, 1),
+                self.episode_entry(season, 2, Status.PLANNING.value),
+            ],
+        )
+
+        watches = helpers.get_existing_watches(self.user)
+
+        self.assertEqual(
+            sorted(key[4] for key in watches),
+            [1],
+        )
+
     def test_import_leaves_a_rewatch_under_way(self):
         """A season already being rewatched isn't planned to be rewatched again."""
         season = self.tracked_season(Status.REPEATING.value)

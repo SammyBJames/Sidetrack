@@ -7,6 +7,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app import history_processor
+from app import statistics as stats
 from app.models import (
     Episode,
     Item,
@@ -230,6 +231,73 @@ class JournalViewTests(TestCase):
             ],
             ["Updated episode 1", "Watched episode 1"],
         )
+
+    def episode_journal(self):
+        """Return the journal's episode entries, newest first.
+
+        Each is its descriptions and then its accent.
+        """
+        response = self.client.get(reverse("journal"))
+        return [
+            [change["description"] for change in entry["changes"]] + [entry["accent"]]
+            for entry in response.context["entries"]
+            if entry["media_type"] == MediaTypes.EPISODE.value
+        ]
+
+    def test_journal_episode_entries_read_as_their_status(self):
+        """Entries made in a status, or moved to one, read as what they now are."""
+        self._add_episode()
+        episode = Episode.objects.get()
+        episode.history.all().delete()
+        now = timezone.now()
+        for days, status, notes in (
+            (8, Status.PLANNING, "Soon"),
+            (7, Status.IN_PROGRESS, "Soon"),
+            (6, Status.PAUSED, "Soon"),
+            (5, Status.DROPPED, "Soon"),
+            (4, Status.COMPLETED, "Soon"),
+            (3, Status.PLANNING_REPEAT, "Soon"),
+            (2, Status.REPEATING, "Soon"),
+            (1, Status.REPEATING, "Again"),
+        ):
+            episode.status = status.value
+            episode.notes = notes
+            episode._history_user = self.user
+            episode._history_date = now - datetime.timedelta(days=days)
+            Episode.save_base(episode)
+        # The first record is of the entry being made
+        first = episode.history.order_by("history_date").first()
+        episode.history.filter(pk=first.pk).update(history_type="+")
+
+        self.assertEqual(
+            self.episode_journal(),
+            [
+                ["Updated episode 1", Status.IN_PROGRESS.value],
+                ["Rewatching episode 1", Status.REPEATING.value],
+                ["Planned rewatch of episode 1", Status.PLANNING_REPEAT.value],
+                ["Watched episode 1", Status.COMPLETED.value],
+                ["Dropped episode 1", Status.DROPPED.value],
+                ["Paused episode 1", Status.PAUSED.value],
+                ["Started episode 1", Status.IN_PROGRESS.value],
+                ["Planned episode 1", "Added notes", Status.PLANNING.value],
+            ],
+        )
+
+    def test_activity_counts_episode_watches_only(self):
+        """A planned episode entry isn't activity, and its watch is."""
+        self._add_episode()
+        episode = Episode.objects.get()
+        episode.status = Status.PLANNING.value
+        episode._history_user = self.user
+        Episode.save_base(episode)
+
+        counts = sum(
+            day["count"]
+            for day in stats.get_filtered_historical_data(None, None, self.user)
+        )
+        movie_records = Movie.history.filter(history_user=self.user).count()
+
+        self.assertEqual(counts, movie_records + 1)
 
     def test_journal_excludes_other_users(self):
         """The feed only contains the requesting user's activity."""
