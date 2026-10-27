@@ -1,10 +1,21 @@
+import datetime
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import Client, RequestFactory, TestCase
 from django.urls import reverse
 
-from app.models import TV, Anime, Item, MediaTypes, Movie, Sources, Status
+from app.models import (
+    TV,
+    Anime,
+    Episode,
+    Item,
+    MediaTypes,
+    Movie,
+    Season,
+    Sources,
+    Status,
+)
 from lists.models import CustomList, CustomListItem
 
 
@@ -498,6 +509,41 @@ class ListDetailViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, "lists/components/media_grid.html")
         self.assertNotIn("form", response.context)
+
+    @patch.object(get_user_model(), "update_preference")
+    def test_list_detail_view_with_watched_episode(self, mock_update_preference):
+        """A list holding a watched episode draws its card with the year."""
+        mock_update_preference.side_effect = ["date_added", None]
+        season_item = Item.objects.create(
+            media_id="1668",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.SEASON.value,
+            title="Test TV Show",
+            season_number=1,
+        )
+        episode_item = Item.objects.create(
+            media_id="1668",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.EPISODE.value,
+            title="Test TV Show",
+            season_number=1,
+            episode_number=1,
+            release_date=datetime.date(2004, 9, 22),
+        )
+        season = Season.objects.create(
+            item=season_item,
+            user=self.user,
+            status=Status.IN_PROGRESS.value,
+        )
+        Episode.objects.bulk_create(
+            [Episode(item=episode_item, related_season=season)],
+        )
+        CustomListItem.objects.create(custom_list=self.custom_list, item=episode_item)
+
+        response = self.client.get(reverse("list_detail", args=[self.custom_list.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "<span>2004</span>")
 
 
 class CreateListViewTest(TestCase):

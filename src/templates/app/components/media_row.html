@@ -2,7 +2,12 @@
 
 {# A media's row in a list, in the library or a search's results (a search sets no `sorted_field`, and its `media` is empty for a result not tracked): its poster and title, status, progress, rating and the value the list sorts by or its last activity. On narrower screens all but the title fold under it. The title's link covers the row, so a click anywhere opens the media; the owner gets the cards' status chip with its quick action above it #}
 {% card_title item title|default:item as heading %}
-{% card_details item media progress=False as details %}
+{# Library rows show progress in a column of their own, search rows have none #}
+{% if sorted_field %}
+  {% card_details item media progress=False as details %}
+{% else %}
+  {% card_details item media as details %}
+{% endif %}
 {% firstof item|release_year "" as year %}
 {% with user=target_user|default:user caught=media|caught_up %}
   <div class="media-row hover-tap relative grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-x-4 px-4 py-3 transition-colors hover:bg-white/[0.03] {% if not sorted_field %}xl:grid-cols-[3rem_minmax(0,1fr)_9rem_4.5rem_11rem]{% elif show_progress %}xl:grid-cols-[3rem_minmax(0,1fr)_9rem_10rem_4.5rem_10rem_11rem]{% else %}xl:grid-cols-[3rem_minmax(0,1fr)_9rem_4.5rem_10rem_11rem]{% endif %}">

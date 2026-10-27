@@ -1,4 +1,5 @@
 import re
+from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -53,7 +54,16 @@ class ProgressEditHomeCardTests(TestCase):
         self.assertNotIn("HX-Trigger", response)
 
     def test_card_is_the_one_the_page_shows(self, *_):
-        """The re-rendered card is the card home draws for the entry."""
+        """The re-rendered card is the card home draws for the entry, repeats too."""
+        completed = Anime.objects.create(
+            item=self.anime.item,
+            user=self.user,
+            status=Status.COMPLETED.value,
+            progress=12,
+        )
+        Anime.objects.filter(id=completed.id).update(
+            created_at=self.anime.created_at - timedelta(days=1),
+        )
         response = self.increase()
 
         start = f'<div id="home-media-anime-{self.anime.id}"'
@@ -64,6 +74,7 @@ class ProgressEditHomeCardTests(TestCase):
             return re.sub(r'"X-CSRFToken": "[^"]*"', "", html).strip()
 
         updated = card(response)
+        self.assertIn("Repeated 2 times", updated)
         self.assertTrue(card(self.client.get(reverse("home"))).startswith(updated))
 
     def test_card_leaves_section_when_completed(self, *_):

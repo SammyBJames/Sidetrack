@@ -242,37 +242,30 @@ def enrich_items_with_user_data(request, items, section_name):
         Item.objects.bulk_update(items_to_refresh, ["image"])
 
     if media_type == MediaTypes.TV.value:
-        _add_stored_show_counts(enriched_items)
+        _add_stored_show_counts(enriched_items, items[0]["source"])
 
     return enriched_items
 
 
-def _add_stored_show_counts(enriched_items):
+def _add_stored_show_counts(enriched_items, source):
     """Give each show's metadata the season and episode counts stored on its Item.
 
-    One query covers all of them. Shows that aren't stored, or are stored without
-    counts, are left as they are, so their cards show the year.
+    The shows all come from `source`, and one query covers all of them (none when
+    there are none). Shows that aren't stored, or are stored without counts, are
+    left as they are, so their cards show the year.
     """
-    wanted = Q()
-    for entry in enriched_items:
-        wanted |= Q(
-            media_id=entry["item"]["media_id"],
-            source=entry["item"]["source"],
-        )
-    if not wanted:
-        return
-
     stored = {
-        (item.media_id, item.source): item
+        item.media_id: item
         for item in Item.objects.filter(
-            wanted,
+            source=source,
             media_type=MediaTypes.TV.value,
+            media_id__in=[str(entry["item"]["media_id"]) for entry in enriched_items],
             season_count__isnull=False,
             length__isnull=False,
         )
     }
     for entry in enriched_items:
-        item = stored.get((str(entry["item"]["media_id"]), entry["item"]["source"]))
+        item = stored.get(str(entry["item"]["media_id"]))
         if item:
             entry["item"] = {
                 **entry["item"],

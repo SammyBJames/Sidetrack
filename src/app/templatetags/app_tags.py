@@ -548,7 +548,8 @@ def card_details(item, media, *, home=False, progress=True):
     `unit` (empty when it has none), "plain" has `text`, and "tv" has the
     `seasons` and `episodes` counts. Items under a started status show their progress,
     unless `progress` is False for rows with a column of their own or it's
-    played time on the `home` page. Otherwise a season shows its episode count,
+    played time on the `home` page. Otherwise a season shows its episode count
+    (announced ones too, where started progress counts only released ones),
     a show its counts and anything else its release year, when known. `media`
     may be empty for media that isn't tracked. Reads only what's on the
     objects, so it costs no queries. `repeats` is how many times the media was
@@ -559,8 +560,7 @@ def card_details(item, media, *, home=False, progress=True):
 
     started = (
         progress
-        and media
-        and media.progress
+        and getattr(media, "progress", None)
         and media.status in STARTED_STATUSES
         and media_type not in (MediaTypes.MOVIE.value, MediaTypes.TV.value)
         and not (home and media_type == MediaTypes.GAME.value)
@@ -570,13 +570,17 @@ def card_details(item, media, *, home=False, progress=True):
         # Played time has no unit
         if media_type != MediaTypes.GAME.value:
             total = _length(item, media)
-            count = total or media.progress
             if total:
                 text = f"{text} / {total}"
-            unit = _unit_name(media_type, count)
+            unit = config.get_unit(media_type, short=False)
+            unit = _plural(total or media.progress, unit)
         part = {"kind": "progress", "text": text, "unit": unit}
+    # All its episodes, announced too, not only the released ones progress counts
     elif media_type == MediaTypes.SEASON.value and (
-        episodes := getattr(media, "episode_count", None) or _length(item, media)
+        episodes := getattr(media, "episode_count", None)
+        or _field(item, "max_progress")
+        or _field(item, "length")
+        or getattr(media, "max_progress", None)
     ):
         text = f"{episodes} {_plural(episodes, 'Episode')}"
         part = {"kind": "plain", "text": text}
@@ -587,13 +591,6 @@ def card_details(item, media, *, home=False, progress=True):
 
     repeats = getattr(media, "repeats", 0) or 0
     return {"part": part, "repeats": repeats if repeats > 1 else 0}
-
-
-def _unit_name(media_type, count):
-    """Return a media type's long unit for the count, empty when it has none."""
-    if "unit" not in config.get_config(media_type):
-        return ""
-    return _plural(count, config.get_unit(media_type, short=False))
 
 
 def _length(item, media):

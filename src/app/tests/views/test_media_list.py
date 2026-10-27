@@ -13,6 +13,7 @@ from app import library_fields
 from app.models import (
     TV,
     Episode,
+    Game,
     Item,
     MediaTypes,
     Movie,
@@ -464,6 +465,36 @@ class MediaListViewTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn("media_list", response.context)
+
+
+class GameCardTests(TestCase):
+    """Test the details line of the library's game cards."""
+
+    def test_game_card_shows_time_played(self):
+        """Away from home, a game in progress shows its time played."""
+        credentials = {"username": "test", "password": "12345"}
+        user = get_user_model().objects.create_user(**credentials)
+        self.client.login(**credentials)
+        item = Item.objects.create(
+            media_id="1",
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.GAME.value,
+            title="Played Game",
+            image="http://example.com/image.jpg",
+        )
+        Game.objects.create(
+            item=item,
+            user=user,
+            status=Status.IN_PROGRESS.value,
+            progress=150,
+        )
+
+        response = self.client.get(
+            reverse("medialist", args=[user.username, MediaTypes.GAME.value]),
+            {"layout": "grid"},
+        )
+
+        self.assertContains(response, "2h 30min")
 
 
 class TVCardCountsTests(TestCase):

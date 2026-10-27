@@ -317,6 +317,24 @@ class CardDetailsTests(TestCase):
 
         self.assertEqual(parts["part"], {"kind": "plain", "text": "1 Episode"})
 
+    def test_airing_season_counts_all_its_episodes_until_started(self):
+        """An unstarted season counts announced episodes, a started one what's out."""
+        stored = self.item(MediaTypes.SEASON.value, season_number=1, length=10)
+        listed = {"media_type": MediaTypes.SEASON.value, "max_progress": 10}
+        planned = self.media(status=Status.PLANNING.value, max_progress=4)
+        started = self.media(progress=2, max_progress=4)
+
+        for item in (stored, listed):
+            with self.subTest(item=item):
+                self.assertEqual(
+                    self.details(item, planned)["part"],
+                    {"kind": "plain", "text": "10 Episodes"},
+                )
+                self.assertEqual(
+                    self.details(item, started)["part"],
+                    {"kind": "progress", "text": "2 / 4", "unit": "Episodes"},
+                )
+
     def test_tracked_show_counts_what_is_out(self):
         """A tracked show's counts are its released seasons and episodes."""
         tv = self.item(MediaTypes.TV.value, season_count=9, length=90)

@@ -144,6 +144,7 @@ def _home_card_response(request, media, media_type, home_status):
         response["HX-Trigger"] = "mediaChanged"
         return response
 
+    _annotate_entry_counts(request.user, media, media_type)
     context = {
         "media": media,
         "home_status": home_status,
@@ -152,6 +153,29 @@ def _home_card_response(request, media, media_type, home_status):
         request,
         "app/components/home_card_response.html",
         context,
+    )
+
+
+def _annotate_entry_counts(user, media, media_type):
+    """Set what the list loaders annotate on an entry from all of its media's entries.
+
+    Sets `repeats`, `added_at` and `completed_entries`, as `_filter_latest_entries`
+    does, so a card or row re-rendered on its own matches the one its page drew.
+    Costs one query.
+    """
+    entries = list(
+        BasicMedia.objects.filter_media(
+            user,
+            media.item.media_id,
+            media_type,
+            media.item.source,
+            season_number=media.item.season_number,
+        ),
+    )
+    media.repeats = len(entries)
+    media.added_at = min(entry.created_at for entry in entries)
+    media.completed_entries = sum(
+        entry.status == Status.COMPLETED.value for entry in entries
     )
 
 
@@ -1216,20 +1240,7 @@ def _quick_action_card(request, media_type, media_id):
     """
     media = BasicMedia.objects.get_media_prefetch(request.user, media_type, media_id)
     BasicMedia.objects.annotate_releases([media], media_type)
-    entries = list(
-        BasicMedia.objects.filter_media(
-            request.user,
-            media.item.media_id,
-            media_type,
-            media.item.source,
-            season_number=media.item.season_number,
-        ),
-    )
-    media.repeats = len(entries)
-    media.added_at = min(entry.created_at for entry in entries)
-    media.completed_entries = sum(
-        entry.status == Status.COMPLETED.value for entry in entries
-    )
+    _annotate_entry_counts(request.user, media, media_type)
 
     # A new item's release is fetched in the background, so keep the card's year
     if request.POST.get("release_year"):

@@ -5,6 +5,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from app.models import (
+    Book,
     Item,
     MediaTypes,
     Movie,
@@ -104,9 +105,56 @@ class MediaSearchViewTests(TestCase):
         self.assertIn("Planning", tracked_row)
         self.assertIn('"action": "complete"', tracked_row)
         self.assertIn(">New Movie</a>", new_row)
-        self.assertIn("2002", new_row)
+        self.assertIn("<span>2001</span>", tracked_row)
+        self.assertIn("<span>2002</span>", new_row)
         self.assertIn('"action": "plan"', new_row)
         # Dashes for its empty status and rating
         self.assertEqual(new_row.count('text-gray-600">—'), 2)
         # Nothing of the library's filter
         self.assertNotIn("filter-form", html)
+
+    @patch("app.providers.services.search")
+    def test_list_layout_shows_a_started_items_progress(self, mock_search):
+        """A started book's row shows its progress, as search has no progress column."""
+        item = Item.objects.create(
+            media_id="1",
+            source=Sources.HARDCOVER.value,
+            media_type=MediaTypes.BOOK.value,
+            title="Started Book",
+            image="http://example.com/1.jpg",
+        )
+        # Without save, which fetches the book's metadata
+        Book.objects.bulk_create(
+            [
+                Book(
+                    item=item,
+                    user=self.user,
+                    status=Status.IN_PROGRESS.value,
+                    progress=123,
+                ),
+            ],
+        )
+        mock_search.return_value = {
+            "page": 1,
+            "total_results": 1,
+            "total_pages": 1,
+            "results": [
+                {
+                    "media_id": "1",
+                    "title": "Started Book",
+                    "media_type": MediaTypes.BOOK.value,
+                    "source": Sources.HARDCOVER.value,
+                    "image": "http://example.com/1.jpg",
+                    "release_year": 2001,
+                },
+            ],
+        }
+
+        response = self.client.get(
+            reverse("search"),
+            {"media_type": "book", "q": "book", "layout": "list"},
+        )
+
+        row = response.content.decode().split('class="media-row')[1]
+        self.assertIn("123", row)
+        self.assertIn("&nbsp;Pages", row)
