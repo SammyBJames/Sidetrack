@@ -2,11 +2,21 @@
 // the results on each change. The sort and layout are its hidden fields, the filters are the
 // inputs of the panel with x-ref="panel" (named by their URL params). The sorts come from the
 // JSON in the element with id="library-sorts", each with its usual direction and how either
-// direction reads. The panel's slider, date and player controls keep their own state, which their
-// elements with data-control-params (the params they set) can reset().
+// direction reads. The panel's slider, date, player and choice rows keep their own state (whether
+// they are open, and the value they summarize), which their elements with data-control-params (the
+// params they set) can reset(). Their summaries repeat the words of the server's (library_fields.py).
 // Guard against re-registering when this script re-runs after an HTMX body swap.
 if (!window.__libraryFiltersRegistered) {
   window.__libraryFiltersRegistered = true;
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  // The date presets' names, as the server has them
+  const PRESET_NAMES = {
+    "7d": "Past week",
+    "30d": "Past month",
+    "90d": "Past 3 months",
+    "365d": "Past year",
+    year: "This year",
+  };
   document.addEventListener("alpine:init", () => {
     Alpine.data("libraryFilters", (state) => ({
       ...state,
@@ -141,31 +151,22 @@ if (!window.__libraryFiltersRegistered) {
           ? "bg-indigo-600 text-white ring-indigo-400"
           : "bg-white/5 text-gray-300 ring-white/10 hover:bg-white/10";
       },
-      // Resets the panel's controls that set any of these params, or all of them without
-      resetControls(params) {
+      // Resets the panel's controls that set any of these params, or all of them without; with a
+      // `value`, a choice row drops only that one
+      resetControls(params, value) {
         for (const control of this.$refs.panel.querySelectorAll("[data-control-params]")) {
           const own = control.dataset.controlParams.split(",");
-          if (!params || own.some((param) => params.includes(param))) Alpine.$data(control).reset();
+          if (!params || own.some((param) => params.includes(param))) Alpine.$data(control).reset(value);
         }
       },
-      // Empties the inputs named by these params, or with a `value` only that choice's checkbox
+      // Empties the controls that set these params, or with a `value` only that choice's checkbox
       removeFilter(params, value) {
-        this.resetControls(params);
-        for (const input of this.$refs.panel.querySelectorAll("input")) {
-          if (!params.includes(input.name) || input.closest("[data-control-params]")) continue;
-          if (input.type !== "checkbox") input.value = "";
-          else if (!value || input.value.toLowerCase() === value.toLowerCase()) input.checked = false;
-        }
+        this.resetControls(params, value);
         this.submit();
       },
       // Clears the filters, and the search and status too with `everything`
       clearFilters(everything = false) {
         this.resetControls();
-        for (const input of this.$refs.panel.querySelectorAll("input")) {
-          if (!input.name || input.closest("[data-control-params]")) continue;
-          if (input.type === "checkbox") input.checked = false;
-          else input.value = "";
-        }
         if (everything) Object.assign(this, { search: "", status: "All" });
         this.submit();
       },
@@ -177,8 +178,10 @@ if (!window.__libraryFiltersRegistered) {
 
     // A two-handle range slider of two range inputs over one track, set from its data attributes:
     // the scale (floor, ceiling), the values chosen (min, max), their format and unit. A handle
-    // at the end of the scale sets no filter.
-    Alpine.data("rangeSlider", () => ({
+    // at the end of the scale sets no filter. Its row starts `open`, and may have an Unrated choice.
+    Alpine.data("rangeSlider", (open) => ({
+      open,
+      unrated: false,
       floor: 0,
       ceiling: 1,
       lo: 0,
@@ -200,15 +203,32 @@ if (!window.__libraryFiltersRegistered) {
         this.unit = data.unit;
         this.keepLo = "keepMin" in data;
         this.keepHi = "keepMax" in data;
+        this.unrated = "unrated" in data;
       },
-      // Whether either handle is off the end of the scale, so a filter is set
+      // Whether the lower bound is set: its handle is off the end of the scale, or it is kept
+      get minSet() {
+        return this.lo > this.floor || this.keepLo;
+      },
+      // Whether the upper bound is set, as for minSet
+      get maxSet() {
+        return this.hi < this.ceiling || this.keepHi;
+      },
+      // Whether a filter is set
       get active() {
-        return this.lo > this.floor || this.hi < this.ceiling;
+        return this.summary !== "Any";
       },
-      // The chosen range as words, e.g. "1h 30m – 2h 45m" or "100 – 400 pages"
-      get label() {
+      // What the row says: the chosen range as words, e.g. "7–10", "1h 30m+" or "up to 400 pages",
+      // "Unrated" or "7–10 or unrated" with that choice, "Any" for none
+      get summary() {
         const suffix = this.unit === "%" ? "%" : this.numberFormat === "count" && this.unit ? ` ${this.unit}` : "";
-        return `${this.format(this.lo)} \u2013 ${this.format(this.hi)}${suffix}`;
+        const lo = this.format(this.lo);
+        const hi = this.format(this.hi);
+        let text = "";
+        if (this.minSet && this.maxSet) text = (lo === hi ? lo : `${lo}\u2013${hi}`) + suffix;
+        else if (this.minSet) text = suffix.startsWith(" ") ? `${lo}+${suffix}` : `${lo}${suffix}+`;
+        else if (this.maxSet) text = `up to ${hi}${suffix}`;
+        if (this.unrated) return text ? `${text} or unrated` : "Unrated";
+        return text || "Any";
       },
       // A value as the field shows it
       format(value) {
@@ -239,43 +259,80 @@ if (!window.__libraryFiltersRegistered) {
         else this.keepHi = false;
         input.value = this[side];
       },
-      // Puts both handles back at the ends of the scale, setting no filter
+      // Puts both handles back at the ends of the scale and clears Unrated, setting no filter
       reset() {
         this.lo = this.floor;
         this.hi = this.ceiling;
         this.keepLo = false;
         this.keepHi = false;
+        this.unrated = false;
       },
     }));
 
-    // A date field's presets ("" for any, "custom" for its date pickers), by the mode chosen. A
-    // preset or custom dates are set, never both.
-    Alpine.data("datePresets", (mode) => ({
+    // A date field's presets ("" for any, "custom" for its date pickers), by the mode chosen, and
+    // the custom dates (ISO, "" for none) as `from` and `to`. A preset or custom dates are set,
+    // never both. Its row starts `open`.
+    Alpine.data("datePresets", (open, mode, from, to) => ({
+      open,
       mode,
+      from,
+      to,
       // The preset to send, "" for any or custom dates
       get preset() {
         return this.mode === "custom" ? "" : this.mode;
       },
+      // A preset's name, or the custom dates as words, e.g. "Mar 1 – Apr 2, 2026"; "Any" for none
+      get summary() {
+        if (this.mode && this.mode !== "custom") return PRESET_NAMES[this.mode] ?? this.mode;
+        const start = this.mode === "custom" && this.from ? this.words(this.from) : null;
+        const end = this.mode === "custom" && this.to ? this.words(this.to) : null;
+        if (start && end) {
+          const first = start.year === end.year ? start.day : `${start.day}, ${start.year}`;
+          return `${first} \u2013 ${end.day}, ${end.year}`;
+        }
+        if (start) return `From ${start.day}, ${start.year}`;
+        if (end) return `Until ${end.day}, ${end.year}`;
+        return "Any";
+      },
+      // Whether a preset or any date is set
+      get active() {
+        return this.summary !== "Any";
+      },
+      // An ISO date as its year and its month and day, e.g. 2026 and "Mar 1"
+      words(iso) {
+        const [year, month, day] = iso.split("-").map(Number);
+        return { year, day: `${MONTHS[month - 1]} ${day}` };
+      },
       // Picks a mode, dropping any typed dates unless it is "custom"
       choose(mode) {
         this.mode = mode;
-        if (mode !== "custom") this.clearDates();
-      },
-      // Empties the date pickers
-      clearDates() {
-        for (const input of this.$el.querySelectorAll("input[type=date]")) input.value = "";
+        if (mode !== "custom") this.from = this.to = "";
       },
       // Back to any date
       reset() {
-        this.mode = "";
-        this.clearDates();
+        this.choose("");
       },
     }));
 
-    // Chips for how many players a game fits, 1 to 6+, from the player counts in the address
-    Alpine.data("playerChips", (min, max) => ({
+    // Chips for how many players a game fits, 1 to 6+, from the player counts in the address. Its
+    // row starts `open`.
+    Alpine.data("playerChips", (open, min, max) => ({
+      open,
       min,
       max,
+      // What the row says: "Fits 4 players", "Fits 6+ players", or another count as a range
+      get summary() {
+        const { min, max } = this;
+        if (!min && !max) return "Any";
+        if (min && max === min && Number(min) <= 6) return `Fits ${min} player${min === "1" ? "" : "s"}`;
+        if (min === "6" && !max) return "Fits 6+ players";
+        if (min && max) return min === max ? min : `${min}\u2013${max}`;
+        return min ? `${min}+` : `up to ${max}`;
+      },
+      // Whether a player count is set
+      get active() {
+        return this.summary !== "Any";
+      },
       // Whether a chip is the chosen count; 6 stands for 6 or more, with no upper end
       picked(count) {
         return this.min === String(count) && this.max === (count === 6 ? "" : String(count));
@@ -290,6 +347,36 @@ if (!window.__libraryFiltersRegistered) {
       reset() {
         this.min = "";
         this.max = "";
+      },
+    }));
+
+    // A row of checkbox choices (genres, platforms) whose checked values are `picked`, taken from
+    // the checkboxes as the server rendered them. Its row starts `open`; `q` filters the options.
+    Alpine.data("choiceRow", (open) => ({
+      open,
+      q: "",
+      picked: [],
+      // Every option's value and name, in order
+      options: [],
+      // Reads the options and the checked ones from the rendered checkboxes
+      init() {
+        const inputs = [...this.$el.querySelectorAll("input[data-label]")];
+        this.options = inputs.map((input) => ({ value: input.value, label: input.dataset.label }));
+        this.picked = inputs.filter((input) => input.checked).map((input) => input.value);
+      },
+      // What the row says: the chosen names in the options' order, "Drama, Crime" or "Drama +2"; "Any" for none
+      get summary() {
+        const names = this.options.filter((option) => this.picked.includes(option.value)).map((option) => option.label);
+        if (names.length > 2) return `${names[0]} +${names.length - 1}`;
+        return names.join(", ") || "Any";
+      },
+      // Whether any choice is checked
+      get active() {
+        return this.picked.length > 0;
+      },
+      // Unchecks one value, or every one without
+      reset(value) {
+        this.picked = value ? this.picked.filter((picked) => picked.toLowerCase() !== value.toLowerCase()) : [];
       },
     }));
   });

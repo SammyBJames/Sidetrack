@@ -14,7 +14,7 @@
     {% else %}
       <div class="panel overflow-hidden">
         {# Headings sort by their column, the sorted one marked with its direction #}
-        <div class="hidden items-center gap-x-4 border-b border-white/5 px-4 py-2.5 text-[0.6875rem] font-semibold tracking-wide text-gray-400 uppercase xl:grid {% if show_progress %}xl:grid-cols-[3rem_minmax(0,1fr)_9rem_10rem_4.5rem_7.5rem_2rem]{% else %}xl:grid-cols-[3rem_minmax(0,1fr)_9rem_4.5rem_7.5rem_2rem]{% endif %}">
+        <div class="hidden items-center gap-x-4 border-b border-white/5 px-4 py-2.5 text-[0.6875rem] font-semibold tracking-wide text-gray-400 uppercase xl:grid {% if show_progress %}xl:grid-cols-[3rem_minmax(0,1fr)_9rem_10rem_4.5rem_10rem_2rem]{% else %}xl:grid-cols-[3rem_minmax(0,1fr)_9rem_4.5rem_10rem_2rem]{% endif %}">
           <span></span>
           {% include "app/components/library_sort_heading.html" with sort="title" label="Title" %}
           {% include "app/components/library_sort_heading.html" with sort="status" label="Status" %}

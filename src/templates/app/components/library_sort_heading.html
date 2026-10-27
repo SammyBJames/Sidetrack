@@ -4,7 +4,7 @@
 <button type="button"
         @click="sortBy('{{ sort }}')"
         class="flex cursor-pointer items-center gap-1 text-left tracking-wide uppercase transition-colors {% if current_sort == sort %}text-white{% else %}hover:text-gray-200{% endif %}">
-  <span class="truncate">{{ label }}</span>
+  <span class="whitespace-nowrap">{{ label }}</span>
   {% if current_sort == sort %}
     <span class="text-indigo-400">
       {% if current_order == "asc" %}

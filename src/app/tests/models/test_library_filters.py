@@ -486,7 +486,7 @@ class LibraryFiltersTests(TestCase):
         genre = next(
             group
             for group in response.context["filter_groups"]
-            if group["title"] == "Genre"
+            if group["title"] == "About the title"
         )
         self.assertEqual(
             [(o["value"], o["count"]) for o in genre["choices"][0]["options"]],

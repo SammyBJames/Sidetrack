@@ -4,7 +4,7 @@
 {% card_title item item as heading %}
 {% firstof item|release_year "" as year %}
 {% with user=target_user|default:user caught=media|caught_up %}
-  <div class="media-row hover-tap relative grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-x-4 px-4 py-3 transition-colors hover:bg-white/[0.03] {% if show_progress %}xl:grid-cols-[3rem_minmax(0,1fr)_9rem_10rem_4.5rem_7.5rem_2rem]{% else %}xl:grid-cols-[3rem_minmax(0,1fr)_9rem_4.5rem_7.5rem_2rem]{% endif %}">
+  <div class="media-row hover-tap relative grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-x-4 px-4 py-3 transition-colors hover:bg-white/[0.03] {% if show_progress %}xl:grid-cols-[3rem_minmax(0,1fr)_9rem_10rem_4.5rem_10rem_2rem]{% else %}xl:grid-cols-[3rem_minmax(0,1fr)_9rem_4.5rem_10rem_2rem]{% endif %}">
     <a href="{{ item|media_url }}" tabindex="-1" aria-hidden="true">
       <img alt=""
            class="lazyload aspect-2/3 w-12 rounded-md bg-surface-700 object-cover shadow-md ring-1 shadow-black/30 ring-white/10"

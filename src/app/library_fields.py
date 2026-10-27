@@ -165,10 +165,7 @@ class LibraryField:
     def _format_number(self, value):
         """Return a number with its unit, minutes as hours and minutes."""
         if self.unit == "min":
-            hours, minutes = divmod(int(value), 60)
-            if not hours:
-                return f"{minutes}m"
-            return f"{hours}h {minutes}m" if minutes else f"{hours}h"
+            return _hours_minutes(value)
         number = f"{value:.1f}" if isinstance(value, Decimal) else f"{value:,}"
         unit = self.unit
         if unit.endswith("s") and value == 1:
@@ -176,6 +173,14 @@ class LibraryField:
         if unit == "%":
             return f"{number}%"
         return f"{number} {unit}" if unit else number
+
+
+def _hours_minutes(minutes):
+    """Return a number of minutes as hours and minutes, e.g. "2h 5m"."""
+    hours, minutes = divmod(int(minutes), 60)
+    if not hours:
+        return f"{minutes}m"
+    return f"{hours}h {minutes}m" if minutes else f"{hours}h"
 
 
 def _item_column(column):
@@ -776,6 +781,10 @@ DATE_VERBS = {
     MediaSortChoices.END_DATE: "Ended",
 }
 PLAYER_CHIPS = 6
+# The most names a choice row lists before it counts the rest
+MAX_NAMED = 2
+# The presets the panel offers; the others are still read from older links
+PANEL_PRESETS = ("7d", "30d", "365d", "year")
 
 
 def _within_start(preset):
@@ -837,16 +846,24 @@ def _plain(value):
     return value
 
 
+def _fits(flt):
+    """Return "Fits 4 players" for a players filter a chip sets, else None."""
+    if flt.field.key != MediaSortChoices.PLAYERS or flt.min is None:
+        return None
+    if flt.min == flt.max and flt.min <= PLAYER_CHIPS:
+        return f"Fits {flt.min:g} player{'' if flt.min == 1 else 's'}"
+    if flt.min == PLAYER_CHIPS and flt.max is None:
+        return f"Fits {PLAYER_CHIPS}+ players"
+    return None
+
+
 def _label(flt):
     """Return the label of a range filter, e.g. "IMDb ≥ 7" or "Released 2000-2010"."""
     field = flt.field
     if flt.within:
         return f"{DATE_VERBS[field.key]} {WITHIN[flt.within][1]}"
-    if field.key == MediaSortChoices.PLAYERS and flt.min is not None:
-        if flt.min == flt.max and flt.min <= PLAYER_CHIPS:
-            return f"Fits {flt.min:g} player{'' if flt.min == 1 else 's'}"
-        if flt.min == PLAYER_CHIPS and flt.max is None:
-            return f"Fits {PLAYER_CHIPS}+ players"
+    if fits := _fits(flt):
+        return fits
     name = "Released" if field.kind == YEAR else field.label
     low, high = (
         None if bound is None else field.format(_plain(bound))
@@ -921,6 +938,12 @@ def present_choices(user, media_type):
 
 
 # The groups the panel lists filters in, by field key; the rest are about the title
+RATING_KEYS = (
+    MediaSortChoices.PROVIDER_SCORE,
+    MediaSortChoices.IMDB,
+    MediaSortChoices.ROTTEN_TOMATOES,
+    MediaSortChoices.METACRITIC,
+)
 ACTIVITY_KEYS = (
     MediaSortChoices.SCORE,
     MediaSortChoices.PLAYS,
@@ -1079,6 +1102,39 @@ def listed_sort_fields(media_type, present, current):
     ]
 
 
+def _bare(value, number_format):
+    """Return a bound as a slider shows it, without its unit, e.g. "7", "2h 5m"."""
+    value = _plain(value)
+    if number_format == "minutes":
+        return _hours_minutes(value)
+    if number_format == "year":
+        return str(value)
+    if isinstance(value, Decimal) and number_format == "decimal":
+        return f"{value:.1f}"
+    return f"{value:,}"
+
+
+def _range_summary(low, high, *, unset=False, suffix=""):
+    """Return a row's value as words from its lower and upper bound, e.g. "7+".
+
+    The bounds are text, None for one not set. The client builds the same words
+    from the controls (libraryFilters.js), so keep them in step.
+    """
+    if low is not None and high is not None:
+        text = low if low == high else f"{low}\u2013{high}"
+        text += suffix
+    elif low is not None:
+        # A unit in words reads "10+ episodes", a symbol or time "50%+" or "2h+"
+        text = f"{low}+{suffix}" if suffix.startswith(" ") else f"{low}{suffix}+"
+    elif high is not None:
+        text = f"up to {high}{suffix}"
+    else:
+        text = ""
+    if unset:
+        return f"{text} or unrated" if text else "Unrated"
+    return text or "Any"
+
+
 def _slider(field, flt, bounds):
     """Return a number or year field's slider, or None without a range to slide.
 
@@ -1103,9 +1159,28 @@ def _slider(field, flt, bounds):
         number_format = "year"
     else:
         number_format = "decimal" if field.key in FRACTION_STEPS else "count"
+    suffix = ""
+    if field.unit == "%":
+        suffix = "%"
+    elif number_format == "count" and field.unit:
+        suffix = f" {field.unit}"
+    low_text, high_text = (
+        None if bound is None else _bare(bound, number_format)
+        for bound in (flt.min if flt else None, flt.max if flt else None)
+    )
+    summary = _range_summary(
+        low_text,
+        high_text,
+        unset=bool(flt and flt.unset),
+        suffix=suffix,
+    )
     return {
         "key": field.key,
         "label": field.label,
+        "summary": summary,
+        "active": summary != "Any",
+        "floor_text": _bare(low, number_format),
+        "ceiling_text": _bare(high, number_format),
         "unit": field.unit,
         "control": "slider",
         "format": number_format,
@@ -1126,30 +1201,64 @@ def _date_presets(field, flt):
     """Return a date field's preset chips and date inputs with their current values."""
     within = flt.within if flt else ""
     custom = bool(flt and not within and (flt.min or flt.max))
+    start, end = (
+        None if within or not flt else getattr(flt, bound) for bound in ("min", "max")
+    )
+    summary = WITHIN[within][2] if within else _date_summary(start, end)
     return {
         "key": field.key,
         "label": field.label,
+        "summary": summary,
+        "active": summary != "Any",
         "control": "dates",
         "mode": within or ("custom" if custom else ""),
         "presets": [
-            {"value": value, "label": label} for value, (_, _, label) in WITHIN.items()
+            {"value": value, "label": WITHIN[value][2]} for value in PANEL_PRESETS
         ],
         "inputs": [
             {
                 "name": f"{field.key}_{bound}",
+                "model": model,
                 "value": _input_value(None if within else getattr(flt, bound, None)),
                 "label": f"{field.label}, {words}",
             }
-            for bound, words in (("min", "from"), ("max", "up to"))
+            for bound, model, words in (
+                ("min", "from", "from"),
+                ("max", "to", "up to"),
+            )
         ],
     }
 
 
+def _date_summary(start, end):
+    """Return custom dates as words, e.g. "Mar 1 \u2013 Apr 2, 2026", "Any" for none.
+
+    The client builds the same words from the date inputs (libraryFilters.js).
+    """
+    if start and end:
+        first = f"{start:%b} {start.day}"
+        if start.year != end.year:
+            first = f"{first}, {start.year}"
+        return f"{first} \u2013 {end:%b} {end.day}, {end.year}"
+    if start:
+        return f"From {start:%b} {start.day}, {start.year}"
+    if end:
+        return f"Until {end:%b} {end.day}, {end.year}"
+    return "Any"
+
+
 def _player_chips(field, flt):
     """Return the players chips, 1 to 6+, with the counts asked for."""
+    low, high = (
+        None if bound is None else f"{_plain(bound):g}"
+        for bound in (flt.min if flt else None, flt.max if flt else None)
+    )
+    summary = (_fits(flt) if flt else None) or _range_summary(low, high)
     return {
         "key": field.key,
         "label": "Players",
+        "summary": summary,
+        "active": summary != "Any",
         "control": "players",
         "min": _input_value(flt.min if flt else None),
         "max": _input_value(flt.max if flt else None),
@@ -1161,67 +1270,89 @@ def _player_chips(field, flt):
     }
 
 
+def _names_summary(names):
+    """Return the chosen names as words, e.g. "Drama, Crime" or "Drama +2".
+
+    The client builds the same words from the checked options (libraryFilters.js).
+    """
+    if len(names) > MAX_NAMED:
+        return f"{names[0]} +{len(names) - 1}"
+    return ", ".join(names) or "Any"
+
+
+def _choice_row(field, flt, choices, present):
+    """Return a choice field's row for the panel, or None without options."""
+    asked = {value.lower() for value in flt.values} if flt else set()
+    if field.choices:
+        if field.key not in present and not asked:
+            return None
+        options = [
+            {"value": value, "label": label, "count": None}
+            for value, label in field.choices
+        ]
+    else:
+        options = [
+            dict(option, label=option["value"]) for option in choices.get(field.key, [])
+        ]
+        known = {option["value"].lower() for option in options}
+        options += [
+            {"value": value, "label": value, "count": 0}
+            for value in (flt.values if flt else ())
+            if value.lower() not in known
+        ]
+        if not options:
+            return None
+    for option in options:
+        option["checked"] = option["value"].lower() in asked
+    names = [option["label"] for option in options if option["checked"]]
+    return {
+        "key": field.key,
+        "label": field.label,
+        "options": options,
+        "summary": _names_summary(names),
+        "active": bool(names),
+    }
+
+
 def panel_filters(media_type, filters, choices, bounds, present):
     """Return the filters the panel offers, in groups with their current values.
 
-    Each group has a `title`, its `ranges` and its `choices`. A range is a
-    field's control: a `slider` for numbers and years within the library's
-    `bounds` and fields about the title with values in `present` (both from
-    `range_bounds`), preset chips with date inputs for `dates`,
-    or chips for `players`. A choice is a field of toggles, each option with its
-    `value`, `label`, `count` and whether it is `checked`. Groups left empty are
-    dropped. Genres and platforms are those of the user's library, plus any
-    asked for that it lacks, so no filter in the address is lost.
+    Each group has a `title`, its `ranges` and its `choices`. Every range and
+    choice has the `summary` its row shows for its current value ("Any" for
+    none) and whether it is `active`. A range is a field's control: a `slider`
+    for numbers and years within the library's `bounds` and fields about the
+    title with values in `present` (both from `range_bounds`), preset chips with
+    date inputs for `dates`, or chips for `players`. A choice is a field of
+    toggles, each option with its `value`, `label`, `count` and whether it is
+    `checked`. Groups left empty are dropped. Genres and platforms are those of
+    the user's library, plus any asked for that it lacks, so no filter in the
+    address is lost.
     """
     groups = {
         "activity": {"title": "Your activity", "ranges": [], "choices": []},
         "about": {"title": "About the title", "ranges": [], "choices": []},
-        "genre": {"title": "Genre", "ranges": [], "choices": []},
-        "platform": {"title": "Platform", "ranges": [], "choices": []},
+        "ratings": {"title": "Ratings", "ranges": [], "choices": []},
     }
     for field in get_filterable_fields(media_type):
         flt = filters.get(field.key)
-        if field.kind in _PARSERS:
-            if field.kind == DATE:
-                control = _date_presets(field, flt)
-            elif field.key == MediaSortChoices.PLAYERS:
-                control = (
-                    _player_chips(field, flt) if field.key in present or flt else None
-                )
-            else:
-                control = _slider(field, flt, bounds)
-            if control:
-                group = "activity" if field.key in ACTIVITY_KEYS else "about"
-                groups[group]["ranges"].append(control)
+        if field.kind not in _PARSERS:
+            if row := _choice_row(field, flt, choices, present):
+                groups["about"]["choices"].append(row)
             continue
-        asked = {value.lower() for value in flt.values} if flt else set()
-        if field.choices:
-            if field.key not in present and not asked:
-                continue
-            options = [
-                {"value": value, "label": label, "count": None}
-                for value, label in field.choices
-            ]
-            group = "about"
+        if field.kind == DATE:
+            control = _date_presets(field, flt)
+        elif field.key == MediaSortChoices.PLAYERS:
+            control = _player_chips(field, flt) if field.key in present or flt else None
         else:
-            options = [
-                dict(option, label=option["value"])
-                for option in choices.get(field.key, [])
-            ]
-            known = {option["value"].lower() for option in options}
-            options += [
-                {"value": value, "label": value, "count": 0}
-                for value in (flt.values if flt else ())
-                if value.lower() not in known
-            ]
-            if not options:
-                continue
-            group = field.key
-        for option in options:
-            option["checked"] = option["value"].lower() in asked
-        groups[group]["choices"].append(
-            {"key": field.key, "label": field.label, "options": options},
-        )
+            control = _slider(field, flt, bounds)
+        if control:
+            if field.key in ACTIVITY_KEYS:
+                group = "activity"
+            elif field.key in RATING_KEYS:
+                group = "ratings"
+            else:
+                group = "about"
+            groups[group]["ranges"].append(control)
     return [group for group in groups.values() if group["ranges"] or group["choices"]]
 
 

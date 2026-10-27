@@ -43,43 +43,35 @@
     <div class="flex-1 space-y-6 overflow-y-auto overscroll-contain px-5 py-3">
       {# One change reloads the results, after a pause for typing #}
       <div @input.debounce.400ms="submit()">
-        <div class="space-y-5">
+        <div class="divide-y divide-white/5">
           {% for group in filter_groups %}
-            <section>
-              <h4 class="mb-2 text-sm font-medium text-white">{{ group.title }}</h4>
-              <div class="space-y-3">
+            <section class="py-3 first:pt-0 last:pb-0">
+              <h3 class="pb-1 text-[0.6875rem] font-semibold tracking-wide text-gray-400 uppercase">{{ group.title }}</h3>
+              <div class="divide-y divide-white/5">
                 {% for range in group.ranges %}
                   {% if range.control == "slider" %}
-                    <div>
-                      <div x-data="rangeSlider()"
-                           data-control-params="{{ range.key }}_min,{{ range.key }}_max"
-                           data-floor="{{ range.floor }}"
-                           data-ceiling="{{ range.ceiling }}"
-                           data-min="{{ range.min }}"
-                           data-max="{{ range.max }}"
-                           {% if range.min_asked %}data-keep-min{% endif %}
-                           {% if range.max_asked %}data-keep-max{% endif %}
-                           data-format="{{ range.format }}"
-                           data-unit="{{ range.unit }}"
-                           @input.stop>
-                        <input type="hidden"
-                               name="{{ range.key }}_min"
-                               value="{% if range.min_asked or range.min != range.floor %}{{ range.min }}{% endif %}"
-                               :value="lo > floor || keepLo ? lo : ''">
-                        <input type="hidden"
-                               name="{{ range.key }}_max"
-                               value="{% if range.max_asked or range.max != range.ceiling %}{{ range.max }}{% endif %}"
-                               :value="hi < ceiling || keepHi ? hi : ''">
-                        <div class="mb-1 flex items-baseline justify-between gap-2 text-xs">
-                          <span class="text-gray-300">{{ range.label }}</span>
-                          <button type="button"
-                                  @click="exact = !exact"
-                                  :aria-expanded="exact"
-                                  aria-label="Type exact {{ range.label }} values"
-                                  class="cursor-pointer rounded px-1 font-medium tabular-nums transition-colors hover:text-white"
-                                  :class="active ? 'text-indigo-300' : 'text-gray-400'"
-                                  x-text="label"></button>
-                        </div>
+                    <div x-data="rangeSlider({{ range.active|yesno:'true,false' }})"
+                         data-control-params="{{ range.key }}_min,{{ range.key }}_max{% if range.unset %},{{ range.key }}{% endif %}"
+                         data-floor="{{ range.floor }}"
+                         data-ceiling="{{ range.ceiling }}"
+                         data-min="{{ range.min }}"
+                         data-max="{{ range.max }}"
+                         {% if range.min_asked %}data-keep-min{% endif %}
+                         {% if range.max_asked %}data-keep-max{% endif %}
+                         {% if range.unset_checked %}data-unrated{% endif %}
+                         data-format="{{ range.format }}"
+                         data-unit="{{ range.unit }}"
+                         @input.stop>
+                      {% include "app/components/library_filter_row.html" with label=range.label summary=range.summary open=range.active body="filter-"|add:range.key %}
+                      <input type="hidden"
+                             name="{{ range.key }}_min"
+                             value="{% if range.min_asked or range.min != range.floor %}{{ range.min }}{% endif %}"
+                             :value="minSet ? lo : ''">
+                      <input type="hidden"
+                             name="{{ range.key }}_max"
+                             value="{% if range.max_asked or range.max != range.ceiling %}{{ range.max }}{% endif %}"
+                             :value="maxSet ? hi : ''">
+                      <div x-cloak x-show="open" id="filter-{{ range.key }}" class="pt-1 pb-3">
                         <div class="relative h-5">
                           <div class="absolute inset-x-2 top-1/2 h-1 -translate-y-1/2 rounded-full bg-white/10">
                             <div class="absolute h-full rounded-full bg-indigo-500"
@@ -110,6 +102,31 @@
                                  class="range-thumb absolute inset-0 w-full"
                                  :class="lo === hi && hi <= (floor + ceiling) / 2 ? 'z-30' : ''">
                         </div>
+                        <div class="mt-1 flex justify-between px-1 text-[0.6875rem] text-gray-500 tabular-nums">
+                          <span x-text="format(floor)">{{ range.floor_text }}</span>
+                          <span x-text="format(ceiling)">{{ range.ceiling_text }}</span>
+                        </div>
+                        <div class="mt-2 flex flex-wrap items-center gap-2">
+                          {% if range.unset %}
+                            <label class="cursor-pointer">
+                              <input type="checkbox"
+                                     name="{{ range.key }}"
+                                     value="{{ range.unset }}"
+                                     {% if range.unset_checked %}checked{% endif %}
+                                     x-model="unrated"
+                                     @change="submit()"
+                                     class="peer sr-only">
+                              <span class="flex h-7 items-center rounded-full bg-white/5 px-3 text-xs font-medium text-gray-300 ring-1 ring-white/10 transition-colors peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-400 peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-400 hover:bg-white/10">Unrated</span>
+                            </label>
+                          {% endif %}
+                          <button type="button"
+                                  @click="exact = !exact"
+                                  :aria-expanded="exact"
+                                  aria-label="Exact {{ range.label }} values"
+                                  class="ml-auto h-7 cursor-pointer rounded px-1 text-xs font-medium text-gray-400 transition-colors hover:text-white">
+                            Exact values
+                          </button>
+                        </div>
                         <div x-cloak x-show="exact" class="mt-2 grid grid-cols-2 gap-2">
                           <input type="number"
                                  min="{{ range.floor }}"
@@ -133,117 +150,117 @@
                                  class="h-8 min-w-0 rounded-lg bg-white/5 px-2.5 text-sm text-white ring-1 ring-white/10 focus:ring-2 focus:ring-indigo-400 focus:outline-none">
                         </div>
                       </div>
-                      {% if range.unset %}
-                        <label class="mt-2 inline-block cursor-pointer">
-                          <input type="checkbox"
-                                 name="{{ range.key }}"
-                                 value="{{ range.unset }}"
-                                 {% if range.unset_checked %}checked{% endif %}
-                                 class="peer sr-only">
-                          <span class="flex h-7 items-center rounded-full bg-white/5 px-3 text-xs font-medium text-gray-300 ring-1 ring-white/10 transition-colors peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-400 peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-400 hover:bg-white/10">Unrated</span>
-                        </label>
-                      {% endif %}
                     </div>
                   {% elif range.control == "dates" %}
-                    <div x-data="datePresets('{{ range.mode }}')"
+                    <div x-data="datePresets({{ range.active|yesno:'true,false' }}, '{{ range.mode }}', '{{ range.inputs.0.value }}', '{{ range.inputs.1.value }}')"
                          data-control-params="{{ range.key }}_min,{{ range.key }}_max,{{ range.key }}_within">
-                      <p class="mb-1.5 text-xs text-gray-300">{{ range.label }}</p>
-                      <div class="flex flex-wrap gap-1.5"
-                           role="group"
-                           aria-label="{{ range.label }}">
-                        <button type="button"
-                                @click="choose(''); submit()"
-                                :aria-pressed="mode === ''"
-                                :class="chip(mode === '')"
-                                class="h-7 cursor-pointer rounded-full px-3 text-xs font-medium ring-1 transition-colors">
-                          Any
-                        </button>
-                        {% for preset in range.presets %}
+                      {% include "app/components/library_filter_row.html" with label=range.label summary=range.summary open=range.active body="filter-"|add:range.key %}
+                      <div x-cloak x-show="open" id="filter-{{ range.key }}" class="pt-1 pb-3">
+                        <div class="flex flex-wrap gap-1.5"
+                             role="group"
+                             aria-label="{{ range.label }}">
                           <button type="button"
-                                  @click="choose('{{ preset.value }}'); submit()"
-                                  :aria-pressed="mode === '{{ preset.value }}'"
-                                  :class="chip(mode === '{{ preset.value }}')"
+                                  @click="choose(''); submit()"
+                                  :aria-pressed="mode === ''"
+                                  :class="chip(mode === '')"
                                   class="h-7 cursor-pointer rounded-full px-3 text-xs font-medium ring-1 transition-colors">
-                            {{ preset.label }}
+                            Any
                           </button>
-                        {% endfor %}
-                        <button type="button"
-                                @click="choose('custom'); submit()"
-                                :aria-pressed="mode === 'custom'"
-                                :class="chip(mode === 'custom')"
-                                class="h-7 cursor-pointer rounded-full px-3 text-xs font-medium ring-1 transition-colors">
-                          Custom
-                        </button>
-                      </div>
-                      <input type="hidden"
-                             name="{{ range.key }}_within"
-                             value="{% if range.mode != 'custom' %}{{ range.mode }}{% endif %}"
-                             :value="preset">
-                      <div x-cloak
-                           x-show="mode === 'custom'"
-                           class="mt-2 grid grid-cols-2 gap-2">
-                        {% for input in range.inputs %}
-                          <input type="date"
-                                 name="{{ input.name }}"
-                                 value="{{ input.value }}"
-                                 aria-label="{{ input.label }}"
-                                 class="h-8 min-w-0 rounded-lg bg-white/5 px-2.5 text-sm text-white ring-1 ring-white/10 focus:ring-2 focus:ring-indigo-400 focus:outline-none [color-scheme:dark]">
-                        {% endfor %}
+                          {% for preset in range.presets %}
+                            <button type="button"
+                                    @click="choose('{{ preset.value }}'); submit()"
+                                    :aria-pressed="mode === '{{ preset.value }}'"
+                                    :class="chip(mode === '{{ preset.value }}')"
+                                    class="h-7 cursor-pointer rounded-full px-3 text-xs font-medium ring-1 transition-colors">
+                              {{ preset.label }}
+                            </button>
+                          {% endfor %}
+                          <button type="button"
+                                  @click="choose('custom'); submit()"
+                                  :aria-pressed="mode === 'custom'"
+                                  :class="chip(mode === 'custom')"
+                                  class="h-7 cursor-pointer rounded-full px-3 text-xs font-medium ring-1 transition-colors">
+                            Custom
+                          </button>
+                        </div>
+                        <input type="hidden"
+                               name="{{ range.key }}_within"
+                               value="{% if range.mode != 'custom' %}{{ range.mode }}{% endif %}"
+                               :value="preset">
+                        <div x-cloak
+                             x-show="mode === 'custom'"
+                             class="mt-2 grid grid-cols-2 gap-2">
+                          {% for input in range.inputs %}
+                            <input type="date"
+                                   name="{{ input.name }}"
+                                   value="{{ input.value }}"
+                                   x-model="{{ input.model }}"
+                                   aria-label="{{ input.label }}"
+                                   class="h-8 min-w-0 rounded-lg bg-white/5 px-2.5 text-sm text-white ring-1 ring-white/10 focus:ring-2 focus:ring-indigo-400 focus:outline-none [color-scheme:dark]">
+                          {% endfor %}
+                        </div>
                       </div>
                     </div>
                   {% elif range.control == "players" %}
-                    <div x-data="playerChips('{{ range.min }}', '{{ range.max }}')"
+                    <div x-data="playerChips({{ range.active|yesno:'true,false' }}, '{{ range.min }}', '{{ range.max }}')"
                          data-control-params="{{ range.key }}_min,{{ range.key }}_max">
-                      <p class="mb-1.5 text-xs text-gray-300">Fits this many players</p>
-                      <div class="flex flex-wrap gap-1.5" role="group" aria-label="Players">
-                        {% for chip in range.chips %}
-                          <button type="button"
-                                  @click="pick({{ chip.value }}); submit()"
-                                  :aria-pressed="picked({{ chip.value }})"
-                                  :class="chip(picked({{ chip.value }}))"
-                                  class="h-7 min-w-9 cursor-pointer rounded-full px-3 text-xs font-medium ring-1 transition-colors">
-                            {{ chip.label }}
-                          </button>
-                        {% endfor %}
+                      {% include "app/components/library_filter_row.html" with label=range.label summary=range.summary open=range.active body="filter-"|add:range.key %}
+                      <div x-cloak x-show="open" id="filter-{{ range.key }}" class="pt-1 pb-3">
+                        <div class="flex flex-wrap gap-1.5" role="group" aria-label="Players">
+                          {% for chip in range.chips %}
+                            <button type="button"
+                                    @click="pick({{ chip.value }}); submit()"
+                                    :aria-pressed="picked({{ chip.value }})"
+                                    :class="chip(picked({{ chip.value }}))"
+                                    class="h-7 min-w-9 cursor-pointer rounded-full px-3 text-xs font-medium ring-1 transition-colors">
+                              {{ chip.label }}
+                            </button>
+                          {% endfor %}
+                        </div>
+                        <input type="hidden"
+                               name="{{ range.key }}_min"
+                               value="{{ range.min }}"
+                               :value="min">
+                        <input type="hidden"
+                               name="{{ range.key }}_max"
+                               value="{{ range.max }}"
+                               :value="max">
                       </div>
-                      <input type="hidden"
-                             name="{{ range.key }}_min"
-                             value="{{ range.min }}"
-                             :value="min">
-                      <input type="hidden"
-                             name="{{ range.key }}_max"
-                             value="{{ range.max }}"
-                             :value="max">
                     </div>
                   {% endif %}
                 {% endfor %}
                 {% for field in group.choices %}
-                  <div x-data="{ q: '' }">
-                    {% if field.label != group.title %}<p class="mb-1 text-xs text-gray-300">{{ field.label }}</p>{% endif %}
-                    {% if field.options|length > 12 %}
-                      <input type="search"
-                             x-model="q"
-                             @input.stop
-                             placeholder="Search {{ field.label|lower }}..."
-                             aria-label="Search {{ field.label|lower }}"
-                             class="mb-2 h-8 w-full rounded-lg bg-white/5 px-2.5 text-sm text-white ring-1 ring-white/10 placeholder:text-gray-500 focus:ring-2 focus:ring-indigo-400 focus:outline-none">
-                    {% endif %}
-                    <div class="flex max-h-44 flex-wrap gap-1.5 overflow-y-auto p-0.5">
-                      {% for option in field.options %}
-                        <label class="cursor-pointer"
-                               data-name="{{ option.label|lower }}"
-                               x-show="!q || $el.dataset.name.includes(q.toLowerCase().trim()) || $el.querySelector('input').checked">
-                          <input type="checkbox"
-                                 name="{{ field.key }}"
-                                 value="{{ option.value }}"
-                                 {% if option.checked %}checked{% endif %}
-                                 class="peer sr-only">
-                          <span class="flex h-7 items-center gap-1.5 rounded-full bg-white/5 px-3 text-xs font-medium text-gray-300 ring-1 ring-white/10 transition-colors peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-400 peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-400 hover:bg-white/10">
-                            {{ option.label }}
-                            {% if option.count is not None %}<span class="tabular-nums opacity-60">{{ option.count }}</span>{% endif %}
-                          </span>
-                        </label>
-                      {% endfor %}
+                  <div x-data="choiceRow({{ field.active|yesno:'true,false' }})"
+                       data-control-params="{{ field.key }}">
+                    {% include "app/components/library_filter_row.html" with label=field.label summary=field.summary open=field.active body="filter-"|add:field.key %}
+                    <div x-cloak x-show="open" id="filter-{{ field.key }}" class="pt-1 pb-3">
+                      {% if field.options|length > 12 %}
+                        <input type="search"
+                               x-model="q"
+                               @input.stop
+                               placeholder="Search {{ field.label|lower }}..."
+                               aria-label="Search {{ field.label|lower }}"
+                               class="mb-2 h-8 w-full rounded-lg bg-white/5 px-2.5 text-sm text-white ring-1 ring-white/10 placeholder:text-gray-500 focus:ring-2 focus:ring-indigo-400 focus:outline-none">
+                      {% endif %}
+                      <div class="flex max-h-44 flex-wrap gap-1.5 overflow-y-auto p-0.5">
+                        {% for option in field.options %}
+                          <label class="cursor-pointer"
+                                 data-name="{{ option.label|lower }}"
+                                 x-show="!q || $el.dataset.name.includes(q.toLowerCase().trim()) || picked.includes($el.querySelector('input').value)">
+                            <input type="checkbox"
+                                   name="{{ field.key }}"
+                                   value="{{ option.value }}"
+                                   {% if option.checked %}checked{% endif %}
+                                   data-label="{{ option.label }}"
+                                   x-model="picked"
+                                   class="peer sr-only">
+                            <span class="flex h-7 items-center gap-1.5 rounded-full bg-white/5 px-3 text-xs font-medium text-gray-300 ring-1 ring-white/10 transition-colors peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-400 peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-400 hover:bg-white/10">
+                              {{ option.label }}
+                              {% if option.count is not None %}<span class="tabular-nums opacity-60">{{ option.count }}</span>{% endif %}
+                            </span>
+                          </label>
+                        {% endfor %}
+                      </div>
                     </div>
                   </div>
                 {% endfor %}

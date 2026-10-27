@@ -25,7 +25,7 @@ from app.views import SORTS_WITH_COLUMNS
 
 
 class LibraryPanelViewTests(TestCase):
-    """Test the sort and filter panel, its pills and the list's sorted value."""
+    """Test the filter panel, its pills and the list's sorted value."""
 
     def setUp(self):
         """Create a user with a movie and a book, and log in."""
