@@ -2,6 +2,7 @@
 
 {# A media's row in a list: its poster and title, status, progress, rating and the value the list sorts by or its last activity. On narrower screens all but the title fold under it. The title's link covers the row, so a click anywhere opens the media; the owner gets the cards' status chip with its quick action above it #}
 {% card_title item item as heading %}
+{% card_details item media progress=False as details %}
 {% firstof item|release_year "" as year %}
 {% with user=target_user|default:user caught=media|caught_up %}
   <div class="media-row hover-tap relative grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-x-4 px-4 py-3 transition-colors hover:bg-white/[0.03] {% if show_progress %}xl:grid-cols-[3rem_minmax(0,1fr)_9rem_10rem_4.5rem_10rem_11rem]{% else %}xl:grid-cols-[3rem_minmax(0,1fr)_9rem_4.5rem_10rem_11rem]{% endif %}">
@@ -14,20 +15,9 @@
       <a href="{{ item|media_url }}"
          class="line-clamp-1 font-semibold text-white transition-colors after:absolute after:inset-0 parent-hover-tap:text-indigo-300 focus-visible:outline-none focus-visible:after:rounded-sm focus-visible:after:ring-2 focus-visible:after:ring-indigo-400 focus-visible:after:ring-inset"
          title="{{ heading.full }}">{{ heading.title }}</a>
-      <div class="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-gray-400">
+      <div class="@container mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-gray-400">
         {% if heading.subtitle %}<span class="shrink-0 font-medium text-gray-300">{{ heading.subtitle }}</span>{% endif %}
-        {% if item.media_type == MediaTypes.TV.value and media.released_seasons %}
-          <span class="@container min-w-0 flex-1 truncate">{% include "app/components/tv_counts.html" %}</span>
-        {% elif year %}
-          <span>{{ year }}</span>
-        {% endif %}
-        {% if media.repeats > 1 %}
-          <span class="flex shrink-0 items-center gap-0.5"
-                title="Repeated {{ media.repeats }} times">
-            {% include "app/icons/repeat.svg" with classes="size-3.5" %}
-            {{ media.repeats }}
-          </span>
-        {% endif %}
+        {% include "app/components/card_details.html" with bullet=heading.subtitle %}
       </div>
 
       {# The columns, under the title where there's no room for them #}

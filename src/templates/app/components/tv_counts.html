@@ -1,8 +1,0 @@
-{% load app_tags %}
-
-{# A show's released seasons and episodes, shortened to fit narrower cards at widths that fit three-digit episode counts #}
-{% with seasons=media.released_seasons episodes=media.max_progress %}
-  <span class="@[7.75rem]:hidden">{{ seasons }} S • {{ episodes }} E</span>
-  <span class="hidden @[7.75rem]:inline @[9.5rem]:hidden">{{ seasons }} Season{{ seasons|pluralize }} • {{ episodes }} Ep{{ episodes|pluralize }}</span>
-  <span class="hidden @[9.5rem]:inline">{{ seasons }} Season{{ seasons|pluralize }} • {{ episodes }} Episode{{ episodes|pluralize }}</span>
-{% endwith %}

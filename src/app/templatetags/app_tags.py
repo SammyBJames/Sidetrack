@@ -19,6 +19,14 @@ from events.models import SentinelDatetime
 
 register = template.Library()
 
+# Statuses of media being gone through, which show their progress on cards
+STARTED_STATUSES = (
+    Status.IN_PROGRESS.value,
+    Status.PAUSED.value,
+    Status.DROPPED.value,
+    Status.REPEATING.value,
+)
+
 
 @register.simple_tag
 def get_static_file_mtime(file_path):
@@ -203,12 +211,6 @@ def sample_search(media_type):
 def short_unit(media_type):
     """Return the short unit for the media type."""
     return config.get_unit(media_type, short=True)
-
-
-@register.filter
-def long_unit(media_type):
-    """Return the long unit for the media type."""
-    return config.get_unit(media_type, short=False)
 
 
 @register.filter
@@ -468,16 +470,19 @@ def release_label(event, user):
 
 @register.filter
 def release_year(item):
-    """Return the year a card's movie came out, or None when it isn't known.
+    """Return the year a card's media came out, or None when it isn't known.
 
-    Accepts a metadata dict or an Item. Reads `prefetched_events` when set to
-    avoid a query per card.
+    Accepts a metadata dict or an Item. Uses the item's `release_date` when it
+    has one, and for movies without it their release event, reading
+    `prefetched_events` when set to avoid a query per card.
     """
     if isinstance(item, dict):
         return item.get("release_year")
     # Set when re-rendering a card for an item whose release isn't fetched yet
     if getattr(item, "release_year", None):
         return item.release_year
+    if item.release_date:
+        return item.release_date.year
     if item.media_type != MediaTypes.MOVIE.value:
         return None
 
@@ -521,6 +526,96 @@ def card_title(item, title):
         "short_subtitle": short_subtitle,
         "full": f"{item.title} \u2013 {subtitle}",
     }
+
+
+def _field(obj, name):
+    """Return a metadata dict's key or an object's attribute, None when missing."""
+    if isinstance(obj, dict):
+        return obj.get(name)
+    return getattr(obj, name, None)
+
+
+def _plural(count, unit):
+    """Return a unit pluralized for the count, e.g. "Episodes" for 2."""
+    return unit if count == 1 else f"{unit}s"
+
+
+@register.simple_tag
+def card_details(item, media, *, home=False, progress=True):
+    """Return the details under a card's title as a dict of `part` and `repeats`.
+
+    The part is None or a dict with a `kind`: "progress" has `text` and its long
+    `unit` (empty when it has none), "plain" has `text`, and "tv" has the
+    `seasons` and `episodes` counts. Items under a started status show their progress,
+    unless `progress` is False for rows with a column of their own or it's
+    played time on the `home` page. Otherwise a season shows its episode count,
+    a show its counts and anything else its release year, when known. `media`
+    may be empty for media that isn't tracked. Reads only what's on the
+    objects, so it costs no queries. `repeats` is how many times the media was
+    repeated when more than once, else 0.
+    """
+    media_type = _field(item, "media_type")
+    part = None
+
+    started = (
+        progress
+        and media
+        and media.progress
+        and media.status in STARTED_STATUSES
+        and media_type not in (MediaTypes.MOVIE.value, MediaTypes.TV.value)
+        and not (home and media_type == MediaTypes.GAME.value)
+    )
+    if started:
+        text, unit = media.formatted_progress, ""
+        # Played time has no unit
+        if media_type != MediaTypes.GAME.value:
+            total = _length(item, media)
+            count = total or media.progress
+            if total:
+                text = f"{text} / {total}"
+            unit = _unit_name(media_type, count)
+        part = {"kind": "progress", "text": text, "unit": unit}
+    elif media_type == MediaTypes.SEASON.value and (
+        episodes := getattr(media, "episode_count", None) or _length(item, media)
+    ):
+        text = f"{episodes} {_plural(episodes, 'Episode')}"
+        part = {"kind": "plain", "text": text}
+    elif media_type == MediaTypes.TV.value and (counts := _show_counts(item, media)):
+        part = {"kind": "tv", "seasons": counts[0], "episodes": counts[1]}
+    elif year := release_year(item):
+        part = {"kind": "plain", "text": year}
+
+    repeats = getattr(media, "repeats", 0) or 0
+    return {"part": part, "repeats": repeats if repeats > 1 else 0}
+
+
+def _unit_name(media_type, count):
+    """Return a media type's long unit for the count, empty when it has none."""
+    if "unit" not in config.get_config(media_type):
+        return ""
+    return _plural(count, config.get_unit(media_type, short=False))
+
+
+def _length(item, media):
+    """Return how many episodes, chapters or pages media has, None when unknown."""
+    return (
+        getattr(media, "max_progress", None)
+        or _field(item, "max_progress")
+        or _field(item, "length")
+    )
+
+
+def _show_counts(item, media):
+    """Return a show's seasons and episodes counts, or None when unknown.
+
+    A tracked show's come from its released seasons and episodes, the rest from
+    the counts stored on its item.
+    """
+    if getattr(media, "released_seasons", None):
+        return media.released_seasons, media.max_progress
+    seasons = _field(item, "season_count")
+    episodes = _field(item, "length")
+    return (seasons, episodes) if seasons and episodes else None
 
 
 @register.filter

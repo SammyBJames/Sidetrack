@@ -840,9 +840,11 @@ class EpisodeDetailsViewTests(TestCase):
 
         content = re.sub(r"\s+", " ", response.content.decode())
         self.assertIn('aria-label="Add entry"', content)
-        self.assertIn("1 / 7 Episodes", content)
+        self.assertIn(
+            '1 / 7<span class="hidden @[10.25rem]:inline">&nbsp;Episodes', content
+        )
         self.assertIn("3 Episodes", content)
-        self.assertNotIn("1 / 3 Episodes", content)
+        self.assertNotIn("1 / 3", content)
         # The unreleased season shows when it comes out instead of an action
         self.assertIn('aria-label="Not released yet: E1 · January 1, 2099"', content)
         self.assertEqual(content.count("Not released yet:"), 1)

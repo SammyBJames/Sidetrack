@@ -1,0 +1,27 @@
+{% load app_tags %}
+
+{# The details line's content from card_details, to sit in a flex row after the season: the progress, year or counts, with the unit of progress and the show counts shortened on narrow containers, then the repeat count. Needs a container query ancestor. Pass bullet to put one before the part #}
+{% if details.part %}
+  <span class="min-w-0 truncate">
+    {% if bullet %}<span class="text-gray-500">•</span>{% endif %}
+    {% with part=details.part %}
+      {% if part.kind == "tv" %}
+        {# "4 Seasons • 44 Episodes", then "4 S • 44 Episodes", then "4 S • 44 E" #}
+        <span class="font-semibold text-gray-100"><span class="@[9.5rem]:hidden">{{ part.seasons }} S</span><span class="hidden @[9.5rem]:inline">{{ part.seasons }} Season{{ part.seasons|pluralize }}</span></span>
+        <span class="text-gray-500">•</span>
+        <span class="@[7.75rem]:hidden">{{ part.episodes }} E</span><span class="hidden @[7.75rem]:inline">{{ part.episodes }} Episode{{ part.episodes|pluralize }}</span>
+      {% elif part.kind == "progress" %}
+        {{ part.text }}{% if part.unit %}<span class="hidden @[10.25rem]:inline">&nbsp;{{ part.unit }}</span>{% endif %}
+      {% else %}
+        <span>{{ part.text }}</span>
+      {% endif %}
+    {% endwith %}
+  </span>
+{% endif %}
+{% if details.repeats %}
+  <span class="flex shrink-0 items-center gap-0.5"
+        title="Repeated {{ details.repeats }} times">
+    {% include "app/icons/repeat.svg" with classes="size-3.5" %}
+    {{ details.repeats }}
+  </span>
+{% endif %}

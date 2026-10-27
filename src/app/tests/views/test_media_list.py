@@ -1,8 +1,11 @@
+import re
 from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -503,16 +506,53 @@ class TVCardCountsTests(TestCase):
         """A show lists its released seasons and episodes, shortened to fit."""
         content = self.card_text()
 
-        self.assertIn(">2 Seasons • 5 Episodes<", content)
-        self.assertIn(">2 Seasons • 5 Eps<", content)
-        self.assertIn(">2 S • 5 E<", content)
+        self.assertIn("2 Season", content)
+        self.assertIn("5 Episodes", content)
+        self.assertIn("2 S<", content)
+        self.assertIn("5 E<", content)
+        self.assertNotIn("Eps", content)
+
+    def test_shows_bold_their_seasons(self):
+        """A show's seasons count is bold like a season's number on other cards."""
+        content = re.sub(r"\s+", " ", self.card_text())
+
+        self.assertIn(
+            '<span class="font-semibold text-gray-100">'
+            '<span class="@[9.5rem]:hidden">2 S</span>'
+            '<span class="hidden @[9.5rem]:inline">2 Seasons</span></span>',
+            content,
+        )
+
+    def test_counts_cost_no_query_per_show(self):
+        """The TV list costs the same number of queries for more shows."""
+
+        def queries():
+            """Return how many queries one render of the TV list runs."""
+            with CaptureQueriesContext(connection) as captured:
+                self.card_text()
+            return len(captured)
+
+        few = queries()
+        for number in range(2, 5):
+            item = Item.objects.create(
+                media_id=str(number),
+                source=Sources.TMDB.value,
+                media_type=MediaTypes.TV.value,
+                title=f"Show {number}",
+                image="http://example.com/show.jpg",
+            )
+            TV.save_base(TV(item=item, user=self.user, status=Status.COMPLETED.value))
+
+        self.assertEqual(queries(), few)
 
     def test_shows_in_progress_count_the_same(self):
         """A show in progress lists its seasons and episodes the same way."""
         self.tv.status = Status.IN_PROGRESS.value
         TV.save_base(self.tv)
 
-        self.assertIn(">2 Seasons • 5 Episodes<", self.card_text())
+        content = self.card_text()
+        self.assertIn("2 Seasons", content)
+        self.assertIn("5 Episodes", content)
 
     def test_caught_up_show_waits_outside_in_progress(self):
         """A show watched up to its latest episode is caught up, not in progress."""

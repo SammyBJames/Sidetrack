@@ -2,7 +2,9 @@ from unittest.mock import patch
 from urllib.parse import quote
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -11,6 +13,7 @@ from app.models import (
     Anime,
     Book,
     Episode,
+    Game,
     Item,
     Manga,
     MediaTypes,
@@ -579,6 +582,81 @@ class HomeViewTests(TestCase):
         card = card.split('id="home-media-')[0]
         self.assertIn(reverse("download_event", args=[release.id]), card)
         self.assertNotIn("Mark watched", card)
+
+    def test_game_card_shows_no_time_played(self):
+        """A game card on the home page leaves out its time played."""
+        item = Item.objects.create(
+            media_id="game-card",
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.GAME.value,
+            title="Played Game",
+            image="http://example.com/image.jpg",
+        )
+        game = Game.objects.create(
+            item=item,
+            user=self.user,
+            status=Status.IN_PROGRESS.value,
+            progress=150,
+        )
+
+        response = self.client.get(reverse("home"))
+
+        card = response.content.decode().split(f'id="home-media-game-{game.id}"')[1]
+        card = card.split('id="home-media-')[0]
+        self.assertIn("Played Game", card)
+        self.assertNotIn("30min", card)
+
+    def test_cards_cost_no_query_each(self):
+        """Home costs the same number of queries however many cards it shows."""
+
+        def add(media_type, model, number, **fields):
+            """Create a tracked item of the model for the user."""
+            item = Item.objects.create(
+                media_id=f"cost-{number}",
+                source=Sources.MANUAL.value,
+                media_type=media_type,
+                title=f"Cost {number}",
+                image="http://example.com/image.jpg",
+            )
+            model.objects.create(item=item, user=self.user, **fields)
+
+        def home_queries():
+            """Return how many queries one home request runs."""
+            with CaptureQueriesContext(connection) as queries:
+                self.client.get(reverse("home"))
+            return len(queries)
+
+        add(
+            MediaTypes.GAME.value, Game, 0, status=Status.IN_PROGRESS.value, progress=60
+        )
+        add(
+            MediaTypes.ANIME.value,
+            Anime,
+            0,
+            status=Status.IN_PROGRESS.value,
+            progress=2,
+        )
+        add(MediaTypes.MOVIE.value, Movie, 0, status=Status.PLANNING.value)
+        few = home_queries()
+
+        for number in range(1, 4):
+            add(
+                MediaTypes.GAME.value,
+                Game,
+                number,
+                status=Status.IN_PROGRESS.value,
+                progress=60,
+            )
+            add(
+                MediaTypes.ANIME.value,
+                Anime,
+                number,
+                status=Status.IN_PROGRESS.value,
+                progress=2,
+            )
+            add(MediaTypes.MOVIE.value, Movie, number, status=Status.PLANNING.value)
+
+        self.assertEqual(home_queries(), few)
 
     def test_movie_card_shows_its_release_year(self):
         """A movie card on the home page shows the year it came out."""
