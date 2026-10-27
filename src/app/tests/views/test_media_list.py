@@ -82,6 +82,14 @@ class MediaListViewTests(TestCase):
             app_tags.media_type_readable_plural(MediaTypes.MOVIE.value).lower(),
         )
 
+    def sort_keys(self, media_type, **params):
+        """Return the sort choices a media type's list offers, by key."""
+        response = self.client.get(
+            reverse("medialist", args=[self.user.username, media_type]),
+            params,
+        )
+        return [choice["value"] for choice in response.context["sort_choices"]]
+
     def test_sort_choices_are_the_media_types_sorts(self):
         """The sort dropdown lists the sorts of the list's media type."""
         for media_type in (
@@ -98,21 +106,52 @@ class MediaListViewTests(TestCase):
                 choice["value"]: choice for choice in response.context["sort_choices"]
             }
             with self.subTest(media_type=media_type):
+                # Fields about the title wait for a title with a value (below)
                 self.assertEqual(
                     list(choices),
                     [
                         field.key
                         for field in library_fields.get_sortable_fields(media_type)
+                        if field.key not in library_fields.DETAIL_KEYS
                     ],
                 )
                 self.assertEqual(choices["title"]["order"], "asc")
                 self.assertEqual(choices["title"]["order_labels"], ("A to Z", "Z to A"))
 
-        movie = self.client.get(
-            reverse("medialist", args=[self.user.username, MediaTypes.MOVIE.value]),
-        ).context["sort_choices"]
-        self.assertNotIn("progress", [choice["value"] for choice in movie])
-        self.assertIn("imdb", [choice["value"] for choice in movie])
+        self.assertNotIn("progress", self.sort_keys(MediaTypes.MOVIE.value))
+
+    def test_sorts_about_the_title_need_a_value_in_the_library(self):
+        """A detail sort is listed once a title has a value, or while it is the sort."""
+        movie = self.sort_keys(MediaTypes.MOVIE.value)
+        for key in ("imdb", "runtime", "release", "provider_score"):
+            self.assertNotIn(key, movie)
+        # Your own entries' sorts are always listed
+        self.assertIn("score", movie)
+
+        Item.objects.filter(media_id="278").update(imdb_score=8.1, runtime=120)
+        movie = self.sort_keys(MediaTypes.MOVIE.value)
+        self.assertIn("imdb", movie)
+        self.assertIn("runtime", movie)
+        self.assertNotIn("metacritic", movie)
+
+        # The current sort stays listed with nothing to sort by
+        self.assertIn(
+            "metacritic",
+            self.sort_keys(MediaTypes.MOVIE.value, sort="metacritic"),
+        )
+
+    def test_tv_has_no_rotten_tomatoes_or_metacritic(self):
+        """Shows have neither, and a saved sort of either falls back to the default."""
+        for key in ("rotten_tomatoes", "metacritic"):
+            tv = {f.key for f in library_fields.get_sortable_fields("tv")}
+            self.assertNotIn(key, tv)
+            get_user_model().objects.filter(pk=self.user.pk).update(tv_sort=key)
+
+            response = self.client.get(
+                reverse("medialist", args=[self.user.username, MediaTypes.TV.value]),
+            )
+
+            self.assertEqual(response.context["current_sort"], "score")
 
     def test_saved_sort_the_media_type_lacks_loads_the_default(self):
         """A movie list saved as progress loads sorted by the default."""

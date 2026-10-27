@@ -66,10 +66,10 @@ Here, you can view and edit data. For example, to edit an item image:
 
 ## Refreshing Library Details
 
-Yamtrack stores details of the items in your libraries (release date, length, ratings, genres and so on) to sort and filter them. A daily task refreshes the items without details or with week-old ones, up to `LIBRARY_DETAILS_BATCH` items a run (see [environment variables](env-variables.md)). To fetch them right away, for example after upgrading, run:
+Yamtrack stores details of the items in your libraries (release date, length, ratings, genres and so on) to sort and filter them. An hourly task refreshes the items without details or with week-old ones, up to `LIBRARY_DETAILS_BATCH` items a run (see [environment variables](env-variables.md)), so a new library fills in within hours. A provider that asks to wait more than a minute after too many requests is skipped for that run and its items are tried again the next hour. To fetch everything right away, for example after upgrading, run:
 
 ```bash
-docker exec -it yamtrack python manage.py refresh_library_details
+docker exec -it yamtrack python manage.py refresh_library_details --all
 ```
 
-Add `--all` to ignore the daily limit and refresh every item that needs it. This can take a while and uses provider requests, including OMDb's daily limit. With an OMDb key, `--all` on more than about 1,000 movies and shows uses up the free key's 1,000 requests a day, and the titles past that go without IMDb, Rotten Tomatoes and Metacritic ratings until their next refresh, about a week later.
+Without `--all` it refreshes one batch, like the hourly task. `--all` refreshes every item that needs it, ignoring the batch size. This can take a while and uses provider requests, including OMDb's daily limit. With an OMDb key, `--all` on more than about 1,000 movies and shows uses up the free key's 1,000 requests a day, and the titles past that go without IMDb, Rotten Tomatoes and Metacritic ratings until their next refresh, about a week later.

@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 # How old details get before they're fetched again
 STALE_AFTER = timedelta(days=7)
+# The longest the refresh waits out a provider's rate limit, in seconds
+MAX_RATE_LIMIT_WAIT = 60
 
 # How a provider words that a title is still coming out, ended or on its way
 AIRING_STATUSES = {
@@ -278,15 +280,48 @@ def refresh_item_details(item, metadata=None):
     )
 
 
+def _try_refresh(item):
+    """Refresh an item and return `"refreshed"`, `"failed"` or `"limited"`.
+
+    A failure is logged by type only for provider and request errors, as their
+    message and cause can hold the request URL, and in it an API key, and the
+    item is stamped as looked at. A provider asking for a longer wait than
+    `MAX_RATE_LIMIT_WAIT` makes it limited, and the item is left unstamped.
+    """
+    with services.cap_rate_limit_waits(MAX_RATE_LIMIT_WAIT) as cap:
+        try:
+            refresh_item_details(item)
+        except Exception as error:
+            if isinstance(
+                error,
+                (services.ProviderAPIError, requests.RequestException),
+            ):
+                logger.warning(
+                    "Failed to refresh the details of %s: %s",
+                    item,
+                    type(error).__name__,
+                )
+            else:
+                logger.exception("Failed to refresh the details of %s", item)
+            if cap.exceeded:
+                return "limited"
+            Item.objects.filter(pk=item.pk).update(details_updated_at=timezone.now())
+            return "failed"
+    return "refreshed"
+
+
 def refresh_library_details(limit=None):
     """Refresh the details of library items that have none or are a week old.
 
     A library item is one with an entry of any user, and an episode never is. Items
     never fetched come first, then the oldest, up to `limit` (all when None). An
-    item that fails, on a provider error or odd metadata, is logged and stamped as
-    looked at, so it waits a week instead of heading the queue every day, and the
-    run continues. Provider and request errors are logged by type only, without
-    their message, which can hold an API key. Returns the number of items
+    item that fails, on a provider error or odd metadata, is stamped as looked at,
+    so it waits a week instead of heading the queue every run, and the run goes on.
+
+    A provider asking to wait longer than `MAX_RATE_LIMIT_WAIT` fails its item
+    without stamping it, so it's tried again next run, and the rest of that
+    provider's items are skipped for this run without using up the `limit`, so one
+    rate limited provider can't take the whole batch. Returns the number of items
     refreshed and of failures.
     """
     tracked = Q()
@@ -303,27 +338,24 @@ def refresh_library_details(limit=None):
         )
         .order_by(F("details_updated_at").asc(nulls_first=True), "pk")
     )
-    if limit is not None:
-        items = items[:limit]
 
-    refreshed = failed = 0
-    for item in items:
-        try:
-            refresh_item_details(item)
-        except Exception as error:
-            if isinstance(
-                error, (services.ProviderAPIError, requests.RequestException)
-            ):
-                # Its message and cause can hold the request URL, and in it an API key
-                logger.warning(
-                    "Failed to refresh the details of %s: %s",
-                    item,
-                    type(error).__name__,
-                )
-            else:
-                logger.exception("Failed to refresh the details of %s", item)
-            Item.objects.filter(pk=item.pk).update(details_updated_at=timezone.now())
-            failed += 1
-        else:
-            refreshed += 1
-    return refreshed, failed
+    results = {"refreshed": 0, "failed": 0, "limited": 0}
+    limited_sources = set()
+    remaining = limit
+    # Each pass stamps the items it tries or limits their source, so the next
+    # pass has new ones
+    while remaining is None or remaining > 0:
+        batch = items.exclude(source__in=limited_sources)
+        batch = list(batch if remaining is None else batch[:remaining])
+        if not batch:
+            break
+        for item in batch:
+            if item.source in limited_sources:
+                continue
+            if remaining is not None:
+                remaining -= 1
+            result = _try_refresh(item)
+            results[result] += 1
+            if result == "limited":
+                limited_sources.add(item.source)
+    return results["refreshed"], results["failed"] + results["limited"]

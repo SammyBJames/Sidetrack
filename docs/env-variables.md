@@ -38,7 +38,7 @@ See [media-imports](media-imports.md).
 | `DEBUG`            | Default to `False`. Set to `True` for debugging.                                                                                                                                                     |
 | `ADMIN_ENABLED`    | Default to `False`. Set to `True` to enable the Django admin interface.                                                                                                                              |
 | `TRACK_TIME`       | Default to `True`. Set to `False` to disable time tracking in Yamtrack.                                                                                                                              |
-| `LIBRARY_DETAILS_BATCH` | Default to `300`. The most items a daily run refreshes the stored details (release date, length, ratings and so on, used to sort and filter libraries) of. Each item is refreshed weekly, so a library of more than seven times this is refreshed less often. Lower it to stay within provider rate limits, such as the free OMDb key's 1000 requests a day. |
+| `LIBRARY_DETAILS_BATCH` | Default to `25`. The most items each hourly run refreshes the stored details (release date, length, ratings and so on, used to sort and filter libraries) of. Each item is refreshed weekly, so a library of more than 168 times this is refreshed less often. Movies and shows use one OMDb request each, so the default is at most 600 a day, which leaves room for details page views within the free key's 1000 requests a day. Lower it if you hit provider rate limits. |
 
 ## User and System Configuration
 

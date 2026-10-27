@@ -534,7 +534,8 @@ _DEFINITIONS = (
         "key": MediaSortChoices.ROTTEN_TOMATOES,
         "label": _same("Rotten Tomatoes"),
         "kind": NUMBER,
-        "types": (MediaTypes.MOVIE.value, MediaTypes.TV.value),
+        # OMDb has it for movies, but rarely for shows
+        "types": (MediaTypes.MOVIE.value,),
         "sort": _item_column("rotten_tomatoes"),
         "filter": _range_filter(ITEM),
         "unit": _same("%"),
@@ -544,7 +545,7 @@ _DEFINITIONS = (
         "key": MediaSortChoices.METACRITIC,
         "label": _same("Metacritic"),
         "kind": NUMBER,
-        "types": (MediaTypes.MOVIE.value, MediaTypes.TV.value),
+        "types": (MediaTypes.MOVIE.value,),
         "sort": _item_column("metacritic"),
         "filter": _range_filter(ITEM),
         "order_labels": VALUE_ORDER_LABELS,
@@ -947,36 +948,31 @@ def _bound_columns(field, media_type):
     return None
 
 
-def range_bounds(user, media_type):
-    """Return the lowest and highest value of each number and year field.
+# The fields about the title, which are only worth listing when some title in the
+# library has a value for them. Those of your own entries always are.
+DETAIL_KEYS = (
+    MediaSortChoices.RELEASE,
+    MediaSortChoices.PROVIDER_SCORE,
+    MediaSortChoices.IMDB,
+    MediaSortChoices.ROTTEN_TOMATOES,
+    MediaSortChoices.METACRITIC,
+    MediaSortChoices.RUNTIME,
+    MediaSortChoices.SEASONS,
+    MediaSortChoices.LENGTH,
+    MediaSortChoices.AIRING_STATUS,
+    MediaSortChoices.TIME_TO_BEAT,
+    MediaSortChoices.PLAYERS,
+)
 
-    By field key, as `(low, high)`: the fixed scale of a rating field, or what
-    the user's library holds in the field, from 0 for times finished and
-    progress. Fields the library has no value for are left out. Costs two queries.
-    """
-    model = apps.get_model("app", media_type)
-    fields = [
-        field
-        for field in get_filterable_fields(media_type)
-        if field.kind in (NUMBER, YEAR) and field.key != MediaSortChoices.PLAYERS
-    ]
-    bounds = {k: FIXED_BOUNDS[k] for k in (f.key for f in fields) if k in FIXED_BOUNDS}
-    if MediaSortChoices.PLAYS in (field.key for field in fields):
-        most = _most_plays(user, model, media_type)
-        if most:
-            bounds[MediaSortChoices.PLAYS] = (0, most)
-    columns = {
-        field.key: _bound_columns(field, media_type)
-        for field in fields
-        if field.key not in bounds
-    }
-    columns = {key: pair for key, pair in columns.items() if pair}
-    aggregates = {}
-    for key, (low, high) in columns.items():
-        aggregates[f"{key}_high"] = Max(high)
-        if low:
-            aggregates[f"{key}_low"] = Min(low)
-    found = model.objects.filter(user=user).aggregate(**aggregates)
+
+def _detail_column(field, media_type):
+    """Return the item column of a field about the title."""
+    return f"item__{field.column}" if field.column else field.sort(media_type).name
+
+
+def _found_bounds(columns, found):
+    """Return the `(low, high)` bounds of the fields in `columns` from an aggregate."""
+    bounds = {}
     for key in columns:
         low, high = found.get(f"{key}_low") or 0, found[f"{key}_high"]
         if high is None:
@@ -985,6 +981,68 @@ def range_bounds(user, media_type):
             low, high = low.year, high.year
         bounds[key] = (math.floor(low), math.ceil(high))
     return bounds
+
+
+def range_bounds(user, media_type):
+    """Return the range fields' bounds and the fields about the title with values.
+
+    The bounds are by field key, as `(low, high)`: the fixed scale of a rating
+    field, or what the user's library holds in the field, from 0 for times
+    finished and progress. Fields about the title (`DETAIL_KEYS`) the library has
+    no value for are left out of the bounds, and out of the set returned beside
+    them. Costs two queries.
+    """
+    model = apps.get_model("app", media_type)
+    all_fields = get_fields(media_type)
+    fields = [
+        field
+        for field in get_filterable_fields(media_type)
+        if field.kind in (NUMBER, YEAR) and field.key != MediaSortChoices.PLAYERS
+    ]
+    fixed = [field.key for field in fields if field.key in FIXED_BOUNDS]
+    bounds = {}
+    if MediaSortChoices.PLAYS in (field.key for field in fields):
+        most = _most_plays(user, model, media_type)
+        if most:
+            bounds[MediaSortChoices.PLAYS] = (0, most)
+    columns = {
+        field.key: _bound_columns(field, media_type)
+        for field in fields
+        if field.key not in fixed and field.key not in bounds
+    }
+    columns = {key: pair for key, pair in columns.items() if pair}
+    aggregates = {}
+    for key, (low, high) in columns.items():
+        aggregates[f"{key}_high"] = Max(high)
+        if low:
+            aggregates[f"{key}_low"] = Min(low)
+    details = {
+        key: _detail_column(all_fields[key], media_type)
+        for key in DETAIL_KEYS
+        if key in all_fields
+    }
+    for key, column in details.items():
+        aggregates.setdefault(f"{key}_high", Max(column))
+    found = model.objects.filter(user=user).aggregate(**aggregates)
+    present = {key for key in details if found[f"{key}_high"] not in (None, "")}
+    for key in fixed:
+        if key == MediaSortChoices.SCORE or key in present:
+            bounds[key] = FIXED_BOUNDS[key]
+    bounds.update(_found_bounds(columns, found))
+    return bounds, present
+
+
+def listed_sort_fields(media_type, present, current):
+    """Return the fields a list can be sorted by that are worth listing.
+
+    A field about the title that no title in the library has a value for, as
+    `range_bounds` finds in `present`, is left out, but never the `current` sort.
+    """
+    return [
+        field
+        for field in get_sortable_fields(media_type)
+        if field.key == current or field.key not in DETAIL_KEYS or field.key in present
+    ]
 
 
 def _slider(field, flt, bounds):
@@ -1069,12 +1127,13 @@ def _player_chips(field, flt):
     }
 
 
-def panel_filters(media_type, filters, choices, bounds):
+def panel_filters(media_type, filters, choices, bounds, present):
     """Return the filters the panel offers, in groups with their current values.
 
     Each group has a `title`, its `ranges` and its `choices`. A range is a
     field's control: a `slider` for numbers and years within the library's
-    `bounds` (from `range_bounds`), preset chips with date inputs for `dates`,
+    `bounds` and fields about the title with values in `present` (both from
+    `range_bounds`), preset chips with date inputs for `dates`,
     or chips for `players`. A choice is a field of toggles, each option with its
     `value`, `label`, `count` and whether it is `checked`. Groups left empty are
     dropped. Genres and platforms are those of the user's library, plus any
@@ -1092,7 +1151,9 @@ def panel_filters(media_type, filters, choices, bounds):
             if field.kind == DATE:
                 control = _date_presets(field, flt)
             elif field.key == MediaSortChoices.PLAYERS:
-                control = _player_chips(field, flt)
+                control = (
+                    _player_chips(field, flt) if field.key in present or flt else None
+                )
             else:
                 control = _slider(field, flt, bounds)
             if control:
@@ -1101,6 +1162,8 @@ def panel_filters(media_type, filters, choices, bounds):
             continue
         asked = {value.lower() for value in flt.values} if flt else set()
         if field.choices:
+            if field.key not in present and not asked:
+                continue
             options = [
                 {"value": value, "label": label, "count": None}
                 for value, label in field.choices
@@ -1117,6 +1180,8 @@ def panel_filters(media_type, filters, choices, bounds):
                 for value in (flt.values if flt else ())
                 if value.lower() not in known
             ]
+            if not options:
+                continue
             group = field.key
         for option in options:
             option["checked"] = option["value"].lower() in asked

@@ -27,7 +27,7 @@ def cleanup_user_messages():
 
 @shared_task(name="Refresh library details")
 def refresh_library_details():
-    """Refresh the stored details of library items, up to the daily budget."""
+    """Refresh the stored details of library items, up to the batch size."""
     refreshed, failed = item_details.refresh_library_details(
         settings.LIBRARY_DETAILS_BATCH,
     )

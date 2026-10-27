@@ -1,5 +1,8 @@
 import logging
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 
 import requests
 from defusedxml import ElementTree
@@ -27,6 +30,32 @@ logger = logging.getLogger(__name__)
 # How many times a rate limited request is retried before it fails, so a page
 # doesn't hang while a provider keeps refusing
 RATE_LIMIT_RETRIES = 3
+
+
+@dataclass
+class RateLimitCap:
+    """The longest wait for a rate limit, and whether a request went over it."""
+
+    seconds: int
+    exceeded: bool = False
+
+
+_rate_limit_cap = ContextVar("rate_limit_cap", default=None)
+
+
+@contextmanager
+def cap_rate_limit_waits(seconds):
+    """Make rate limited requests in the block fail instead of waiting over `seconds`.
+
+    Other code keeps waiting as asked. Yields a `RateLimitCap` whose `exceeded`
+    says whether a request failed for being asked to wait longer.
+    """
+    cap = RateLimitCap(seconds)
+    token = _rate_limit_cap.set(cap)
+    try:
+        yield cap
+    finally:
+        _rate_limit_cap.reset(token)
 
 
 def get_redis_client():
@@ -151,7 +180,8 @@ def api_request(
     """Make a request to the API and return the response.
 
     A rate limited request waits as asked and is retried, at most
-    `RATE_LIMIT_RETRIES` times, then fails like any other error.
+    `RATE_LIMIT_RETRIES` times, then fails like any other error. Inside
+    `cap_rate_limit_waits` it fails at once when asked to wait longer than the cap.
 
     Args:
         provider: Provider identifier for error messages
@@ -190,6 +220,13 @@ def api_request(
                 raise error from None
 
             seconds_to_wait = int(error_resp.headers.get("Retry-After", 5))
+            cap = _rate_limit_cap.get()
+            if cap and seconds_to_wait > cap.seconds:
+                cap.exceeded = True
+                logger.warning(
+                    "Rate limited for %s seconds, giving up", seconds_to_wait
+                )
+                raise error from None
             logger.warning("Rate limited, waiting %s seconds", seconds_to_wait)
             time.sleep(seconds_to_wait + 3)
             logger.info("Retrying request")

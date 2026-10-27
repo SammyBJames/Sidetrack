@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -45,3 +46,14 @@ class CleanupUserMessagesTaskTests(TestCase):
         self.assertFalse(UserMessage.objects.filter(id=old_shown.id).exists())
         self.assertTrue(UserMessage.objects.filter(id=recent_shown.id).exists())
         self.assertTrue(UserMessage.objects.filter(id=unseen.id).exists())
+
+
+class RefreshLibraryDetailsScheduleTests(TestCase):
+    """Test how often the library details refresh runs and how much it does."""
+
+    def test_runs_hourly_in_small_batches_within_the_omdb_limit(self):
+        """An hourly batch of the default size makes at most 600 OMDb requests a day."""
+        schedule = settings.CELERY_BEAT_SCHEDULE["refresh_library_details"]
+
+        self.assertEqual(schedule["schedule"], 60 * 60)
+        self.assertLessEqual(settings.LIBRARY_DETAILS_BATCH * 24, 600)

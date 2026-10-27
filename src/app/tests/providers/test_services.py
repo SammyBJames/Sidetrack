@@ -107,6 +107,48 @@ class ServicesTests(TestCase):
         self.assertEqual(mock_post.call_count, services.RATE_LIMIT_RETRIES + 1)
         self.assertEqual(mock_sleep.call_count, services.RATE_LIMIT_RETRIES)
 
+    @patch("app.providers.services.time.sleep")
+    @patch("app.providers.services.session.post")
+    def test_capped_rate_limit_wait_fails_at_once(self, mock_post, mock_sleep):
+        """Inside the cap a longer wait fails the request, a shorter one is waited."""
+        long = MagicMock(status_code=429, headers={"Retry-After": "7623"})
+        long.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "429 Too Many Requests",
+            response=long,
+        )
+        mock_post.return_value = long
+
+        with (
+            services.cap_rate_limit_waits(60) as cap,
+            self.assertRaises(requests.exceptions.HTTPError),
+        ):
+            services.api_request("TEST", "POST", "https://example.com/api")
+
+        self.assertTrue(cap.exceeded)
+        self.assertEqual(mock_post.call_count, 1)
+        mock_sleep.assert_not_called()
+
+        # Outside the cap the same response is waited out
+        with self.assertRaises(requests.exceptions.HTTPError):
+            services.api_request("TEST", "POST", "https://example.com/api")
+        self.assertEqual(mock_sleep.call_count, services.RATE_LIMIT_RETRIES)
+
+        # A wait within the cap is waited out, not flagged
+        short = MagicMock(status_code=429, headers={"Retry-After": "60"})
+        short.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "429 Too Many Requests",
+            response=short,
+        )
+        mock_post.return_value = short
+        mock_sleep.reset_mock()
+        with (
+            services.cap_rate_limit_waits(60) as cap,
+            self.assertRaises(requests.exceptions.HTTPError),
+        ):
+            services.api_request("TEST", "POST", "https://example.com/api")
+        self.assertFalse(cap.exceeded)
+        self.assertEqual(mock_sleep.call_count, services.RATE_LIMIT_RETRIES)
+
     @patch("app.providers.igdb.cache.delete")
     def test_handle_error_igdb_unauthorized(
         self,

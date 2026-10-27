@@ -577,12 +577,12 @@ USER_MESSAGE_RETENTION_DAYS = config(
     default=30,
     cast=int,
 )
-# The most items the daily refresh fetches details for, which keeps OMDb's free
-# 1000 requests a day and the providers' rate limits. A library over seven times
-# this is refreshed less often than weekly
+# The most items each hourly refresh fetches details for. 25 an hour is at most
+# 600 OMDb requests a day, leaving the rest of its free 1000 for details pages.
+# A library over 168 times this is refreshed less often than weekly
 LIBRARY_DETAILS_BATCH = config(
     "LIBRARY_DETAILS_BATCH",
-    default=300,
+    default=25,
     cast=int,
 )
 CELERY_BEAT_SCHEDULE = {
@@ -604,7 +604,7 @@ CELERY_BEAT_SCHEDULE = {
     },
     "refresh_library_details": {
         "task": "Refresh library details",
-        "schedule": 60 * 60 * 24,  # every 24 hours
+        "schedule": 60 * 60,  # every hour
     },
 }
 

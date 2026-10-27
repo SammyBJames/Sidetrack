@@ -1,6 +1,6 @@
 from datetime import timedelta
 from io import StringIO
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import requests
 from django.contrib.auth import get_user_model
@@ -9,7 +9,16 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from app import item_details
-from app.models import Episode, Item, MediaTypes, Movie, Season, Sources, Status
+from app.models import (
+    Episode,
+    Game,
+    Item,
+    MediaTypes,
+    Movie,
+    Season,
+    Sources,
+    Status,
+)
 from app.providers import services
 from app.tasks import refresh_library_details
 
@@ -29,6 +38,7 @@ class RefreshLibraryDetailsTests(TestCase):
         patcher = patch("app.item_details.helpers.get_media_ratings", return_value=[])
         patcher.start()
         self.addCleanup(patcher.stop)
+        self.sleeps = 0
 
     def movie(self, media_id, *, tracked=True, updated_days_ago=None):
         """Create a movie item, tracked by the user, and return it."""
@@ -88,6 +98,27 @@ class RefreshLibraryDetailsTests(TestCase):
         )
         self.get_metadata.reset_mock()
         self.get_metadata.return_value = METADATA
+
+    def rate_limited(self):
+        """Raise the error of a real 429 asking for a two hour wait.
+
+        The request goes through `services.api_request`, and its sleeps are
+        counted in `self.sleeps`.
+        """
+        response = MagicMock(status_code=429, headers={"Retry-After": "7623"})
+        response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "429",
+            response=response,
+        )
+        with (
+            patch("app.providers.services.session.get", return_value=response),
+            patch("app.providers.services.time.sleep") as sleep,
+        ):
+            try:
+                services.api_request("TMDB", "GET", "https://example.com")
+            except requests.exceptions.HTTPError as error:
+                self.sleeps += sleep.call_count
+                raise services.ProviderAPIError(Sources.TMDB.value, error) from None
 
     def fetched_ids(self):
         """Return the media IDs the providers were asked for, in order."""
@@ -217,6 +248,72 @@ class RefreshLibraryDetailsTests(TestCase):
 
         with self.assertLogs("app.item_details", "WARNING"):
             self.assertEqual(item_details.refresh_library_details(), (0, 1))
+
+    def test_rate_limited_provider_is_not_stamped_and_skipped(self):
+        """A wait over the cap leaves the item for next run and skips its provider."""
+        limited = self.movie("limited")
+        self.movie("limited-2")
+        other = Item.objects.create(
+            media_id="game",
+            source=Sources.IGDB.value,
+            media_type=MediaTypes.GAME.value,
+            title="Game",
+            image="http://example.com/image.jpg",
+        )
+        Game.objects.create(item=other, user=self.user, status=Status.PLANNING.value)
+
+        def metadata(_media_type, media_id, _source):
+            """Go over the cap for the first TMDB title, as a 429 would."""
+            if media_id == "limited":
+                self.rate_limited()
+            return METADATA
+
+        self.get_metadata.side_effect = metadata
+
+        with self.assertLogs("app.item_details", "WARNING"):
+            result = item_details.refresh_library_details()
+
+        # One failure, the other TMDB title never asked for, the game refreshed
+        self.assertEqual(result, (1, 1))
+        self.assertEqual(self.sleeps, 0)
+        self.assertEqual(self.fetched_ids(), ["limited", "game"])
+        limited.refresh_from_db()
+        self.assertIsNone(limited.details_updated_at)
+        self.assertIsNone(Item.objects.get(media_id="limited-2").details_updated_at)
+        other.refresh_from_db()
+        self.assertIsNotNone(other.details_updated_at)
+
+    def test_rate_limited_provider_does_not_use_up_the_budget(self):
+        """The items skipped for a limited provider leave the budget to the others."""
+        for media_id in ("limited", "skipped-1", "skipped-2"):
+            self.movie(media_id)
+        for media_id in ("a", "b"):
+            item = Item.objects.create(
+                media_id=media_id,
+                source=Sources.IGDB.value,
+                media_type=MediaTypes.GAME.value,
+                title=media_id,
+                image="http://example.com/image.jpg",
+            )
+            Game.objects.create(
+                item=item,
+                user=self.user,
+                status=Status.PLANNING.value,
+            )
+
+        def metadata(_media_type, media_id, _source):
+            """Go over the cap for the first TMDB title."""
+            if media_id == "limited":
+                self.rate_limited()
+            return METADATA
+
+        self.get_metadata.side_effect = metadata
+
+        with self.assertLogs("app.item_details", "WARNING"):
+            result = item_details.refresh_library_details(3)
+
+        self.assertEqual(result, (2, 1))
+        self.assertEqual(self.fetched_ids(), ["limited", "a", "b"])
 
     @override_settings(LIBRARY_DETAILS_BATCH=2)
     def test_task_stops_at_the_budget(self):

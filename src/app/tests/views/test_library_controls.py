@@ -89,7 +89,13 @@ class LibraryControlsTests(TestCase):
         )
 
     def test_rating_sliders_have_fixed_scales(self):
-        """Ratings run over their own scale whatever the library holds."""
+        """Ratings run over their own scale whatever else the library holds."""
+        Item.objects.filter(pk=self.short.item.pk).update(
+            provider_score=7.5,
+            imdb_score=7.1,
+            rotten_tomatoes=80,
+            metacritic=60,
+        )
         _, controls = self.controls()
 
         for key, scale, step in (
@@ -106,6 +112,49 @@ class LibraryControlsTests(TestCase):
                 )
                 self.assertEqual(controls[key]["step"], step)
         self.assertTrue(controls["score"]["unset"])
+
+    def test_detail_filters_need_a_value_in_the_library(self):
+        """A rating nobody in the library has isn't offered, unless it's asked for."""
+        Item.objects.filter(pk=self.short.item.pk).update(imdb_score=7.1)
+
+        _, controls = self.controls()
+        self.assertIn("imdb", controls)
+        self.assertNotIn("rotten_tomatoes", controls)
+        self.assertNotIn("metacritic", controls)
+        self.assertIn("score", controls)
+
+        _, controls = self.controls(metacritic_min="60")
+        self.assertEqual(controls["metacritic"]["min"], "60")
+
+    def test_choice_and_player_filters_need_a_value_in_the_library(self):
+        """Airing status and players show once a title has a value for them."""
+        show = self.create(TV, "Show")
+        game = self.create(BoardGame, "Game")
+
+        def group_keys(media_type, **params):
+            """Return the keys of the panel's controls and choices."""
+            response = self.client.get(
+                reverse("medialist", args=["test", media_type]),
+                params,
+            )
+            return {
+                control["key"]
+                for group in response.context["filter_groups"]
+                for control in (*group["ranges"], *group["choices"])
+            }
+
+        self.assertNotIn("genre", group_keys("movie"))
+        self.assertIn("genre", group_keys("movie", genre="Drama"))
+        self.assertNotIn("airing_status", group_keys("tv"))
+        self.assertNotIn("players", group_keys("boardgame"))
+        self.assertIn("airing_status", group_keys("tv", airing_status="ended"))
+        self.assertIn("players", group_keys("boardgame", players_min="2"))
+
+        Item.objects.filter(pk=show.item.pk).update(airing_status="ended")
+        Item.objects.filter(pk=game.item.pk).update(min_players=2, max_players=4)
+
+        self.assertIn("airing_status", group_keys("tv"))
+        self.assertIn("players", group_keys("boardgame"))
 
     def test_address_outside_the_bounds_widens_the_slider(self):
         """A value in the address stays on the slider, whatever the library holds."""

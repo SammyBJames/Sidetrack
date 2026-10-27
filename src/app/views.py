@@ -252,12 +252,27 @@ def media_list(request, username, media_type):
     else:
         template_name = "app/media_list.html"
         # Only the whole page has the panel, which the results reloads leave be
+        bounds, present = library_fields.range_bounds(target_user, media_type)
         context["filter_groups"] = library_fields.panel_filters(
             media_type,
             filters,
             library_fields.present_choices(target_user, media_type),
-            library_fields.range_bounds(target_user, media_type),
+            bounds,
+            present,
         )
+        context["sort_choices"] = [
+            {
+                "value": field.key,
+                "label": field.label,
+                "order": field.default_order,
+                "order_labels": field.order_labels,
+            }
+            for field in library_fields.listed_sort_fields(
+                media_type,
+                present,
+                sort_filter,
+            )
+        ]
 
     context.update(
         _library_context(target_user, media_type, status_filter, search, filters),
@@ -267,15 +282,6 @@ def media_list(request, username, media_type):
         current_sort=sort_filter,
         current_order=sort_order,
         current_sort_label=sort_field.label,
-        sort_choices=[
-            {
-                "value": field.key,
-                "label": field.label,
-                "order": field.default_order,
-                "order_labels": field.order_labels,
-            }
-            for field in library_fields.get_sortable_fields(media_type)
-        ],
     )
     return render(request, template_name, context)
 

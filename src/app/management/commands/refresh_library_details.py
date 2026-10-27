@@ -9,16 +9,16 @@ class Command(BaseCommand):
 
     help = (
         "Refresh the stored details of the items in anyone's library that have "
-        "none or are a week old, never-fetched first. Stops at the daily budget "
+        "none or are a week old, never-fetched first. Stops at the batch size "
         "unless --all is given."
     )
 
     def add_arguments(self, parser):
-        """Take whether to ignore the daily budget."""
+        """Take whether to ignore the batch size."""
         parser.add_argument(
             "--all",
             action="store_true",
-            help="Refresh every item that needs it, not only up to the daily budget.",
+            help="Refresh every item that needs it, not only up to the batch size.",
         )
 
     def handle(self, *_args, **options):
