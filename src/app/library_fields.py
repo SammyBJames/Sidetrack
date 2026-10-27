@@ -1213,11 +1213,11 @@ def panel_filters(media_type, filters, choices, bounds, present):
     field's control: a `slider` for numbers and years within the library's
     `bounds` and fields about the title with values in `present` (both from
     `range_bounds`), preset chips with date inputs for `dates`, or chips for
-    `players`. A choice is a field of
-    toggles, each option with its `value`, `label`, `count` and whether it is
-    `checked`. Groups left empty are dropped. Genres and platforms are those of
-    the user's library, plus any asked for that it lacks, so no filter in the
-    address is lost.
+    `players`. A choice is a field
+    of toggles, each option with its `value`, `label`, `count` and whether it
+    is `checked`. Groups left empty are dropped. Genres and platforms are those
+    of the user's library, plus any asked for that it lacks, so no filter in
+    the address is lost.
     """
     groups = {
         title: {"title": title, "ranges": [], "choices": []}
