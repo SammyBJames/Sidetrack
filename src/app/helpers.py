@@ -125,7 +125,7 @@ def redirect_back(request):
             {
                 "path": clean_url or reverse("home"),
                 "target": "body",
-                # show:none keeps the current scroll position after the swap
+                # softNavigation.js keeps the scroll position through the swap
                 "swap": "innerHTML show:none",
                 "headers": {"X-Soft-Navigation": "true"},
             },
