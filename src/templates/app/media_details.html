@@ -64,34 +64,7 @@
         {# The other actions as icon buttons, starting with the tracking form #}
         <div class="flex shrink-0 flex-wrap items-center justify-center gap-2">
           {% with action_classes="tooltip flex size-10 cursor-pointer items-center justify-center rounded-xl bg-surface-800/80 text-gray-200 shadow-lg ring-1 shadow-black/30 ring-white/10 backdrop-blur transition-colors hover:bg-surface-650 hover:text-white disabled:cursor-wait" %}
-            {# Your rating, first: five stars with halves, each half a point out of ten. Screens too narrow for them beside the other actions, under 400px, get a button that opens them #}
-            {% if current_instance %}
-              <div class="relative"
-                   x-data="ratingStars({{ current_instance.score|default_if_none:'null' }}, '{% url 'update_media_score' media_type current_instance.id %}', '{{ csrf_token }}')"
-                   @click.outside="open = false"
-                   @keydown.escape.window="open = false">
-                <div class="tooltip hidden h-10 items-center rounded-xl bg-surface-800/80 px-3 shadow-lg ring-1 shadow-black/30 ring-white/10 backdrop-blur min-[25rem]:flex"
-                     :data-tooltip="(hovered ?? rating) ? `Your rating · ${hovered ?? rating}/10` : 'Your rating'">
-                  {% include "app/components/rating_stars.html" %}
-                </div>
-
-                <button type="button"
-                        class="min-[25rem]:hidden {{ action_classes }}"
-                        :data-tooltip="rating ? `Your rating · ${rating}/10` : 'Your rating'"
-                        aria-label="Your rating"
-                        :aria-expanded="open"
-                        :class="open && 'after:hidden'"
-                        @click="open = !open">
-                  <span :class="rating ? 'text-yellow-400' : ''">{% include "app/icons/star.svg" with classes="size-4" %}</span>
-                </button>
-                <div x-cloak
-                     x-show="open"
-                     x-transition
-                     class="absolute top-full left-0 z-20 mt-2 rounded-xl bg-surface-800 p-3 shadow-lg ring-1 ring-white/10 min-[25rem]:hidden">
-                  {% include "app/components/rating_stars.html" %}
-                </div>
-              </div>
-            {% endif %}
+            {% include "app/components/header_rating.html" with entry=current_instance %}
 
             {# Tracking form #}
             <button type="button"
@@ -115,29 +88,17 @@
               </div>
             </div>
 
-            {# Another entry, e.g. for a rewatch, fetched on each click so its dates start from now; shows and seasons repeat through their episodes #}
-            {% if user_medias and media_type != MediaTypes.TV.value and media_type != MediaTypes.SEASON.value %}
-              <div x-data="{ createOpen: false }">
-                <button class="{{ action_classes }}"
-                        data-tooltip="Add new entry"
-                        aria-label="Add new entry"
-                        hx-get="{% media_view_url 'track_modal' media %}"
-                        hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}", "is_create": true}'
-                        hx-target="#{% component_id 'track' media %}">
-                  {% include "app/icons/circle-plus.svg" with classes="size-4" %}
-                </button>
-
-                <div x-cloak
-                     x-show="createOpen"
-                     @dialog-dismiss="createOpen = false"
-                     @dialog-ready="createOpen = true"
-                     class="dialog-backdrop">
-                  <div class="dialog-box">
-                    <div id="{% component_id 'track' media %}"></div>
-                  </div>
-                </div>
-              </div>
-            {% endif %}
+            {# Another entry, e.g. for a rewatch, fetched on each click so its dates start from now. It opens in the edit button's dialog #}
+            {% add_entry_vals current_instance media_type as add_vals %}
+            <button type="button"
+                    class="{{ action_classes }}"
+                    data-tooltip="Add entry"
+                    aria-label="Add entry"
+                    hx-get="{% media_view_url 'track_modal' media %}"
+                    hx-vals="{{ add_vals }}"
+                    hx-target="#{% component_id 'track' media current_instance.id %}">
+              {% include "app/icons/circle-plus.svg" with classes="size-4" %}
+            </button>
 
             {% media_view_url 'sync_metadata' media as sync_url %}
             {% include "app/components/details_actions.html" %}

@@ -1,3 +1,4 @@
+import re
 from datetime import date
 from decimal import Decimal
 from unittest.mock import patch
@@ -9,10 +10,12 @@ from django.urls import reverse
 
 from app import config
 from app.models import (
+    TV,
     Book,
     Item,
     MediaTypes,
     Movie,
+    Season,
     Sources,
     Status,
 )
@@ -268,6 +271,137 @@ class MediaDetailsViewTests(TestCase):
         )
         # Nothing follows dropped, so the status opens the form instead
         self.assertNotContains(response, '"card": "details"')
+
+    @staticmethod
+    def target_of(label, content):
+        """Return the dialog id the button with an aria-label opens its form in."""
+        match = re.search(rf'aria-label="{label}"[^>]*?hx-target="#([^"]+)"', content)
+        return match.group(1)
+
+    @patch("app.providers.services.get_media_metadata")
+    @patch("app.providers.tmdb.process_episodes", return_value=[])
+    def test_add_entry_on_a_season_plans_a_rewatch(self, _, mock_meta):
+        """The + is on a season untracked, and once Completed opens it to rewatch."""
+        mock_meta.return_value = {
+            "title": "Test TV Show",
+            "media_id": "1668",
+            "source": Sources.TMDB.value,
+            "media_type": MediaTypes.TV.value,
+            "image": "http://example.com/image.jpg",
+            "season/1": {
+                "title": "Season 1",
+                "media_id": "1668",
+                "media_type": MediaTypes.SEASON.value,
+                "source": Sources.TMDB.value,
+                "image": "http://example.com/season.jpg",
+                "episodes": [],
+            },
+        }
+        url = reverse(
+            "season_details",
+            kwargs={
+                "source": Sources.TMDB.value,
+                "media_id": "1668",
+                "title": "test-tv-show",
+                "season_number": 1,
+            },
+        )
+
+        content = self.client.get(url).content.decode()
+        self.assertIn('aria-label="Add entry"', content)
+        self.assertIn("&quot;is_create&quot;: true", content)
+        self.assertNotIn("Your rating", content)
+
+        show_item = Item.objects.create(
+            media_id="1668",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Test TV Show",
+            image="http://example.com/image.jpg",
+        )
+        show = TV.objects.bulk_create([TV(item=show_item, user=self.user)])[0]
+        item = Item.objects.create(
+            media_id="1668",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.SEASON.value,
+            season_number=1,
+            title="Test TV Show",
+            image="http://example.com/season.jpg",
+        )
+        # bulk_create skips the save that looks up the show's metadata
+        season = Season.objects.bulk_create(
+            [
+                Season(
+                    item=item,
+                    user=self.user,
+                    related_tv=show,
+                    status=Status.COMPLETED.value,
+                ),
+            ],
+        )[0]
+
+        content = self.client.get(url).content.decode()
+        self.assertIn(f"&quot;instance_id&quot;: {season.id}", content)
+        self.assertIn("&quot;status&quot;: &quot;Planning repeat&quot;", content)
+        self.assertNotIn("is_create", content)
+        # Its stars rate the season entry, and an untracked season had none
+        self.assertIn("Your rating", content)
+        self.assertIn(
+            f"ratingStars(null, '/update-score/season/{season.id}'",
+            content,
+        )
+
+    @patch("app.providers.services.get_media_metadata")
+    def test_add_entry_is_there_untracked_and_shares_the_edit_dialog(self, mock_meta):
+        """An untracked movie has the +, which opens the same dialog as the pencil."""
+        mock_meta.return_value = {
+            "media_id": "238",
+            "title": "Test Movie",
+            "media_type": MediaTypes.MOVIE.value,
+            "source": Sources.TMDB.value,
+            "image": "http://example.com/image.jpg",
+            "max_progress": 1,
+            "overview": "Test overview",
+            "release_date": "2023-01-01",
+        }
+
+        response = self.client.get(
+            reverse(
+                "media_details",
+                kwargs={
+                    "source": Sources.TMDB.value,
+                    "media_type": MediaTypes.MOVIE.value,
+                    "media_id": "238",
+                    "title": "test-movie",
+                },
+            ),
+        )
+
+        content = response.content.decode()
+        self.assertIn('aria-label="Add entry"', content)
+        self.assertIn("&quot;is_create&quot;: true", content)
+        self.assertEqual(self.target_of("Add entry", content), "track-movie-238")
+        self.assertEqual(self.target_of("Add to tracker", content), "track-movie-238")
+
+    @patch("app.providers.services.get_media_metadata")
+    def test_add_entry_opens_an_open_movie_or_adds_after_a_watch(self, mock_meta):
+        """The + edits a movie that isn't Completed, and adds a new entry after."""
+        response = self._get_tracked_movie_details(mock_meta, Status.PAUSED.value)
+        movie = Movie.objects.get(user=self.user)
+        content = response.content.decode()
+        self.assertIn(f"&quot;instance_id&quot;: {movie.id}", content)
+        self.assertNotIn("is_create", content)
+        pencil = f"track-movie-238-{movie.id}"
+        self.assertEqual(self.target_of("Add entry", content), pencil)
+        self.assertEqual(self.target_of("Edit tracking", content), pencil)
+
+        movie.status = Status.COMPLETED.value
+        movie.save()
+
+        content = self.client.get(response.wsgi_request.path).content.decode()
+        self.assertIn("&quot;is_create&quot;: true", content)
+        # Still the edit button's dialog, which the new entry's form replaces
+        self.assertEqual(self.target_of("Add entry", content), pencil)
 
     @patch("app.providers.services.get_media_metadata")
     def test_watched_movie_plans_a_rewatch(self, mock_get_metadata):

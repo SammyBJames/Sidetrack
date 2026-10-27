@@ -62,6 +62,31 @@ class TrackModalViewTests(TestCase):
         self.assertEqual(response.context["media"], self.movie)
         self.assertEqual(response.context["return_url"], "/home")
 
+    def test_status_parameter_presets_the_entry_being_edited(self):
+        """A valid `status` is the form's status for the entry, an invalid one isn't."""
+        url = reverse(
+            "track_modal",
+            kwargs={
+                "source": Sources.TMDB.value,
+                "media_type": MediaTypes.MOVIE.value,
+                "media_id": "238",
+            },
+        )
+        query = {"return_url": "/home", "instance_id": self.movie.id}
+
+        response = self.client.get(url, {**query, "status": Status.PLANNING_REPEAT})
+        self.assertRegex(
+            response.content.decode(),
+            r'value="Planning repeat"\s*checked>',
+        )
+        self.assertEqual(response.context["media"], self.movie)
+
+        response = self.client.get(url, {**query, "status": "nonsense"})
+        self.assertRegex(
+            response.content.decode(),
+            r'value="In progress"\s*checked>',
+        )
+
     @patch("app.providers.services.get_media_metadata")
     def test_track_modal_view_new_media(self, mock_get_metadata):
         """Test the track modal view for new media."""

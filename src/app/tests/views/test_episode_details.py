@@ -352,7 +352,10 @@ class EpisodeDetailsViewTests(TestCase):
         page = self.client.get(self.episode_url(1)).content.decode()
 
         self.assertIn('aria-label="Add to tracker"', page)
-        self.assertNotIn('aria-label="Add new entry"', page)
+        # The + is there too, to add that first entry
+        self.assertIn('aria-label="Add entry"', page)
+        self.assertIn("is_create", page)
+        self.assertNotIn("Your rating", page)
         response = self.client.get(
             self.track_modal_url(1),
             {"return_url": self.episode_url(1), "instance_id": ""},
@@ -360,12 +363,53 @@ class EpisodeDetailsViewTests(TestCase):
         self.assertIsNone(response.context["media"])
         self.assertContains(response, reverse("episode_save"))
 
+    def test_rating_stars_save_to_the_latest_entry(self, _):
+        """The header has the rating stars of the latest entry, saving to it."""
+        older = self.watch(1)
+        older.end_date = datetime(2024, 1, 1, tzinfo=UTC)
+        older.save(update_fields=["end_date"])
+        latest = self.watch(1)
+        latest.end_date = datetime(2024, 5, 1, tzinfo=UTC)
+        latest.score = 7
+        latest.save(update_fields=["end_date", "score"])
+
+        page = self.client.get(self.episode_url(1)).content.decode()
+
+        score_url = reverse(
+            "update_media_score",
+            args=[MediaTypes.EPISODE.value, latest.id],
+        )
+        # Not the entries section's tiles, which come after the header
+        header = page.split("Edit tracking")[0]
+        self.assertIn("Your rating", header)
+        self.assertIn(f"ratingStars(7.0, '{score_url}'", header)
+        self.assertNotIn("ratingStars(null", header)
+
+    def test_add_entry_opens_the_open_entry_or_adds_after_a_completed_one(self, _):
+        """The + edits an entry still open, and adds one after a Completed one."""
+        watch = self.watch(1)
+        Episode.objects.filter(pk=watch.pk).update(status=Status.PLANNING.value)
+
+        page = self.client.get(self.episode_url(1)).content.decode()
+        self.assertIn(f"&quot;instance_id&quot;: {watch.id}", page)
+        self.assertNotIn("is_create", page)
+        # It opens in the pencil's dialog
+        add = re.search(r'aria-label="Add entry"[^>]*?hx-target="#([^"]+)"', page)
+        self.assertEqual(add.group(1), "track-episode-1396-1-1")
+
+        Episode.objects.filter(pk=watch.pk).update(status=Status.COMPLETED.value)
+
+        page = self.client.get(self.episode_url(1)).content.decode()
+        self.assertIn("is_create", page)
+        add = re.search(r'aria-label="Add entry"[^>]*?hx-target="#([^"]+)"', page)
+        self.assertEqual(add.group(1), "track-episode-1396-1-1")
+
     def test_add_new_entry_opens_an_empty_dialog(self, _):
-        """Add new entry opens the dialog for a watch, to post to episode_save."""
+        """Add entry opens the dialog for a watch, to post to episode_save."""
         self.watch(1)
 
         page = self.client.get(self.episode_url(1)).content.decode()
-        self.assertIn('aria-label="Add new entry"', page)
+        self.assertIn('aria-label="Add entry"', page)
 
         response = self.client.get(
             self.track_modal_url(1),
@@ -789,6 +833,7 @@ class EpisodeDetailsViewTests(TestCase):
         )
 
         content = re.sub(r"\s+", " ", response.content.decode())
+        self.assertIn('aria-label="Add entry"', content)
         self.assertIn("1 / 7 Episodes", content)
         self.assertIn("3 Episodes", content)
         self.assertNotIn("1 / 3 Episodes", content)

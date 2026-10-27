@@ -1,0 +1,29 @@
+{# The rating stars for `entry` in a details page's action row, which sets `action_classes`. Each half star is a point out of ten #}
+{# Screens too narrow for them beside the other actions, under 400px, get a button that opens them #}
+{% if entry %}
+  <div class="relative"
+       x-data="ratingStars({{ entry.score|default_if_none:'null' }}, '{% url 'update_media_score' media_type entry.id %}', '{{ csrf_token }}')"
+       @click.outside="open = false"
+       @keydown.escape.window="open = false">
+    <div class="tooltip hidden h-10 items-center rounded-xl bg-surface-800/80 px-3 shadow-lg ring-1 shadow-black/30 ring-white/10 backdrop-blur min-[25rem]:flex"
+         :data-tooltip="(hovered ?? rating) ? `Your rating · ${hovered ?? rating}/10` : 'Your rating'">
+      {% include "app/components/rating_stars.html" %}
+    </div>
+
+    <button type="button"
+            class="min-[25rem]:hidden {{ action_classes }}"
+            :data-tooltip="rating ? `Your rating · ${rating}/10` : 'Your rating'"
+            aria-label="Your rating"
+            :aria-expanded="open"
+            :class="open && 'after:hidden'"
+            @click="open = !open">
+      <span :class="rating ? 'text-yellow-400' : ''">{% include "app/icons/star.svg" with classes="size-4" %}</span>
+    </button>
+    <div x-cloak
+         x-show="open"
+         x-transition
+         class="absolute top-full left-0 z-20 mt-2 rounded-xl bg-surface-800 p-3 shadow-lg ring-1 ring-white/10 min-[25rem]:hidden">
+      {% include "app/components/rating_stars.html" %}
+    </div>
+  </div>
+{% endif %}

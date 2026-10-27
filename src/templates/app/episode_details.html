@@ -56,6 +56,8 @@
         {# The other actions as icon buttons, starting with the tracking form #}
         <div class="flex shrink-0 flex-wrap items-center justify-center gap-2">
           {% with action_classes="tooltip flex size-10 cursor-pointer items-center justify-center rounded-xl bg-surface-800/80 text-gray-200 shadow-lg ring-1 shadow-black/30 ring-white/10 backdrop-blur transition-colors hover:bg-surface-650 hover:text-white disabled:cursor-wait" %}
+            {% include "app/components/header_rating.html" with entry=latest_entry %}
+
             {# Tracking form, for the entry added last, or the first #}
             <button type="button"
                     class="{{ action_classes }}"
@@ -78,30 +80,17 @@
               </div>
             </div>
 
-            {# Another entry, e.g. for a rewatch, fetched on each click so its dates start from now #}
-            {% if latest_entry %}
-              <div x-data="{ createOpen: false }">
-                <button type="button"
-                        class="{{ action_classes }}"
-                        data-tooltip="Add new entry"
-                        aria-label="Add new entry"
-                        hx-get="{{ track_url }}"
-                        hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}", "is_create": true}'
-                        hx-target="#{% component_id 'track' media 'new' %}">
-                  {% include "app/icons/circle-plus.svg" with classes="size-4" %}
-                </button>
-
-                <div x-cloak
-                     x-show="createOpen"
-                     @dialog-dismiss="createOpen = false"
-                     @dialog-ready="createOpen = true"
-                     class="dialog-backdrop">
-                  <div class="dialog-box" @click.stop>
-                    <div id="{% component_id 'track' media 'new' %}"></div>
-                  </div>
-                </div>
-              </div>
-            {% endif %}
+            {# Another entry, e.g. for a rewatch, fetched on each click so its dates start from now. It opens in the edit button's dialog #}
+            {% add_entry_vals latest_entry media_type as add_vals %}
+            <button type="button"
+                    class="{{ action_classes }}"
+                    data-tooltip="Add entry"
+                    aria-label="Add entry"
+                    hx-get="{{ track_url }}"
+                    hx-vals="{{ add_vals }}"
+                    hx-target="#{% component_id 'track' media %}">
+              {% include "app/icons/circle-plus.svg" with classes="size-4" %}
+            </button>
 
             {# Its metadata comes with the season #}
             {% url 'sync_metadata' media.source MediaTypes.SEASON.value media.media_id media.season_number as sync_url %}

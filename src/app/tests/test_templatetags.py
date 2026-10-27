@@ -1,3 +1,4 @@
+import json
 from datetime import UTC
 from unittest.mock import MagicMock, patch
 
@@ -599,3 +600,57 @@ class StatusBadgeTests(TestCase):
         )
 
         self.assertIn('title="Rereading"', html)
+
+
+class AddEntryValsTests(TestCase):
+    """Test what the Add entry button asks the tracking form for."""
+
+    def action(self, entry, media_type):
+        """Return the tag's parameters, as for a details page."""
+        request = MagicMock()
+        request.get_full_path.return_value = "/details/x?a=b c"
+        return json.loads(
+            app_tags.add_entry_vals({"request": request}, entry, media_type),
+        )
+
+    def test_no_entry_adds_the_first(self):
+        """Without an entry, it adds the first."""
+        vals = self.action(None, MediaTypes.BOOK.value)
+
+        self.assertEqual(vals["is_create"], True)
+        self.assertEqual(vals["return_url"], "/details/x%3Fa%3Db%20c")
+
+    def test_completed_entry_gets_a_new_one(self):
+        """After a Completed entry it adds another."""
+        entry = MagicMock(id=5, status=Status.COMPLETED.value)
+
+        vals = self.action(entry, MediaTypes.BOOK.value)
+
+        self.assertEqual(vals["is_create"], True)
+        self.assertNotIn("instance_id", vals)
+
+    def test_open_entry_opens_as_it_is(self):
+        """Any status but Completed opens that entry without changing it."""
+        for status in Status.values:
+            if status == Status.COMPLETED.value:
+                continue
+            with self.subTest(status=status):
+                entry = MagicMock(id=5, status=status)
+
+                vals = self.action(entry, MediaTypes.GAME.value)
+
+                self.assertEqual(vals["instance_id"], 5)
+                self.assertNotIn("status", vals)
+                self.assertNotIn("is_create", vals)
+
+    def test_completed_show_or_season_opens_set_to_planning_rewatch(self):
+        """A show or season has one entry, so a rewatch is that entry's next status."""
+        for media_type in (MediaTypes.TV.value, MediaTypes.SEASON.value):
+            with self.subTest(media_type=media_type):
+                entry = MagicMock(id=5, status=Status.COMPLETED.value)
+
+                vals = self.action(entry, media_type)
+
+                self.assertEqual(vals["instance_id"], 5)
+                self.assertEqual(vals["status"], Status.PLANNING_REPEAT.value)
+                self.assertNotIn("is_create", vals)

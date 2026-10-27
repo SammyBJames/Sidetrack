@@ -1,6 +1,8 @@
+import json
 import re
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 from django import template
 from django.conf import settings
@@ -790,3 +792,27 @@ def seconds_to_duration(seconds):
     if minutes >= 45:  # noqa: PLR2004
         return f"{hours + 1}h"
     return f"{hours}h" if minutes < 15 else f"{hours}h 30m"  # noqa: PLR2004
+
+
+@register.simple_tag(takes_context=True)
+def add_entry_vals(context, entry, media_type):
+    """Return the form request parameters, as JSON, for the Add entry button.
+
+    `entry` is the media's latest entry. No entry or a Completed one gets the
+    new-entry form, but a show or season has one entry for all its times
+    through, so a Completed one opens it set to Planning rewatch. Any other
+    status opens the entry as it is. `return_url` is the current page, URL
+    quoted.
+    """
+    vals = {"return_url": quote(context["request"].get_full_path())}
+    if entry is None:
+        vals["is_create"] = True
+    elif entry.status == Status.COMPLETED.value:
+        if media_type in (MediaTypes.TV.value, MediaTypes.SEASON.value):
+            vals["instance_id"] = entry.id
+            vals["status"] = Status.PLANNING_REPEAT.value
+        else:
+            vals["is_create"] = True
+    else:
+        vals["instance_id"] = entry.id
+    return json.dumps(vals)

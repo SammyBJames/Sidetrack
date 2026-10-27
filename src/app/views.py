@@ -842,9 +842,10 @@ def track_modal(
     """Return the tracking form for a media item.
 
     It edits the entry `instance_id`, else with `is_create` adds a new one, else
-    edits the user's latest entry of the media, or adds the first. An episode's
-    latest is the one watched last, or added last when not watched. A new
-    episode entry is saved by `episode_save`, every other form by `media_save`.
+    edits the user's latest entry of the media, or adds the first. A valid
+    `status` parameter presets the form's status. An episode's latest is the
+    one watched last, or added last when not watched. A new episode entry is
+    saved by `episode_save`, every other form by `media_save`.
     """
     instance_id = request.GET.get("instance_id")
     if instance_id:
@@ -910,6 +911,9 @@ def track_modal(
             title += f" S{season_number}"
         elif media_type == MediaTypes.EPISODE.value:
             title += f" S{season_number}E{episode_number}"
+
+    if request.GET.get("status") in Status.values:
+        initial_data["status"] = request.GET["status"]
 
     form = get_form_class(media_type)(instance=media, initial=initial_data)
     # Games count time and movies nothing, so only the counted types have a total

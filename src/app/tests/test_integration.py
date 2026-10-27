@@ -430,7 +430,7 @@ class IntegrationTest(StaticLiveServerTestCase):
         sheet.get_by_role("button", name="Add", exact=True).click()
         expect(main).to_contain_text("Your Watches\n1")
 
-        self.page.get_by_role("button", name="Add new entry").click()
+        self.page.get_by_role("button", name="Add entry").click()
         sheet.get_by_text("Planning Rewatch", exact=True).click()
         sheet.get_by_role("button", name="Add", exact=True).click()
         expect(main).to_contain_text("Your Watches\n2")
