@@ -57,6 +57,11 @@ urlpatterns = [
         name="progress_edit",
     ),
     path(
+        "log_modal/<media_type:media_type>/<int:instance_id>",
+        views.log_modal,
+        name="log_modal",
+    ),
+    path(
         "log_progress/<media_type:media_type>/<int:instance_id>",
         views.log_progress,
         name="log_progress",

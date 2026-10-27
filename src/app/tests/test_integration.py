@@ -7,7 +7,7 @@ from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from django.urls import reverse
 from playwright.sync_api import expect, sync_playwright
 
-from app.models import BoardGame, Item, MediaTypes, Movie, Sources, Status
+from app.models import BoardGame, Book, Game, Item, MediaTypes, Movie, Sources, Status
 
 
 class IntegrationTest(StaticLiveServerTestCase):
@@ -119,6 +119,172 @@ class IntegrationTest(StaticLiveServerTestCase):
         expect(
             self.page.locator('button[aria-controls="filter-players"]'),
         ).to_contain_text("Fits 4 players")
+
+    def add_logged_entry(self, model, media_type, title, **item_fields):
+        """Track an in progress manual book or game, which logs its progress."""
+        item = Item.objects.create(
+            media_id=title,
+            source=Sources.MANUAL.value,
+            media_type=media_type,
+            title=title,
+            image="https://example.com/image.jpg",
+            **item_fields,
+        )
+        return model.objects.create(
+            item=item,
+            user=self.user,
+            status=Status.IN_PROGRESS.value,
+        )
+
+    def test_logging_pages_from_a_books_page(self):
+        """A book's primary button logs the page, and the last page finishes it."""
+        book = self.add_logged_entry(Book, MediaTypes.BOOK.value, "Dune", length=300)
+        self.page.goto(
+            f"{self.live_server_url}"
+            + reverse(
+                "media_details",
+                args=[Sources.MANUAL.value, MediaTypes.BOOK.value, "Dune", "dune"],
+            ),
+        )
+
+        self.page.get_by_role("button", name="Log pages").click()
+        dialog = self.page.locator("#log-dialog")
+        expect(dialog).to_contain_text("of 300")
+        expect(dialog.locator('input[name="page"]')).to_have_value("0")
+        dialog.get_by_label("Next page").click()
+        expect(dialog.locator('input[name="page"]')).to_have_value("1")
+        dialog.locator('input[name="page"]').fill("120")
+        dialog.get_by_role("button", name="Save").click()
+        expect(self.page.get_by_text("120", exact=True)).to_be_visible()
+        book.refresh_from_db()
+        self.assertEqual((book.progress, book.status), (120, Status.IN_PROGRESS))
+
+        self.page.get_by_role("button", name="Log pages").click()
+        dialog.locator('input[name="page"]').fill("300")
+        dialog.get_by_role("button", name="Save").click()
+        expect(self.page.get_by_role("button", name="Log pages")).to_have_count(0)
+        book.refresh_from_db()
+        self.assertEqual((book.progress, book.status), (300, Status.COMPLETED))
+
+    def test_logging_time_from_a_game_card(self):
+        """A game card's chip opens the dialog, and the session is added in place."""
+        game = self.add_logged_entry(Game, MediaTypes.GAME.value, "Hades")
+        Game.objects.filter(pk=game.pk).update(progress=90)
+        self.page.goto(
+            f"{self.live_server_url}"
+            + reverse("medialist", args=["test", MediaTypes.GAME.value]),
+        )
+
+        self.page.get_by_label("Log time").dispatch_event("click")
+        dialog = self.page.locator("#log-dialog")
+        expect(dialog).to_contain_text("Total so far: 1h 30min")
+        dialog.get_by_label("Half an hour more").click()
+        dialog.get_by_role("button", name="Save").click()
+        expect(dialog).to_be_hidden()
+        game.refresh_from_db()
+        self.assertEqual(game.progress, 90 + 90)
+        expect(self.page.locator(".media-card", has_text="Hades")).to_contain_text(
+            "3h 00min",
+        )
+
+        # The card was re-rendered, and its chip opens the dialog again, but only
+        # once the dialog has arrived, never showing the one closed before
+        held = []
+
+        def hold(route):
+            """Keep the request pending until the test releases it."""
+            held.append(route)
+
+        self.page.route("**/log_modal/**", hold)
+        self.addCleanup(self.page.unroute, "**/log_modal/**")
+        self.page.get_by_label("Log time").dispatch_event("click")
+        self.page.wait_for_timeout(500)
+        self.assertFalse(self.page.locator("#log-dialog .dialog-sheet").is_visible())
+        held[0].continue_()
+        self.page.unroute("**/log_modal/**")
+        expect(dialog).to_contain_text("Total so far: 3h 00min")
+
+        # A double click on Save logs the session once
+        dialog.get_by_role("button", name="Save").dblclick()
+        expect(dialog).to_be_hidden()
+        self.page.wait_for_timeout(500)
+        game.refresh_from_db()
+        self.assertEqual(game.progress, 180 + 60)
+
+        self.page.get_by_label("Log time").dispatch_event("click")
+
+        # Bad input is explained in the dialog, which stays open
+        dialog.locator('input[name="played"]').fill("abc")
+        dialog.get_by_role("button", name="Save").click()
+        expect(dialog).to_contain_text("Invalid time format")
+
+    def add_tracked_movie(self):
+        """Track a manual movie and return the URL of its page."""
+        item = Item.objects.create(
+            media_id="Heat",
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.MOVIE.value,
+            title="Heat",
+            image="https://example.com/image.jpg",
+        )
+        Movie.objects.create(item=item, user=self.user, status=Status.COMPLETED)
+        return f"{self.live_server_url}" + reverse(
+            "media_details",
+            args=[Sources.MANUAL.value, MediaTypes.MOVIE.value, "Heat", "heat"],
+        )
+
+    def test_reopened_tracking_dialog_never_shows_the_old_one(self):
+        """While a reopened dialog loads, the one closed before stays hidden."""
+        self.page.goto(self.add_tracked_movie())
+        sheet = self.page.locator(".dialog-sheet")
+        notes = sheet.locator("textarea")
+        self.page.get_by_role("button", name="Edit tracking").click()
+        sheet.get_by_role("button", name="Advanced").click()
+        expect(notes).to_be_visible()
+        sheet.get_by_label("Close").click()
+
+        held = []
+
+        def hold(route):
+            """Keep the request pending until the test releases it."""
+            held.append(route)
+
+        self.page.route("**/track_modal/**", hold)
+        # The page is shared by the tests, so the held route must not outlive this one
+        self.addCleanup(self.page.unroute, "**/track_modal/**")
+        self.page.get_by_role("button", name="Edit tracking").click()
+        self.page.wait_for_timeout(500)
+        expect(sheet).to_be_hidden()
+        held[0].continue_()
+        expect(sheet).to_be_visible()
+        expect(notes).to_be_hidden()
+
+    def test_dialogs_close_only_on_a_click_that_began_outside(self):
+        """Dragging a selection out of a dialog keeps it open; the backdrop closes."""
+        self.page.goto(self.add_tracked_movie())
+        sheet = self.page.locator(".dialog-sheet")
+        self.page.get_by_role("button", name="Edit tracking").click()
+        sheet.get_by_role("button", name="Advanced").click()
+        notes = sheet.locator("textarea")
+        notes.fill("some words to select")
+        box = notes.bounding_box()
+        self.page.mouse.move(box["x"] + 20, box["y"] + 10)
+        self.page.mouse.down()
+        self.page.mouse.move(2, 2)
+        self.page.mouse.up()
+        # Closing is animated away from the click, so give it time before looking
+        self.page.wait_for_timeout(400)
+        self.assertTrue(sheet.is_visible())
+
+        self.page.mouse.move(2, 2)
+        self.page.mouse.down()
+        self.page.mouse.move(box["x"] + 20, box["y"] + 10)
+        self.page.mouse.up()
+        self.page.wait_for_timeout(400)
+        self.assertTrue(sheet.is_visible())
+
+        self.page.mouse.click(2, 2)
+        expect(sheet).to_be_hidden()
 
     def test_season_progress_edit(self):
         """Test the progress edit of a season."""

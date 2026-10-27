@@ -1,0 +1,68 @@
+{# The dialog's sheet to log progress on `media`, a book or a game in progress, to go in the log dialog's host: the page a book is on, or the time played in a session. It opens the host (`logOpen`) once it has arrived, and posts to log_progress with the `carried` display state #}
+<div class="dialog-sheet" x-init="logOpen = true">
+  {% include "app/components/dialog_header.html" with title=media.item.title close="logOpen = false" %}
+  <form action="{% url 'log_progress' media_type media.id %}"
+        method="post"
+        hx-disabled-elt="find [type=submit]"
+        x-id="['log']"
+        x-data="logForm('{{ media_type }}'{% if total %}, {{ total }}{% endif %})"
+        @submit.prevent="submit()"
+        @htmx:after-request="if ($event.detail.successful) logOpen = false"
+        @htmx:response-error="showError($event.detail.xhr)"
+        class="flex min-h-0 flex-1 flex-col">
+    {% csrf_token %}
+    {% for name, value in carried.items %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+
+    <div class="dialog-body">
+      <div>
+        <label class="dialog-label" x-bind:for="$id('log')">
+          {% if media_type == "book" %}
+            I'm on page
+          {% else %}
+            Played for
+          {% endif %}
+        </label>
+        <div class="flex items-center gap-2">
+          <button type="button"
+                  aria-label="{% if media_type == 'book' %}Previous page{% else %}Half an hour less{% endif %}"
+                  class="dialog-chip flex size-9 items-center justify-center"
+                  @click="step(-1)">{% include "app/icons/minus.svg" with classes="size-4" %}</button>
+          {% if media_type == "book" %}
+            <input type="number"
+                   name="page"
+                   min="0"
+                   {% if total %}max="{{ total }}"{% endif %}
+                   inputmode="numeric"
+                   required
+                   value="{{ media.progress }}"
+                   x-ref="amount"
+                   x-bind:id="$id('log')"
+                   class="dialog-input w-24 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none">
+          {% else %}
+            <input type="text"
+                   name="played"
+                   required
+                   value="1h"
+                   x-ref="amount"
+                   x-bind:id="$id('log')"
+                   class="dialog-input w-36 text-center">
+          {% endif %}
+          <button type="button"
+                  aria-label="{% if media_type == 'book' %}Next page{% else %}Half an hour more{% endif %}"
+                  class="dialog-chip flex size-9 items-center justify-center"
+                  @click="step(1)">{% include "app/icons/plus.svg" with classes="size-4" %}</button>
+          {% if total %}<span class="text-sm text-gray-400">of {{ total }}</span>{% endif %}
+        </div>
+        {% if media_type == "game" %}<p class="mt-2 text-sm text-gray-400">Total so far: {{ media.formatted_progress }}</p>{% endif %}
+        <p x-cloak
+           x-show="error"
+           x-text="error"
+           class="mt-2 text-sm text-red-300"></p>
+      </div>
+    </div>
+
+    <div class="dialog-footer justify-end">
+      <button type="submit" class="dialog-primary">Save</button>
+    </div>
+  </form>
+</div>

@@ -1,8 +1,11 @@
 {% load widget_tweaks %}
 
 {# The dialog to create a list, or to edit or delete the list `custom_list`, opened by the `showModal` flag #}
-<div x-show="showModal" x-cloak class="dialog-backdrop">
-  <div @click.outside="showModal = false" class="dialog-box">
+<div x-show="showModal"
+     x-cloak
+     @dialog-dismiss="showModal = false"
+     class="dialog-backdrop">
+  <div class="dialog-box">
     <div class="dialog-sheet">
       {% if form.instance.pk %}
         {% include "app/components/dialog_header.html" with title="Edit List" close="showModal = false" %}

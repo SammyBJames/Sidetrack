@@ -10,8 +10,11 @@
           @click="editOpen = true">{% include "app/icons/edit.svg" with classes="size-4" %}</button>
 
   {# Edit form #}
-  <div x-cloak x-show="editOpen" class="dialog-backdrop">
-    <div class="dialog-box dialog-narrow" @click.outside="editOpen = false">
+  <div x-cloak
+       x-show="editOpen"
+       @dialog-dismiss="editOpen = false"
+       class="dialog-backdrop">
+    <div class="dialog-box dialog-narrow">
       <div class="dialog-sheet">
         {% include "app/components/dialog_header.html" with title="Edit Watch" close="editOpen = false" %}
         <form class="flex min-h-0 flex-1 flex-col"

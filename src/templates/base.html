@@ -249,6 +249,18 @@
       </div>
     {% endblock body %}
 
+    {# The dialog to log a book's page or a game's time. The buttons that open it fetch it into #log-dialog, and it opens itself once it has arrived (fill_log.html), so the form shown is always the one just fetched. It is out here so the cards they sit in can be re-rendered under it #}
+    <div x-data="{ logOpen: false }"
+         x-cloak
+         x-show="logOpen"
+         @keydown.escape.window="logOpen = false"
+         @dialog-dismiss="logOpen = false"
+         class="dialog-backdrop">
+      <div class="dialog-box dialog-narrow">
+        <div id="log-dialog"></div>
+      </div>
+    </div>
+
     <div class="fixed top-24 right-0 left-0 {% block messages_sidebar_offset %}lg:left-64{% endblock messages_sidebar_offset %} z-50 flex justify-center pointer-events-none">
       <div id="messages-list"
            class="w-full max-w-xl px-4 space-y-2 pointer-events-auto">
@@ -275,6 +287,9 @@
       }
     </script>
 
+    <script src="{% static 'js/dialogs.js' %}{% get_static_file_mtime 'js/dialogs.js' %}"></script>
+    <script src="{% static 'js/duration.js' %}{% get_static_file_mtime 'js/duration.js' %}"></script>
+    <script src="{% static 'js/logProgress.js' %}{% get_static_file_mtime 'js/logProgress.js' %}"></script>
     <script src="{% static 'js/mediaStatusDateHandler.js' %}{% get_static_file_mtime 'js/mediaStatusDateHandler.js' %}"></script>
     <script src="{% static 'js/searchShortcut.js' %}{% get_static_file_mtime 'js/searchShortcut.js' %}"></script>
     <script src="{% static 'js/scrollRow.js' %}{% get_static_file_mtime 'js/scrollRow.js' %}"></script>

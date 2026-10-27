@@ -174,22 +174,10 @@ if (!window.__mediaFormRegistered) {
       field.value = total ? Math.min(next, total) : next;
     },
 
-    // Add `delta` minutes (floored at 0) to a duration typed as "1h 30min", "1:30", "45min" or "1.5"
+    // Add `delta` minutes to the progress, a duration as typed in the form
     addMinutes(delta) {
-      const field = this.$refs.progress;
-      const text = field.value.trim();
-      let minutes = 0;
-      if (text) {
-        const clock = text.match(/^(\d+):(\d+)$/);
-        const words = text.match(/^(?:(\d+)\s*h)?\s*(?:(\d+)\s*min)?$/);
-        if (clock) minutes = clock[1] * 60 + +clock[2];
-        else if (words) minutes = (words[1] || 0) * 60 + +(words[2] || 0);
-        else if (!isNaN(text)) minutes = Math.round(text * 60);
-        else return;
-      }
-      minutes = Math.max(0, minutes + delta);
-      const hours = Math.floor(minutes / 60);
-      field.value = hours ? `${hours}h ${String(minutes % 60).padStart(2, "0")}min` : `${minutes}min`;
+      const next = window.addMinutesToText(this.$refs.progress.value, delta);
+      if (next) this.$refs.progress.value = next;
     },
 
     // Fill a date field with now, or empty it, as if the user had typed it

@@ -4,8 +4,9 @@
 <div x-cloak
      x-show="trackOpen"
      @keydown.escape.window="trackOpen = false"
+     @dialog-dismiss="trackOpen = false"
      class="dialog-backdrop">
-  <div class="dialog-box dialog-narrow" @click.outside="trackOpen = false">
+  <div class="dialog-box dialog-narrow">
     <div class="dialog-sheet">
       {% include "app/components/dialog_header.html" with title="Track Episode" close="trackOpen = false" %}
 
@@ -37,7 +38,11 @@
                 const [hh, mm] = time.split(':').map(Number);
                 return text + ', ' + new Date(y, m - 1, d, hh, mm).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
               },
-              init() { this.inputDateTime = this.localNow(); }
+              init() {
+                this.inputDateTime = this.localNow();
+                // Each opening starts as the first did, with the fold and menu shut
+                this.$watch('trackOpen', isOpen => { if (!isOpen) { this.open = false; this.dropdownOpen = false; } });
+              }
             }">
         {% csrf_token %}
         <input type="hidden" name="media_id" value="{{ media.media_id }}">

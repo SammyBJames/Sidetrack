@@ -1,7 +1,8 @@
 {% load app_tags l10n widget_tweaks %}
 
-{# The tracking dialog's sheet for an entry, to add or edit, which goes in a dialog-box. It posts the form's own fields to media_save and, with confirmation, to media_delete; the mediaForm component (mediaStatusDateHandler.js) runs the stars, stepper and date shortcuts #}
-<div class="dialog-sheet">
+{# The tracking dialog's sheet for an entry, to add or edit, which goes in a dialog-box and opens its host once it has arrived, so the old dialog never shows while the new one loads. It posts the form's own fields to media_save and, with confirmation, to media_delete; the mediaForm component (mediaStatusDateHandler.js) runs the stars, stepper and date shortcuts #}
+<div class="dialog-sheet"
+     x-init="{% if is_create %}createOpen{% else %}trackOpen{% endif %} = true">
   {% include "app/components/dialog_header.html" with title=title close="trackOpen = false; createOpen = false" %}
 
   <form hx-post="{% url 'media_save' %}?next={{ return_url }}"

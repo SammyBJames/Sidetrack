@@ -7,14 +7,16 @@
           aria-label="Edit entry"
           hx-get="{% media_view_url 'track_modal' media %}"
           hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}", "instance_id": "{{ entry.id }}"}'
-          hx-target="#{% component_id 'track' media entry.id %}"
-          @click="trackOpen = true">{% include "app/icons/edit.svg" with classes="size-4" %}</button>
+          hx-target="#{% component_id 'track' media entry.id %}">
+    {% include "app/icons/edit.svg" with classes="size-4" %}
+  </button>
 
   <div x-cloak
        x-show="trackOpen"
        @keydown.escape.window="trackOpen = false"
+       @dialog-dismiss="trackOpen = false"
        class="dialog-backdrop">
-    <div class="dialog-box" @click.outside="trackOpen = false">
+    <div class="dialog-box">
       <div id="{% component_id 'track' media entry.id %}"></div>
     </div>
   </div>

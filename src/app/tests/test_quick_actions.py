@@ -214,9 +214,11 @@ class GetQuickActionTests(TestCase):
         """Finished media of any type offers a rewatch, in its own words."""
         labels = {
             MediaTypes.MOVIE.value: ("Plan to rewatch", "Mark rewatched"),
-            MediaTypes.BOOK.value: ("Plan to reread", "Mark reread"),
-            MediaTypes.GAME.value: ("Plan to replay", "Mark replayed"),
+            MediaTypes.BOOK.value: ("Plan to reread", "Start rereading"),
+            MediaTypes.GAME.value: ("Plan to replay", "Start replaying"),
         }
+        # A book or game is repeated in sittings, so its plan starts the repeat
+        started = {MediaTypes.BOOK.value, MediaTypes.GAME.value}
         for media_type, (plan, mark) in labels.items():
             action = quick_actions.get_quick_action(
                 media_type,
@@ -230,9 +232,29 @@ class GetQuickActionTests(TestCase):
                 media_type,
                 entry(Status.PLANNING_REPEAT.value),
             )
+            if media_type in started:
+                expected = (quick_actions.START_REPEAT, Status.REPEATING.value)
+            else:
+                expected = (quick_actions.REPEAT, Status.COMPLETED.value)
             self.assertEqual(
                 (action.key, action.label, action.target_status),
-                (quick_actions.REPEAT, mark, Status.COMPLETED.value),
+                (expected[0], mark, expected[1]),
+            )
+
+    def test_a_started_reread_logs_and_finishes_as_a_repeat(self):
+        """A book or game being repeated logs progress, and is finished as a repeat."""
+        for media_type, logged, finish in (
+            (MediaTypes.BOOK.value, "Log pages", "Mark reread"),
+            (MediaTypes.GAME.value, "Log time", "Mark replayed"),
+        ):
+            media = entry(Status.REPEATING.value)
+            action = quick_actions.get_quick_action(media_type, media)
+            self.assertEqual((action.key, action.label), (quick_actions.LOG, logged))
+            self.assertEqual(action.target_status, Status.REPEATING.value)
+            finish_action = quick_actions.get_finish_action(media_type, media)
+            self.assertEqual(
+                (finish_action.key, finish_action.label),
+                (quick_actions.REPEAT, finish),
             )
 
     def test_rewatch_in_progress_goes_on_as_one(self):

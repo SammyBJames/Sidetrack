@@ -46,9 +46,9 @@
                   title="Add to tracker"
                   hx-get="{% media_view_url 'track_modal' item %}"
                   hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}", "instance_id": "{{ media.id }}"}'
-                  hx-target="#{% component_id 'track' item media.id %}"
-                  hx-trigger="click once"
-                  @click="trackOpen = true">{% include "app/icons/edit.svg" with classes="w-4 h-4" %}</button>
+                  hx-target="#{% component_id 'track' item media.id %}">
+            {% include "app/icons/edit.svg" with classes="w-4 h-4" %}
+          </button>
 
           {# Lists Button #}
           <button class="p-2.5 bg-emerald-600 text-white rounded-full hover:bg-emerald-500 hover:scale-110 hover:shadow-[0_0_15px_rgba(16,185,129,0.5)] transition-all duration-200 cursor-pointer"
@@ -79,8 +79,9 @@
     <div x-cloak
          x-show="trackOpen"
          @keydown.escape.window="trackOpen = false"
+         @dialog-dismiss="trackOpen = false"
          class="dialog-backdrop">
-      <div class="dialog-box" @click.outside="trackOpen = false">
+      <div class="dialog-box">
         <div id="{% component_id 'track' item media.id %}"></div>
       </div>
     </div>
@@ -90,8 +91,9 @@
   <div x-cloak
        x-show="listsOpen"
        @keydown.escape.window="listsOpen = false"
+       @dialog-dismiss="listsOpen = false"
        class="dialog-backdrop">
-    <div class="dialog-box dialog-narrow" @click.outside="listsOpen = false">
+    <div class="dialog-box dialog-narrow">
       <div id="{% component_id 'lists' item %}"></div>
     </div>
   </div>
@@ -100,8 +102,9 @@
   <div x-cloak
        x-show="historyOpen"
        @keydown.escape.window="historyOpen = false"
+       @dialog-dismiss="historyOpen = false"
        class="dialog-backdrop">
-    <div class="dialog-box dialog-narrow" @click.outside="historyOpen = false">
+    <div class="dialog-box dialog-narrow">
       <div id="{% component_id 'history' item %}"></div>
     </div>
   </div>

@@ -20,6 +20,7 @@ NEXT = "next"
 PLAN_REPEAT = "plan_repeat"
 REPEAT = "repeat"
 LOG = "log"
+START_REPEAT = "start_repeat"
 
 # Media that is usually finished in one sitting, so planning leads to completing
 SINGLE_SITTING_TYPES = {MediaTypes.MOVIE.value}
@@ -84,6 +85,12 @@ ACTIONS = {
         "Mark re{past}",
         "app/icons/states/completed.svg",
         Status.COMPLETED.value,
+    ),
+    # Starts the repeat of a book or game, which then logs its progress
+    START_REPEAT: (
+        "Start re{verb}ing",
+        "app/icons/states/repeating.svg",
+        Status.REPEATING.value,
     ),
     # Not one click: it asks for the page or time, and keeps the status
     LOG: ("Log {logged}", "app/icons/edit.svg", Status.IN_PROGRESS.value),
@@ -182,7 +189,10 @@ def _action_key(media_type, media):
         return COMPLETE if media_type in SINGLE_SITTING_TYPES else START
     return {
         Status.COMPLETED.value: PLAN_REPEAT,
-        Status.PLANNING_REPEAT.value: REPEAT,
+        # Books and games are read or played again in sittings, which are logged
+        Status.PLANNING_REPEAT.value: (
+            START_REPEAT if media_type in LOGGED_TYPES else REPEAT
+        ),
         Status.PAUSED.value: RESUME,
     }.get(status)
 
@@ -249,6 +259,7 @@ def apply_quick_action(action, media):
     media.status = action.target_status
     date_field = {
         START: "start_date",
+        START_REPEAT: "start_date",
         RESUME: "start_date",
         COMPLETE: "end_date",
         REPEAT: "end_date",
@@ -335,6 +346,7 @@ def success_message(action, media):
             else f"{media.item} added to Planning."
         ),
         START: f"Started {verb}ing {media.item}.",
+        START_REPEAT: f"Started re{verb}ing {media.item}.",
         RESUME: f"Resumed {verb}ing {media.item}.",
         COMPLETE: f"{media.item} marked as {past}.",
         NEXT: f"{media.item} progress updated.",

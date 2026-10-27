@@ -101,12 +101,16 @@
                     aria-label="{% if current_instance %}Edit tracking{% else %}Add to tracker{% endif %}"
                     hx-get="{% media_view_url 'track_modal' media %}"
                     hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}", "instance_id": "{{ current_instance.id }}"}'
-                    hx-target="#{% component_id 'track' media current_instance.id %}"
-                    @click="trackOpen = true">{% include "app/icons/edit.svg" with classes="size-4" %}</button>
+                    hx-target="#{% component_id 'track' media current_instance.id %}">
+              {% include "app/icons/edit.svg" with classes="size-4" %}
+            </button>
 
-            <div x-cloak x-show="trackOpen" class="dialog-backdrop">
+            <div x-cloak
+                 x-show="trackOpen"
+                 @dialog-dismiss="trackOpen = false"
+                 class="dialog-backdrop">
               {# Stops clicks from reaching the buttons, which would reload the form #}
-              <div class="dialog-box" @click.outside="trackOpen = false" @click.stop>
+              <div class="dialog-box" @click.stop>
                 <div id="{% component_id 'track' media current_instance.id %}"></div>
               </div>
             </div>
@@ -126,8 +130,11 @@
                   {% include "app/icons/circle-plus.svg" with classes="size-4" %}
                 </button>
 
-                <div x-cloak x-show="createOpen" class="dialog-backdrop">
-                  <div class="dialog-box" @click.outside="createOpen = false">
+                <div x-cloak
+                     x-show="createOpen"
+                     @dialog-dismiss="createOpen = false"
+                     class="dialog-backdrop">
+                  <div class="dialog-box">
                     <div id="{% component_id 'track' media %}"></div>
                   </div>
                 </div>

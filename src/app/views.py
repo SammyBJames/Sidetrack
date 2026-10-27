@@ -885,6 +885,7 @@ def track_modal(
             "form": form,
             "media": media,
             "media_type": media_type,
+            "is_create": bool(request.GET.get("is_create")),
             "progress_total": total if counted else None,
             "progress_unit": f"{config.get_unit(media_type, short=False)}s"
             if counted
@@ -1060,6 +1061,46 @@ def _list_card_response(request, media_type, media):
         return response
 
     return _quick_action_card(request, media_type, media.id)
+
+
+@require_GET
+def log_modal(request, media_type, instance_id):
+    """Return the dialog to log a book's page or a game session for an entry.
+
+    The `card` the dialog was opened from, and the display state its response
+    needs (`title`, `release_year`, `active`, `home_status`, `status`, `sort`),
+    are carried in the query and posted back with the log.
+    """
+    if media_type not in quick_actions.LOGGED_TYPES:
+        return HttpResponseBadRequest("Only books and games log progress.")
+    media = helpers.get_owned_media_or_404(request, media_type, instance_id)
+    action = quick_actions.get_quick_action(media_type, media)
+    if action is None or action.key != quick_actions.LOG:
+        return _stale_response(request)
+
+    carried = (
+        "card",
+        "title",
+        "release_year",
+        "active",
+        "home_status",
+        "status",
+        "sort",
+    )
+    return render(
+        request,
+        "app/components/fill_log.html",
+        {
+            "media": media,
+            "media_type": media_type,
+            "total": (
+                quick_actions.book_total(media)
+                if media_type == MediaTypes.BOOK.value
+                else None
+            ),
+            "carried": {key: request.GET[key] for key in carried if key in request.GET},
+        },
+    )
 
 
 @require_POST

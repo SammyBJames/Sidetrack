@@ -11,6 +11,7 @@ from app import quick_actions
 from app.models import (
     TV,
     Anime,
+    Book,
     Game,
     Item,
     MediaTypes,
@@ -744,6 +745,35 @@ class QuickActionViewTests(TestCase):
             [Status.COMPLETED.value, Status.PLANNING_REPEAT.value],
         )
         self.assertContains(response, "This entry has already changed")
+
+    @patch("app.providers.services.get_media_metadata")
+    def test_planned_reread_is_started_not_finished(self, mock_metadata):
+        """A planned reread of a book starts as a repeat, ready for logging."""
+        mock_metadata.return_value = {"max_progress": None}
+        item = Item.objects.create(
+            media_id="3",
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.BOOK.value,
+            title="Test Book",
+            image="http://example.com/book.jpg",
+        )
+        book = Book.objects.create(
+            item=item,
+            user=self.user,
+            status=Status.PLANNING_REPEAT.value,
+        )
+
+        response = self.post(
+            item,
+            quick_actions.START_REPEAT,
+            instance_id=book.id,
+        )
+
+        book.refresh_from_db()
+        self.assertEqual(book.status, Status.REPEATING.value)
+        self.assertIsNotNone(book.start_date)
+        self.assertContains(response, "Started rereading Test Book.")
+        self.assertContains(response, "Log pages")
 
     def test_planned_rewatch_leaves_the_completed_list(self):
         """A rewatch planned from the completed list moves its card out of it."""
