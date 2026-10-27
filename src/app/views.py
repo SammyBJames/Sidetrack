@@ -840,21 +840,29 @@ def track_modal(
         "instance_id": instance_id,
     }
 
+    # What progress counts up to, from what is already known: a saved item's
+    # length, or the metadata fetched for the title of a new entry
+    total = None
     if media:
         title = media.item
+        total = media.item.length
         if media_type == MediaTypes.GAME.value:
             initial_data["progress"] = helpers.minutes_to_hhmm(media.progress)
     else:
-        title = services.get_media_metadata(
+        metadata = services.get_media_metadata(
             media_type,
             media_id,
             source,
             [season_number],
-        )["title"]
+        )
+        title = metadata["title"]
+        total = metadata.get("max_progress")
         if media_type == MediaTypes.SEASON.value:
             title += f" S{season_number}"
 
     form = get_form_class(media_type)(instance=media, initial=initial_data)
+    # Games count time and movies nothing, so only the counted types have a total
+    counted = "progress" in form.fields and media_type != MediaTypes.GAME.value
 
     return render(
         request,
@@ -863,6 +871,11 @@ def track_modal(
             "title": title,
             "form": form,
             "media": media,
+            "media_type": media_type,
+            "progress_total": total if counted else None,
+            "progress_unit": f"{config.get_unit(media_type, short=False)}s"
+            if counted
+            else "",
             "return_url": request.GET["return_url"],
         },
     )

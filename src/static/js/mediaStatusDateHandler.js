@@ -2,7 +2,14 @@
 if (!window.__mediaFormRegistered) {
   window.__mediaFormRegistered = true;
   document.addEventListener("alpine:init", () => {
-  Alpine.data("mediaForm", () => ({
+  // The tracking form: auto-filled dates, a star rating out of ten in halves of a point
+  // (`score`), a progress stepper up to `total` if known, and Today/Clear for dates.
+  Alpine.data("mediaForm", (score = null, total = null) => ({
+    score,
+    hovered: null,
+    // The "Dates & notes" row: whether it is open and what the fields hold
+    open: false,
+    extra: { start_date: "", end_date: "", notes: "" },
     autoFilled: {
       start_date: false,
       end_date: false,
@@ -14,8 +21,15 @@ if (!window.__mediaFormRegistered) {
       end_date: null,
     },
 
+    // Wire the status radios to the auto-filled dates and seed `extra`
     init() {
-      const statusField = this.$el.querySelector('[name="status"]');
+      // Status is a group of radios; its current value is the checked one
+      const root = this.$el;
+      const statusField = {
+        get value() {
+          return root.querySelector('[name="status"]:checked')?.value;
+        },
+      };
       const endDateField = this.$el.querySelector('[name="end_date"]');
       const startDateField = this.$el.querySelector('[name="start_date"]');
       const instanceIdField = this.$el.querySelector('[name="instance_id"]');
@@ -59,7 +73,8 @@ if (!window.__mediaFormRegistered) {
 
       // Status change handler
       if (statusField) {
-        statusField.addEventListener("change", (e) => {
+        this.$el.addEventListener("change", (e) => {
+          if (e.target.name !== "status") return;
           const status = e.target.value;
 
           // Clear previously auto-filled fields when status changes
@@ -113,6 +128,83 @@ if (!window.__mediaFormRegistered) {
           this.syncOptionalDateField(endDateField);
         });
       }
+      this.syncExtra();
+    },
+
+    // Copy the dates and notes into `extra`, which the row's summary follows
+    syncExtra() {
+      for (const name of Object.keys(this.extra)) {
+        this.extra[name] = this.$root.querySelector(`[name="${name}"]`)?.value ?? "";
+      }
+    },
+
+    // A date field's value as "Mar 1", with the year when it isn't this year's
+    shortDate(value) {
+      const [year, month, day] = value.slice(0, 10).split("-").map(Number);
+      const options = { month: "short", day: "numeric" };
+      if (year !== new Date().getFullYear()) options.year = "numeric";
+      return new Date(year, month - 1, day).toLocaleDateString(undefined, options);
+    },
+
+    // One line naming the dates and notes set, or "None"; shown on the row when closed
+    get summary() {
+      const { start_date: start, end_date: end, notes } = this.extra;
+      const parts = [
+        start && `Started ${this.shortDate(start)}`,
+        end && `Finished ${this.shortDate(end)}`,
+        notes.trim() && "Notes",
+      ].filter(Boolean);
+      return parts.join(" \u00b7 ") || "None";
+    },
+
+    // Whether the "Dates & notes" row holds anything
+    get active() {
+      return this.summary !== "None";
+    },
+
+    // How full a star is, as a percentage, for the hovered rating or else the form's
+    fill(star) {
+      const value = this.hovered ?? this.score ?? 0;
+      return value >= star * 2 ? 100 : value >= star * 2 - 1 ? 50 : 0;
+    },
+
+    // Choosing the current rating again clears it (rating_stars.html calls this)
+    setRating(value) {
+      this.score = this.score === value ? null : value;
+      this.hovered = null;
+    },
+
+    // Step the progress by `delta`, from 0 up to the total when there is one
+    bump(delta) {
+      const field = this.$refs.progress;
+      const next = Math.max(0, (parseInt(field.value, 10) || 0) + delta);
+      field.value = total ? Math.min(next, total) : next;
+    },
+
+    // Add `delta` minutes to a duration typed as "1h 30min", "1:30", "45min" or "1.5"
+    addMinutes(delta) {
+      const field = this.$refs.progress;
+      const text = field.value.trim();
+      let minutes = 0;
+      if (text) {
+        const clock = text.match(/^(\d+):(\d+)$/);
+        const words = text.match(/^(?:(\d+)\s*h)?\s*(?:(\d+)\s*min)?$/);
+        if (clock) minutes = clock[1] * 60 + +clock[2];
+        else if (words) minutes = (words[1] || 0) * 60 + +(words[2] || 0);
+        else if (!isNaN(text)) minutes = Math.round(text * 60);
+        else return;
+      }
+      minutes += delta;
+      const hours = Math.floor(minutes / 60);
+      field.value = hours ? `${hours}h ${String(minutes % 60).padStart(2, "0")}min` : `${minutes}min`;
+    },
+
+    // Fill a date field with now, or empty it, as if the user had typed it
+    setDate(name, now) {
+      const field = this.$root.querySelector(`[name="${name}"]`);
+      this.setDateFieldValue(field, now ? this.getCurrentDateTime(field) : "");
+      // A date set by hand is no longer one to clear when the status changes
+      if (this.autoFilled[name]) this.autoFilled[name] = false;
     },
 
     setDateFieldValue(field, value) {

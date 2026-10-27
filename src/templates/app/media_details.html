@@ -104,13 +104,9 @@
                     hx-target="#{% component_id 'track' media current_instance.id %}"
                     @click="trackOpen = true">{% include "app/icons/edit.svg" with classes="size-4" %}</button>
 
-            <div x-cloak
-                 x-show="trackOpen"
-                 class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div x-cloak x-show="trackOpen" class="dialog-backdrop">
               {# Stops clicks from reaching the buttons, which would reload the form #}
-              <div class="relative z-60 max-h-[90vh] w-152 px-4 md:px-0"
-                   @click.outside="trackOpen = false"
-                   @click.stop>
+              <div class="dialog-box" @click.outside="trackOpen = false" @click.stop>
                 <div id="{% component_id 'track' media current_instance.id %}"></div>
               </div>
             </div>
@@ -130,11 +126,8 @@
                   {% include "app/icons/circle-plus.svg" with classes="size-4" %}
                 </button>
 
-                <div x-cloak
-                     x-show="createOpen"
-                     class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-                  <div class="relative z-60 max-h-[90vh] w-152 px-4 md:px-0"
-                       @click.outside="createOpen = false">
+                <div x-cloak x-show="createOpen" class="dialog-backdrop">
+                  <div class="dialog-box" @click.outside="createOpen = false">
                     <div id="{% component_id 'track' media %}"></div>
                   </div>
                 </div>

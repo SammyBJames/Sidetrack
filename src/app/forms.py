@@ -18,6 +18,7 @@ from app.models import (
     Movie,
     Season,
     Sources,
+    Status,
 )
 
 
@@ -207,12 +208,21 @@ class MediaForm(forms.ModelForm):
     media_id = forms.CharField(widget=forms.HiddenInput(), required=True)
 
     def __init__(self, *args, **kwargs):
-        """Name the statuses in the words of the form's media type."""
+        """Order the statuses by lifecycle, in the words of the form's media type."""
         super().__init__(*args, **kwargs)
         media_type = self._meta.model._meta.model_name
+        order = [
+            Status.PLANNING,
+            Status.IN_PROGRESS,
+            Status.COMPLETED,
+            Status.PAUSED,
+            Status.DROPPED,
+            Status.REPEATING,
+            Status.PLANNING_REPEAT,
+        ]
         self.fields["status"].choices = [
-            (value, config.get_status_label(value, media_type))
-            for value, _ in self.fields["status"].choices
+            (status.value, config.get_status_label(status.value, media_type))
+            for status in order
         ]
 
     class Meta:

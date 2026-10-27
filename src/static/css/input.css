@@ -106,6 +106,45 @@
   @apply rounded-xl bg-surface-800/80 shadow-lg ring-1 shadow-black/30 ring-white/10;
 }
 
+/* The dialog shell, for every dialog. A host element holding the open flag takes dialog-backdrop and a dialog-box inside it, which holds a dialog-sheet: a header, then a body that scrolls and a footer that stays (the last two usually inside one form). A bottom sheet on phones, centered from sm up */
+@utility dialog-backdrop {
+  @apply fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center sm:p-4;
+}
+
+@utility dialog-box {
+  @apply relative z-60 w-full sm:max-w-152;
+}
+
+@utility dialog-sheet {
+  @apply flex max-h-[90svh] min-h-0 flex-col rounded-t-2xl text-left bg-surface-800 shadow-2xl ring-1 shadow-black/50 ring-white/10 sm:rounded-2xl;
+}
+
+@utility dialog-header {
+  @apply flex shrink-0 items-center justify-between gap-3 px-5 pt-4 pb-2;
+}
+
+@utility dialog-body {
+  @apply min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-5 py-3;
+}
+
+@utility dialog-footer {
+  @apply flex shrink-0 items-center justify-between gap-3 border-t border-white/10 px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))];
+}
+
+/* A dialog's text, number, date and notes inputs, and the small label above each */
+@utility dialog-input {
+  @apply w-full rounded-lg bg-white/5 px-3 py-2 text-sm text-white ring-1 ring-white/10 placeholder:text-gray-500 focus:ring-2 focus:ring-indigo-400 focus:outline-none [color-scheme:dark];
+}
+
+@utility dialog-label {
+  @apply mb-1.5 block text-[0.6875rem] font-semibold tracking-wide text-gray-400 uppercase;
+}
+
+/* A small quick-set button beside an input, e.g. Today or +30m */
+@utility dialog-chip {
+  @apply cursor-pointer rounded-lg bg-white/5 px-2.5 py-1 text-xs font-medium text-gray-300 ring-1 ring-white/10 transition-colors hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none;
+}
+
 /* A label under a button, from its data-tooltip, shown on hover or keyboard focus */
 @utility tooltip {
   @apply relative after:pointer-events-none after:absolute after:top-full after:left-1/2 after:z-20 after:mt-2 after:-translate-x-1/2 after:rounded-lg after:bg-surface-950 after:px-2.5 after:py-1 after:text-xs after:font-medium after:whitespace-nowrap after:text-gray-100 after:opacity-0 after:shadow-lg after:ring-1 after:ring-white/10 after:transition-opacity after:content-[attr(data-tooltip)] can-hover:hover:after:opacity-100 focus-visible:after:opacity-100;

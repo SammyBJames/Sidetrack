@@ -1,3 +1,4 @@
+import re
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -5,6 +6,8 @@ from django.test import TestCase
 from django.urls import reverse
 
 from app.models import (
+    Book,
+    Game,
     Item,
     MediaTypes,
     Movie,
@@ -91,3 +94,201 @@ class TrackModalViewTests(TestCase):
             response.context["form"].initial["media_type"],
             MediaTypes.MOVIE.value,
         )
+
+
+class TrackModalDialogTests(TestCase):
+    """Test the controls the tracking dialog draws for each form."""
+
+    def setUp(self):
+        """Create a user and log in."""
+        self.credentials = {"username": "test", "password": "12345"}
+        self.user = get_user_model().objects.create_user(**self.credentials)
+        self.client.login(**self.credentials)
+
+    def get_dialog(self, media_type, media_id="1", source=Sources.MAL.value, **query):
+        """Fetch the dialog to add an entry of a type, or edit with `instance_id`."""
+        query = {"return_url": "/home", "is_create": "1", **query}
+        kwargs = {"source": source, "media_type": media_type, "media_id": media_id}
+        if media_type == MediaTypes.SEASON.value:
+            kwargs["season_number"] = 1
+        with patch("app.providers.services.get_media_metadata") as metadata:
+            metadata.return_value = {"title": "Title", "max_progress": 412}
+            return self.client.get(reverse("track_modal", kwargs=kwargs), query)
+
+    def test_every_form_has_status_chips_in_the_types_words(self):
+        """Each form's status is a radio group, and its chips are named for the type."""
+        for media_type in (
+            MediaTypes.MOVIE,
+            MediaTypes.TV,
+            MediaTypes.SEASON,
+            MediaTypes.ANIME,
+            MediaTypes.MANGA,
+            MediaTypes.BOOK,
+            MediaTypes.COMIC,
+            MediaTypes.BOARDGAME,
+            MediaTypes.GAME,
+        ):
+            with self.subTest(media_type=media_type.value):
+                response = self.get_dialog(media_type.value)
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, 'type="radio"', count=7)
+                self.assertContains(response, 'name="status"', count=7)
+                self.assertContains(response, 'name="score"')
+                self.assertContains(response, "track-extra")
+                self.assertContains(response, "dialog-sheet")
+
+    def test_status_chips_follow_the_lifecycle(self):
+        """Chips run Planning to Dropped, then the repeat statuses."""
+        content = self.get_dialog(MediaTypes.BOOK.value).content.decode()
+        values = re.findall(r'name="status"\s+value="([^"]+)"', content)
+
+        self.assertEqual(
+            values,
+            [
+                "Planning",
+                "In progress",
+                "Completed",
+                "Paused",
+                "Dropped",
+                "Repeating",
+                "Planning repeat",
+            ],
+        )
+
+    def test_repeating_chip_uses_the_types_verb(self):
+        """The repeat chip says Rereading for a book."""
+        response = self.get_dialog(MediaTypes.BOOK.value)
+
+        self.assertContains(response, "Rereading")
+        self.assertNotContains(response, ">Repeating<")
+
+    def test_field_sets_follow_the_form(self):
+        """Progress and dates show only where the form has them."""
+        expected = {
+            MediaTypes.MOVIE.value: (False, True),
+            MediaTypes.TV.value: (False, False),
+            MediaTypes.SEASON.value: (False, False),
+            MediaTypes.ANIME.value: (True, True),
+        }
+        for media_type, (has_progress, has_dates) in expected.items():
+            with self.subTest(media_type=media_type):
+                response = self.get_dialog(media_type)
+                self.assertEqual(
+                    'name="progress"' in response.content.decode(),
+                    has_progress,
+                )
+                self.assertEqual(
+                    'name="start_date"' in response.content.decode(),
+                    has_dates,
+                )
+                self.assertContains(response, 'name="notes"')
+
+    def test_new_entry_stepper_shows_the_total_from_metadata(self):
+        """A new book's stepper names the pages it counts up to."""
+        response = self.get_dialog(
+            MediaTypes.BOOK.value, source=Sources.OPENLIBRARY.value
+        )
+
+        self.assertContains(response, "/ 412 pages")
+        self.assertContains(response, "mediaForm(null, 412)")
+        self.assertContains(response, "bump(1)")
+        self.assertRegex(response.content.decode(), r">\s*Add\s*<")
+        self.assertNotContains(response, "Delete")
+
+    def test_edit_shows_total_from_the_item_length_and_the_score(self):
+        """An existing book shows Item.length as its total and its score."""
+        item = Item.objects.create(
+            media_id="b1",
+            source=Sources.OPENLIBRARY.value,
+            media_type=MediaTypes.BOOK.value,
+            title="Book",
+            image="http://example.com/image.jpg",
+            length=300,
+        )
+        with patch("app.providers.services.get_media_metadata") as metadata:
+            metadata.return_value = {"max_progress": 300}
+            book = Book.objects.create(
+                item=item,
+                user=self.user,
+                status=Status.IN_PROGRESS.value,
+                progress=120,
+                score=7.5,
+            )
+
+        response = self.client.get(
+            reverse(
+                "track_modal",
+                kwargs={
+                    "source": Sources.OPENLIBRARY.value,
+                    "media_type": MediaTypes.BOOK.value,
+                    "media_id": "b1",
+                },
+            ),
+            {"return_url": "/home", "instance_id": book.id},
+        )
+
+        self.assertContains(response, "/ 300 pages")
+        self.assertContains(response, "mediaForm(7.5, 300)")
+        self.assertRegex(response.content.decode(), r'value="In progress"\s+checked')
+        self.assertContains(response, 'value="120"')
+        self.assertRegex(response.content.decode(), r">\s*Save\s*<")
+
+    def test_edit_can_delete_only_after_confirming(self):
+        """The delete button of an existing entry asks first and never submits."""
+        response = self.client.get(
+            reverse(
+                "track_modal",
+                kwargs={
+                    "source": Sources.TMDB.value,
+                    "media_type": MediaTypes.MOVIE.value,
+                    "media_id": "238",
+                },
+            ),
+            {"return_url": "/home", "instance_id": self.make_movie().id},
+        )
+
+        self.assertContains(response, "hx-confirm=")
+        self.assertContains(response, reverse("media_delete"))
+        self.assertNotContains(response, "bump(")
+
+    def make_movie(self):
+        """Create a movie entry for the user."""
+        item = Item.objects.create(
+            media_id="238",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.MOVIE.value,
+            title="Movie",
+            image="http://example.com/image.jpg",
+        )
+        return Movie.objects.create(item=item, user=self.user)
+
+    def test_game_keeps_the_duration_text_input_with_chips(self):
+        """A game's progress is the duration text, with quick chips, and no stepper."""
+        item = Item.objects.create(
+            media_id="g1",
+            source=Sources.IGDB.value,
+            media_type=MediaTypes.GAME.value,
+            title="Game",
+            image="http://example.com/image.jpg",
+        )
+        with patch("app.providers.services.get_media_metadata") as metadata:
+            metadata.return_value = {"max_progress": None}
+            game = Game.objects.create(item=item, user=self.user, progress=307)
+
+        response = self.client.get(
+            reverse(
+                "track_modal",
+                kwargs={
+                    "source": Sources.IGDB.value,
+                    "media_type": MediaTypes.GAME.value,
+                    "media_id": "g1",
+                },
+            ),
+            {"return_url": "/home", "instance_id": game.id},
+        )
+
+        self.assertContains(response, 'value="5h 07min"')
+        self.assertContains(response, "addMinutes(30)")
+        self.assertContains(response, "addMinutes(60)")
+        self.assertNotContains(response, "bump(")
+        self.assertContains(response, "mediaForm(null, null)")
