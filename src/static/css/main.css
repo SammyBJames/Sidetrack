@@ -2800,9 +2800,9 @@
     content: var(--tw-content);
     position: absolute;
   }
-  .after\:top-1\/2::after {
+  .after\:inset-0::after {
     content: var(--tw-content);
-    top: calc(1 / 2 * 100%);
+    inset: 0px;
   }
   .after\:top-auto::after {
     content: var(--tw-content);
@@ -2812,10 +2812,6 @@
     content: var(--tw-content);
     top: 1px;
   }
-  .after\:right-full::after {
-    content: var(--tw-content);
-    right: 100%;
-  }
   .after\:bottom-full::after {
     content: var(--tw-content);
     bottom: 100%;
@@ -2824,17 +2820,9 @@
     content: var(--tw-content);
     left: calc(var(--spacing) * 0.5);
   }
-  .after\:left-auto::after {
-    content: var(--tw-content);
-    left: auto;
-  }
   .after\:mt-0::after {
     content: var(--tw-content);
     margin-top: 0px;
-  }
-  .after\:mr-2::after {
-    content: var(--tw-content);
-    margin-right: calc(var(--spacing) * 2);
   }
   .after\:mb-2::after {
     content: var(--tw-content);
@@ -2851,16 +2839,6 @@
   .after\:w-4\.5::after {
     content: var(--tw-content);
     width: calc(var(--spacing) * 4.5);
-  }
-  .after\:translate-x-0::after {
-    content: var(--tw-content);
-    --tw-translate-x: 0px;
-    translate: var(--tw-translate-x) var(--tw-translate-y);
-  }
-  .after\:-translate-y-1\/2::after {
-    content: var(--tw-content);
-    --tw-translate-y: calc(calc(1 / 2 * 100%) * -1);
-    translate: var(--tw-translate-x) var(--tw-translate-y);
   }
   .after\:rounded-full::after {
     content: var(--tw-content);
@@ -3225,6 +3203,23 @@
     --tw-outline-style: none;
     outline-style: none;
   }
+  .focus-visible\:after\:rounded-sm:focus-visible::after {
+    content: var(--tw-content);
+    border-radius: var(--radius-sm);
+  }
+  .focus-visible\:after\:ring-2:focus-visible::after {
+    content: var(--tw-content);
+    --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color, currentcolor);
+    box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
+  }
+  .focus-visible\:after\:ring-indigo-400:focus-visible::after {
+    content: var(--tw-content);
+    --tw-ring-color: var(--color-indigo-400);
+  }
+  .focus-visible\:after\:ring-inset:focus-visible::after {
+    content: var(--tw-content);
+    --tw-ring-inset: inset;
+  }
   .disabled\:cursor-default:disabled {
     cursor: default;
   }
@@ -3285,14 +3280,14 @@
     .sm\:flex {
       display: flex;
     }
-    .sm\:inline {
-      display: inline;
-    }
     .sm\:aspect-auto {
       aspect-ratio: auto;
     }
     .sm\:min-h-36 {
       min-height: calc(var(--spacing) * 36);
+    }
+    .sm\:w-44 {
+      width: calc(var(--spacing) * 44);
     }
     .sm\:w-64 {
       width: calc(var(--spacing) * 64);
@@ -3332,9 +3327,6 @@
     }
     .sm\:px-0 {
       padding-inline: 0px;
-    }
-    .sm\:px-3 {
-      padding-inline: calc(var(--spacing) * 3);
     }
     .sm\:px-6 {
       padding-inline: calc(var(--spacing) * 6);
@@ -3587,17 +3579,20 @@
     .xl\:hidden {
       display: none;
     }
+    .xl\:w-auto {
+      width: auto;
+    }
     .xl\:min-w-0 {
       min-width: 0px;
     }
     .xl\:grid-cols-4 {
       grid-template-columns: repeat(4, minmax(0, 1fr));
     }
-    .xl\:grid-cols-\[3rem_minmax\(0\,1fr\)_9rem_4\.5rem_10rem_2rem\] {
-      grid-template-columns: 3rem minmax(0,1fr) 9rem 4.5rem 10rem 2rem;
+    .xl\:grid-cols-\[3rem_minmax\(0\,1fr\)_9rem_4\.5rem_10rem_11rem\] {
+      grid-template-columns: 3rem minmax(0,1fr) 9rem 4.5rem 10rem 11rem;
     }
-    .xl\:grid-cols-\[3rem_minmax\(0\,1fr\)_9rem_10rem_4\.5rem_10rem_2rem\] {
-      grid-template-columns: 3rem minmax(0,1fr) 9rem 10rem 4.5rem 10rem 2rem;
+    .xl\:grid-cols-\[3rem_minmax\(0\,1fr\)_9rem_10rem_4\.5rem_10rem_11rem\] {
+      grid-template-columns: 3rem minmax(0,1fr) 9rem 10rem 4.5rem 10rem 11rem;
     }
     .xl\:grid-cols-\[minmax\(0\,1fr\)_22rem\] {
       grid-template-columns: minmax(0,1fr) 22rem;
@@ -3672,6 +3667,9 @@
     --tw-scale-y: 110%;
     --tw-scale-z: 110%;
     scale: var(--tw-scale-x) var(--tw-scale-y);
+  }
+  .hover-tap:hover .parent-hover-tap\:text-indigo-300 {
+    color: var(--color-indigo-300);
   }
   .hover-tap:hover .parent-hover-tap\:shadow-black\/60 {
     --tw-shadow-color: color-mix(in srgb, #000 60%, transparent);
@@ -3765,6 +3763,30 @@
 }
 .clip-half {
   clip-path: inset(0 50% 0 0);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.15) transparent;
+}
+*:hover {
+  scrollbar-color: rgb(255 255 255 / 0.3) transparent;
+}
+@supports not (scrollbar-color: auto) {
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background: rgb(255 255 255 / 0.15) padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(255 255 255 / 0.3);
+  }
 }
 .scrollbar-hide {
   -ms-overflow-style: none;

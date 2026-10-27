@@ -42,6 +42,34 @@
   clip-path: inset(0 50% 0 0);
 }
 
+/* Slim, translucent scrollbars that sit on the dark surfaces, everywhere
+   that scrolls. Browsers without scrollbar-color (Safari) get the same look
+   through the WebKit pseudo-elements. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.15) transparent;
+}
+*:hover {
+  scrollbar-color: rgb(255 255 255 / 0.3) transparent;
+}
+@supports not (scrollbar-color: auto) {
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background: rgb(255 255 255 / 0.15) padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(255 255 255 / 0.3);
+  }
+}
+
 /* Keep horizontal scrolling but hide the scrollbar so it doesn't
    overlap content (e.g. the active-tab underline on section navs). */
 .scrollbar-hide {

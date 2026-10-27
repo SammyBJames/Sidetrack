@@ -1,6 +1,6 @@
 {% load app_tags %}
 
-{# The status of a media card, which on hover turns into its one-click action to the next status #}
+{# The status of a media card or list row (`card` "row"), which on hover turns into its one-click action to the next status #}
 {% get_quick_action item.media_type media as quick %}
 <div class="relative size-7 shrink-0">
   {% if quick %}
@@ -10,7 +10,7 @@
             {% if card == "home" and quick.key == "next" %} hx-post="{% url 'progress_edit' item.media_type media.id %}" hx-vals='{"operation": "increase", "home_status": "{{ home_status }}"}' {% else %} hx-post="{% url 'quick_action' %}" hx-vals='{"media_id": "{{ item.media_id|escapejs }}", "source": "{{ item.source }}", "media_type": "{{ item.media_type }}", "season_number": "{{ item.season_number|default_if_none:'' }}", "instance_id": "{{ media.id|default_if_none:'' }}", "action": "{{ quick.key }}", "card": "{{ card }}", "title": "{{ title|escapejs }}", "release_year": "{{ year }}", "active": "{{ active|yesno:'true,' }}"}' {% endif %}
             hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
             {% if filtered %}hx-include="#filter-form"{% endif %}
-            hx-target="closest .media-card"
+            hx-target="closest {% if card == "row" %}.media-row{% else %}.media-card{% endif %}"
             hx-swap="outerHTML"
             hx-disabled-elt="this">
       {# The next status's color fills in on hover #}

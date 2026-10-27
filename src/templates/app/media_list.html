@@ -58,24 +58,6 @@
                  class="h-9 w-full rounded-xl bg-surface-800 pr-3 pl-9 text-sm text-white shadow-lg ring-1 shadow-black/20 ring-white/10 placeholder:text-gray-500 focus:ring-2 focus:ring-indigo-400 focus:outline-none">
         </div>
 
-        {# The filter panel, opened from its button that counts the filters #}
-        <button type="button"
-                x-ref="panelButton"
-                @click="openPanel()"
-                :aria-expanded="panelOpen"
-                aria-haspopup="dialog"
-                aria-label="Filters"
-                :aria-label="filterCount ? `Filters, ${filterCount} active` : 'Filters'"
-                class="relative flex h-9 cursor-pointer items-center gap-2 rounded-xl bg-surface-800 px-2.5 text-sm font-medium text-gray-300 shadow-lg ring-1 shadow-black/20 ring-white/10 transition-colors hover:bg-surface-700 hover:text-white sm:px-3"
-                :class="filterCount && 'text-indigo-300'">
-          {% include "app/icons/horizontal-sliders.svg" with classes="size-4 shrink-0" %}
-          <span class="hidden sm:inline">Filters</span>
-          <span x-cloak
-                x-show="filterCount"
-                x-text="filterCount"
-                class="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-indigo-500 text-[0.625rem] font-semibold text-white ring-2 ring-surface-900"></span>
-        </button>
-
         {# The sort: a menu button naming it, joined to the button that flips its order #}
         <div class="relative"
              @click.outside="closeSort()">
@@ -136,6 +118,24 @@
             </template>
           </div>
         </div>
+
+        {# The filter panel, opened from its button that counts the filters #}
+        <button type="button"
+                x-ref="panelButton"
+                @click="openPanel()"
+                :aria-expanded="panelOpen"
+                aria-haspopup="dialog"
+                aria-label="Filters"
+                :aria-label="filterCount ? `Filters, ${filterCount} active` : 'Filters'"
+                data-tooltip="Filters"
+                class="tooltip relative flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-surface-800 text-gray-300 shadow-lg ring-1 shadow-black/20 ring-white/10 transition-colors hover:bg-surface-700 hover:text-white"
+                :class="filterCount && 'text-indigo-300'">
+          {% include "app/icons/funnel.svg" with classes="size-4" %}
+          <span x-cloak
+                x-show="filterCount"
+                x-text="filterCount"
+                class="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-indigo-500 text-[0.625rem] font-semibold text-white ring-2 ring-surface-900"></span>
+        </button>
 
         {# Layout #}
         <div class="flex h-9 shrink-0 items-center gap-0.5 rounded-xl bg-surface-800 p-0.5 shadow-lg ring-1 shadow-black/20 ring-white/10"

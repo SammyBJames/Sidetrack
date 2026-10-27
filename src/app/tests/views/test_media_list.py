@@ -107,17 +107,25 @@ class MediaListViewTests(TestCase):
         self.assertEqual(fields["runtime"].group, "About the title")
 
     def test_sort_and_filters_are_separate_controls(self):
-        """The toolbar has a sort menu, and the filter panel has no sort controls."""
+        """The toolbar has a sort menu, then an icon button for the filter panel.
+
+        The panel has no sort controls.
+        """
         response = self.client.get(
             reverse("medialist", args=[self.user.username, MediaTypes.MOVIE.value]),
         )
         html = response.content.decode()
         self.assertIn('role="menuitemradio"', html)
+        self.assertLess(
+            html.index('x-ref="sortButton"'),
+            html.index('x-ref="panelButton"'),
+        )
 
         button = html[html.index('x-ref="panelButton"') :]
         button = button[: button.index("</button>")]
         self.assertIn('aria-label="Filters"', button)
-        self.assertIn(">Filters</span>", button)
+        self.assertNotIn(">Filters</span>", button)
+        self.assertIn("<polygon", button)
         self.assertIn('x-text="filterCount"', button)
 
         panel = html[html.index('role="dialog"') :]
@@ -125,6 +133,21 @@ class MediaListViewTests(TestCase):
         self.assertIn(">Filters</h2>", panel)
         self.assertNotIn("sortBy(", panel)
         self.assertNotIn("Sort", panel)
+
+    def test_rows_open_their_media_and_act_like_cards(self):
+        """A list row's title link covers the row, and its action is the cards' chip."""
+        response = self.client.get(
+            reverse("medialist", args=[self.user.username, MediaTypes.MOVIE.value]),
+            {"layout": "table"},
+        )
+        html = response.content.decode()
+        row = html[html.index('class="media-row') :]
+        row = row[: row.index('class="media-row', 1)]
+        self.assertIn("after:absolute after:inset-0", row)
+        self.assertIn("card-chip", row)
+        self.assertIn('hx-target="closest .media-row"', row)
+        self.assertIn('hx-include="#filter-form"', row)
+        self.assertIn('"card": "row"', row)
 
     def test_sort_choices_are_the_media_types_sorts(self):
         """The sort dropdown lists the sorts of the list's media type."""
