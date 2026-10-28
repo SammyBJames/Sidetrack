@@ -755,6 +755,76 @@ class ListEpisodeCardTests(TestCase):
         self.assertEqual(len(re.findall("media-card ", content)), 5)
 
 
+class ListReleaseCardTests(TestCase):
+    """Tests for list cards of media waiting on a release."""
+
+    def setUp(self):
+        """Create a user with an empty list."""
+        self.credentials = {"username": "test", "password": "12345"}
+        self.user = get_user_model().objects.create_user(**self.credentials)
+        self.client.login(**self.credentials)
+        self.custom_list = CustomList.objects.create(name="List", owner=self.user)
+
+    def add_entry(self, model, media_type, events, **fields):
+        """Put an entry with release `events` of (number, datetime) in the list."""
+        item = Item.objects.create(
+            media_id="1",
+            source=Sources.MAL.value
+            if media_type == MediaTypes.ANIME.value
+            else Sources.TMDB.value,
+            media_type=media_type,
+            title="Title",
+        )
+        for number, when in events:
+            Event.objects.create(item=item, content_number=number, datetime=when)
+        CustomListItem.objects.create(custom_list=self.custom_list, item=item)
+        return model.objects.create(item=item, user=self.user, **fields)
+
+    def get_page(self):
+        """Return the list page's markup."""
+        return self.client.get(
+            reverse("list_detail", args=[self.custom_list.id]),
+        ).content.decode()
+
+    def test_planned_unreleased_movie_shows_its_release(self):
+        """A planned movie out only in 2099 shows its release, as in the library."""
+        self.add_entry(
+            Movie,
+            MediaTypes.MOVIE.value,
+            [(None, datetime.datetime(2099, 1, 1, 12, tzinfo=datetime.UTC))],
+            status=Status.PLANNING.value,
+        )
+
+        content = self.get_page()
+
+        self.assertIn("Add to calendar", content)
+        self.assertIn("January 1, 2099", content)
+        self.assertIn(
+            "Add to calendar",
+            self.client.get(
+                reverse("medialist", args=["test", MediaTypes.MOVIE.value])
+            ).content.decode(),
+        )
+
+    def test_caught_up_entry_shows_its_next_release(self):
+        """An anime in progress with all that is out watched shows its next release."""
+        self.add_entry(
+            Anime,
+            MediaTypes.ANIME.value,
+            [
+                (1, timezone.now() - datetime.timedelta(days=7)),
+                (2, datetime.datetime(2099, 1, 1, 12, tzinfo=datetime.UTC)),
+            ],
+            status=Status.IN_PROGRESS.value,
+            progress=1,
+        )
+
+        content = self.get_page()
+
+        self.assertIn("Add to calendar", content)
+        self.assertIn("January 1, 2099", content)
+
+
 class CreateListViewTest(TestCase):
     """Test case for the create list view."""
 

@@ -25,6 +25,7 @@ from app.models import (
     Sources,
     Status,
 )
+from app.tests.views import click_quick_action
 from events.models import Event
 
 
@@ -278,6 +279,28 @@ class MediaDetailsViewTests(TestCase):
         )
         # Nothing follows dropped, so the status opens the form instead
         self.assertNotContains(response, '"card": "details"')
+
+    @patch("app.providers.services.get_media_metadata")
+    def test_main_button_tracks_the_pages_own_media(self, mock_get_metadata):
+        """Clicking an untracked movie's button adds that movie and reloads the page."""
+        self._get_tracked_movie_details(mock_get_metadata, Status.PLANNING.value)
+        Movie.objects.all().delete()
+        url = reverse(
+            "media_details",
+            kwargs={
+                "source": Sources.TMDB.value,
+                "media_type": MediaTypes.MOVIE.value,
+                "media_id": "238",
+                "title": "test-movie",
+            },
+        )
+
+        vals, response = click_quick_action(self.client, url)
+
+        self.assertEqual(vals["card"], "details")
+        self.assertEqual(Movie.objects.get(user=self.user).item.media_id, "238")
+        self.assertNotIn("HX-Reswap", response)
+        self.assertIn(url, response["HX-Location"])
 
     @staticmethod
     def target_of(label, content):

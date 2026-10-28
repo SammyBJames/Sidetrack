@@ -34,11 +34,12 @@ CLOCK_ICON = "app/icons/clock.svg"
 NO_STATUS_COLOR = "text-gray-200"
 NO_STATUS_FILL = "bg-surface-600 hover:bg-surface-550"
 
-# Which element of a card its action replaces when it was posted from there
+# Tells the card the log dialog was opened from, so the dialog can answer it
 LOG_ONCLICK = (
     "window.dispatchEvent(new CustomEvent('open-log', "
     "{detail: {card: this.closest('.media-card, .media-row')}}))"
 )
+# The element a card's response replaces, by the `card` it was posted from
 CARD_TARGETS = {"row": ".media-row", "grid": ".media-card", "home": ".media-card"}
 
 
@@ -50,8 +51,10 @@ class Button:
     NONE. An action's `attrs` are its htmx attributes, its `icon` and `fill`
     those of the status it leads to, and its `rest_icon` and `rest_color` those
     of the status it is in. A fallback has the `icon`, `label` and `fill` it
-    shows, and a release its `state`. `crossfade` is whether the large button
-    shows `rest_label` until hover, with `base_fill` as its color then.
+    shows. `state` is what it shows without an action, which for an action is
+    only there to colour a release shown beside it. `crossfade` is whether the
+    large button shows `rest_label` until hover, with `base_fill` as its color
+    then.
     """
 
     kind: str
@@ -72,6 +75,13 @@ class Button:
     finish: "Button | None" = None
     form_attrs: str = ""
 
+    @property
+    def clock_color(self):
+        """Return the color of a release's clock, by the status it waits in."""
+        if self.state is None or not self.state.release:
+            return ""
+        return config.get_status_clock_color(self.state.status)
+
 
 def _field(obj, name):
     """Return a field of a metadata dict or a model, or None."""
@@ -79,7 +89,7 @@ def _field(obj, name):
 
 
 def _json_attr(name, value):
-    """Return an htmx attribute holding JSON, in single quotes to leave it readable."""
+    """Return an htmx attribute holding JSON in single quotes, left unescaped."""
     safe = (
         json.dumps(value)
         .replace("&", "\\u0026")
@@ -171,16 +181,10 @@ def _extra_attrs(p):
     ]
 
 
-def _rest_status(media_type, entry, ref):
-    """Return the status a button's media is in, or None when it isn't tracked.
-
-    An episode is in its own state, or planned along with its tracked season.
-    """
-    if media_type == MediaTypes.EPISODE.value:
-        if ref["watched"]:
-            planned = ref["repeat_planned"]
-            return Status.PLANNING_REPEAT.value if planned else Status.COMPLETED.value
-        return None if entry is None else Status.PLANNING.value
+def _rest_status(entry, episode):
+    """Return the status a button's media is in, or None when it isn't tracked."""
+    if episode is not None:
+        return quick_actions.episode_status(entry, episode)
     return entry.status if entry else None
 
 
@@ -189,24 +193,6 @@ def _plays(media_type, ref, entry, user_medias):
     if media_type == MediaTypes.EPISODE.value:
         return len(ref["history"])
     return play_count(entry, user_medias or [entry])
-
-
-def _fallback_state(media_type, entry, ref, *, readonly):
-    """Return what a button without an action shows: a release, a status or None."""
-    if readonly:
-        status = entry.status if entry else None
-        return (
-            quick_actions.ButtonState(status, release=False, event=None, clock_color="")
-            if status
-            else None
-        )
-    if media_type == MediaTypes.EPISODE.value:
-        if ref["watched"]:
-            return quick_actions.ButtonState(
-                Status.COMPLETED.value, release=False, event=None, clock_color=""
-            )
-        return quick_actions.get_button_state(None, ref["air_date"])
-    return quick_actions.get_button_state(entry)
 
 
 def _release_label(state, media_type, ref, user):
@@ -224,22 +210,22 @@ def build_button(p):
     """Return the Button for what `p` describes, as `get_action_button` collects it."""
     ref, entry, card = p["ref"], p["entry"], p["card"]
     media_type = _field(ref, "media_type")
+    episode = ref if media_type == MediaTypes.EPISODE.value else None
 
-    action = None
     if p["readonly"]:
-        pass
-    elif media_type == MediaTypes.EPISODE.value:
-        action = quick_actions.get_quick_action(media_type, entry, ref)
+        action = None
+        state = quick_actions.ButtonState(entry.status) if entry else None
     else:
-        action = quick_actions.get_quick_action(media_type, entry)
+        action = quick_actions.get_quick_action(media_type, entry, episode)
+        state = quick_actions.get_button_state(entry, episode)
 
-    rest_status = _rest_status(media_type, entry, ref)
+    rest_status = _rest_status(entry, episode)
     completed = rest_status == Status.COMPLETED.value
     plays = _plays(media_type, ref, entry, p["all_entries"]) if completed else 0
     past = config.get_verb(media_type, past_tense=True).capitalize()
     rest_label = (f"{past} {plays} times" if plays > 1 else past) if completed else ""
     if action is None:
-        return _fallback_button(p, media_type, rest_label)
+        return _fallback_button(p, media_type, state, rest_label)
 
     fill = config.get_status_button_color(action.target_status)
     crossfade = action.key == quick_actions.PLAN_REPEAT and bool(rest_label)
@@ -282,13 +268,13 @@ def build_button(p):
         reveal=card == "home",
         tap_through=p["tap_through"],
         finish=finish,
+        state=state,
     )
 
 
-def _fallback_button(p, media_type, rest_label):
+def _fallback_button(p, media_type, state, rest_label):
     """Return the Button of media with no action, from what it waits for or is in."""
-    ref, entry = p["ref"], p["entry"]
-    state = _fallback_state(media_type, entry, ref, readonly=p["readonly"])
+    ref = p["ref"]
     form_attrs = ""
     if p["form_url"]:
         form_attrs = _attrs(
@@ -304,7 +290,7 @@ def _fallback_button(p, media_type, rest_label):
                 ("hx-target", p["form_target"]),
             ]
         )
-    base = {"state": state, "form_attrs": form_attrs, "tap_through": p["tap_through"]}
+    base = {"state": state, "form_attrs": form_attrs}
     if state is None:
         return Button(
             NONE, label="Add to tracker", icon=PLUS_ICON, fill=NO_STATUS_FILL, **base
@@ -340,8 +326,8 @@ def get_action_button(context):
     for how often it was finished) and, on details pages, `finish_ref` and
     `finish_entry` (the page's own media, whose finish button goes beside the
     action) and `form_url`, `form_target` and `form_entry` (the tracking form a
-    button without an action opens). A card also posts its `title`, `year`, `active` and
-    `home_status`.
+    button without an action opens). A card also posts its `title`, `year`,
+    `active` and `home_status`.
     """
     request = context.get("request")
     user = context.get("user")

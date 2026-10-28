@@ -1,7 +1,4 @@
-{% load app_tags %}
-
-{# An upcoming release in an action button's place, which reveals its date on hover. With an `event` it adds that to a calendar when clicked, named by `event_label` if given; without one it shows `label`. Takes home_status and clock_color from the including card #}
-{% firstof event_label event|release_label:user label as label %}
+{# An upcoming release in an action button's place, which reveals its date, `label`, on hover. With an `event` it adds that to a calendar when clicked. Takes home_status (the status it waits in) and clock_color from action_button.html #}
 {% if event %}
   <a href="{% url 'download_event' event.id %}"
      download

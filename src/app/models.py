@@ -880,6 +880,9 @@ class MediaManager(models.Manager):
             queryset = model.objects.filter(**filter_kwargs).select_related("item")
             queryset = self._apply_prefetch_related(queryset, media_type)
             self.annotate_max_progress(queryset, media_type)
+            # A show's next event comes from its seasons, with `max_progress`
+            if media_type != MediaTypes.TV.value:
+                self._annotate_next_event(queryset)
 
             for entry in queryset:
                 media_by_item_id.setdefault(entry.item_id, entry)
@@ -913,6 +916,7 @@ class MediaManager(models.Manager):
             for e in events.models.Event.objects.filter(
                 item__media_type=MediaTypes.SEASON.value,
                 item__media_id__in={i.media_id for i in episodes},
+                item__season_number__in={i.season_number for i in episodes},
                 content_number__isnull=False,
             ).select_related("item")
         }
@@ -1042,7 +1046,7 @@ class MediaManager(models.Manager):
         ).select_related("item")
         queryset = self._apply_prefetch_related(queryset, media_type)
         self.annotate_max_progress(queryset, media_type)
-        # Shows get theirs from their seasons, with `max_progress`
+        # A show's next event comes from its seasons, with `max_progress`
         if media_type != MediaTypes.TV.value:
             self._annotate_next_event(queryset)
 

@@ -997,10 +997,10 @@ def quick_action(request):
     `log_progress` handles, nothing is changed.
 
     A `home` card is updated in place or removed when the entry left its section
-    (`home_status`). A `details` page, whose parts all depend on the entry, is
-    reloaded, back to `next`, as is the page an episode is acted on from. Other
-    cards, an episode's in a list included, are updated, or removed when the entry
-    left the status filter it was shown in.
+    (`home_status`). A `details` card, on a details or episode page whose parts
+    all depend on the entry, reloads that page from `next`. Other cards and rows,
+    episode cards in lists included, are updated in place, or removed when the
+    entry left the status filter they were shown in.
     """
     media_id = request.POST["media_id"]
     source = request.POST["source"]
@@ -1156,23 +1156,12 @@ def _episode_card_response(request, season, episode_number):
     )
     manager = BasicMedia.objects
     manager.annotate_episode_states([item], request.user)
-    if request.POST.get("release_year"):
-        item.release_year = request.POST["release_year"]
-    context = {
-        "item": item,
-        "media": manager.fetch_media_for_items(
-            [MediaTypes.EPISODE.value],
-            [item.id],
-            request.user,
-        ).get(item.id),
-        "title": request.POST.get("title") or item,
-        "filtered": "status" in request.POST,
-        "active": request.POST.get("active") == "true",
-    }
-    response = render(request, "app/components/media_card_response.html", context)
-    if context["filtered"]:
-        response["HX-Trigger"] = "libraryChanged"
-    return response
+    media = manager.fetch_media_for_items(
+        [MediaTypes.EPISODE.value],
+        [item.id],
+        request.user,
+    ).get(item.id)
+    return _card_response(request, item, media, MediaTypes.EPISODE.value)
 
 
 @require_GET
@@ -1180,7 +1169,8 @@ def log_modal(request, media_type, instance_id):
     """Return the dialog to log a book's page or a game session for an entry.
 
     The `card` the dialog was opened from, and the display state its response
-    needs (`title`, `release_year`, `active`, `home_status`, `status`, `sort`, `next`),
+    needs (`title`, `release_year`, `active`, `home_status`, `status`, `sort`,
+    `next`),
     are carried in the query and posted back with the log.
     """
     if media_type not in quick_actions.LOGGED_TYPES:
@@ -1265,24 +1255,28 @@ def log_progress(request, media_type, instance_id):
 
 
 def _quick_action_card(request, media_type, media_id):
-    """Return an entry's updated card or list row after a quick action.
+    """Return an entry's updated card or list row after a quick action."""
+    media = BasicMedia.objects.get_media_prefetch(request.user, media_type, media_id)
+    BasicMedia.objects.annotate_releases([media], media_type)
+    _annotate_entry_counts(request.user, media, media_type)
+    return _card_response(request, media.item, media, media_type)
+
+
+def _card_response(request, item, media, media_type):
+    """Return the card or list row of an item and the user's entry, as posted.
 
     A posted `status` marks a library list; without it the row is a search
     result's, which has no sort value or progress column.
     """
-    media = BasicMedia.objects.get_media_prefetch(request.user, media_type, media_id)
-    BasicMedia.objects.annotate_releases([media], media_type)
-    _annotate_entry_counts(request.user, media, media_type)
-
     # A new item's release is fetched in the background, so keep the card's year
     if request.POST.get("release_year"):
-        media.item.release_year = request.POST["release_year"]
+        item.release_year = request.POST["release_year"]
 
     # `title` and `active` are display state that only the posted card knows
     context = {
-        "item": media.item,
+        "item": item,
         "media": media,
-        "title": request.POST.get("title") or media.item,
+        "title": request.POST.get("title") or item,
         "filtered": "status" in request.POST,
         "active": request.POST.get("active") == "true",
     }

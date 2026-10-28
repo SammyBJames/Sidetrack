@@ -58,14 +58,12 @@ DERIVED_DATE_TYPES = {MediaTypes.TV.value, MediaTypes.SEASON.value}
 # rather than through new entries
 EPISODIC_TYPES = DERIVED_DATE_TYPES
 
-
-# What colours a release's clock by the status the entry waits in
-CLOCK_COLORS = {
-    Status.PLANNING.value: "text-sky-400",
-    Status.IN_PROGRESS.value: "text-indigo-300",
-    Status.REPEATING.value: "text-teal-300",
-    Status.PLANNING_REPEAT.value: "text-teal-300",
-}
+# Statuses an entry waits on its next release in, shown in their colours
+WAITING_STATUSES = (
+    Status.PLANNING.value,
+    Status.IN_PROGRESS.value,
+    *REPEAT_STATUSES,
+)
 
 
 @dataclass(frozen=True)
@@ -78,9 +76,8 @@ class ButtonState:
     """
 
     status: str | None
-    release: bool
-    event: Event | None
-    clock_color: str
+    release: bool = False
+    event: Event | None = None
 
 
 @dataclass(frozen=True)
@@ -177,32 +174,44 @@ def get_quick_action(media_type, media, episode=None):
     return QuickAction(key, label, icon, target_status)
 
 
-def get_button_state(media, air_date=None):
+def get_button_state(media, episode=None):
     """Return what a button shows when it has no action, or None for nothing.
 
     A known next release comes first: the next event of an entry planned, in
-    progress or repeated, or an `air_date` still to come. Its clock takes the
-    colours of the status the entry waits in, which is planning once it has all
-    that is out. Otherwise it is the entry's status, if it has one. Used only
-    when `get_quick_action` has no action.
+    progress or repeated, or an episode's air date still to come. It waits in
+    the entry's status, which is planning once it has all that is out, and
+    takes that status's colours. Otherwise it is the entry's status, if it has
+    one. An episode is given as `get_quick_action` takes it.
     """
+    if episode is not None:
+        air_date = episode["air_date"]
+        if air_date and not helpers.is_released_date(air_date):
+            return ButtonState(Status.PLANNING.value, release=True)
+        status = episode_status(media, episode)
+        return ButtonState(status) if status else None
+
     status = media.status if media else None
     event = getattr(media, "next_event", None)
-    if event is not None and (event.is_max_datetime or status not in CLOCK_COLORS):
-        event = None
-    unaired = bool(air_date) and not helpers.is_released_date(air_date)
-    if event is None and not unaired:
-        return (
-            ButtonState(status, release=False, event=None, clock_color="")
-            if status
-            else None
-        )
-
-    if status not in CLOCK_COLORS or is_caught_up(media):
+    if event is None or event.is_max_datetime or status not in WAITING_STATUSES:
+        return ButtonState(status) if status else None
+    if is_caught_up(media):
         status = Status.PLANNING.value
-    return ButtonState(
-        status, release=True, event=event, clock_color=CLOCK_COLORS[status]
-    )
+    return ButtonState(status, release=True, event=event)
+
+
+def episode_status(season, episode):
+    """Return the status an episode of a season entry is in, or None untracked.
+
+    Watched, it is completed, or planned again with a rewatch planned; else it
+    is planned along with its tracked season.
+    """
+    if episode["watched"]:
+        return (
+            Status.PLANNING_REPEAT.value
+            if episode["repeat_planned"]
+            else Status.COMPLETED.value
+        )
+    return None if season is None else Status.PLANNING.value
 
 
 def get_finish_action(media_type, media):

@@ -10,7 +10,9 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app import config, quick_actions
-from app.models import Episode, Item, MediaTypes, Season, Sources, Status
+from app.models import TV, Episode, Item, MediaTypes, Season, Sources, Status
+from app.providers import services
+from app.tests.views import click_quick_action
 from events.models import Event
 
 
@@ -641,6 +643,28 @@ class EpisodeDetailsViewTests(TestCase):
         self.assertEqual(len(messages), 1)
         self.assertIn("E1 marked as watched.", messages[0])
 
+    def test_failed_one_click_watch_leaves_nothing_behind(self, mock_metadata):
+        """A provider error after the season was started undoes the whole watch."""
+        calls = []
+
+        def fail_second_season_fetch(media_type, *args):
+            """Fetch metadata as the fake does, but fail the second season fetch."""
+            if media_type == "tv_with_seasons":
+                calls.append(media_type)
+                if len(calls) == 2:  # noqa: PLR2004 the first is _episode_state's
+                    raise services.ProviderAPIError(Sources.TMDB.value, Exception())
+            return fake_metadata(media_type, *args)
+
+        mock_metadata.side_effect = fail_second_season_fetch
+
+        response = self.act(1, quick_actions.WATCH)
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(len(calls), 2)
+        self.assertFalse(Season.objects.exists())
+        self.assertFalse(TV.objects.exists())
+        self.assertFalse(Episode.objects.exists())
+
     def test_one_click_plan_rewatch_reloads_the_page(self, _):
         """Planning a rewatch of a watched episode adds its entry."""
         self.watch(1)
@@ -714,6 +738,31 @@ class EpisodeDetailsViewTests(TestCase):
         # The show's own button and its seasons that are out
         self.assertGreaterEqual(len(buttons), 3)
         self.assertReloadsPage(buttons, url)
+
+    def test_season_page_episode_chip_posts_what_it_shows(self, _):
+        """An episode chip's click, posted as rendered, watches it and reloads."""
+        self.watch(1)
+
+        vals, response = click_quick_action(
+            self.client, self.season_url(), episode_number="2"
+        )
+
+        self.assertEqual(vals["action"], quick_actions.WATCH)
+        self.assertNotIn("HX-Reswap", response)
+        self.assertIn(self.season_url(), response["HX-Location"])
+        self.assertTrue(Episode.objects.filter(item__episode_number=2).watches())
+
+    def test_episode_page_main_button_posts_what_it_shows(self, _):
+        """The episode page's own button acts on its episode and reloads the page."""
+        self.watch(1)
+
+        vals, response = click_quick_action(self.client, self.episode_url(2))
+
+        self.assertEqual(vals["episode_number"], "2")
+        self.assertEqual(vals["card"], "details")
+        self.assertNotIn("HX-Reswap", response)
+        self.assertIn(self.episode_url(2), response["HX-Location"])
+        self.assertTrue(Episode.objects.filter(item__episode_number=2).watches())
 
     def test_last_episode_has_no_next(self, _):
         """The season's last episode leads back to the one before it only."""
@@ -1237,6 +1286,26 @@ class ManualShowTests(TestCase):
                 season_number=1,
                 episode_number=number,
             )
+
+    def test_one_click_watches_a_manual_episode(self):
+        """A manual show's episode is watched in one click, like a provider's."""
+        response = self.client.post(
+            f"{reverse('quick_action')}?next=/x",
+            {
+                "media_id": "m1",
+                "source": Sources.MANUAL.value,
+                "season_number": 1,
+                "episode_number": 1,
+                "media_type": MediaTypes.EPISODE.value,
+                "action": quick_actions.WATCH,
+                "card": "details",
+            },
+            headers={"HX-Request": "true"},
+        )
+
+        self.assertNotIn("HX-Reswap", response)
+        self.assertIn('"path": "/x"', response["HX-Location"])
+        self.assertEqual(Episode.objects.watches().count(), 1)
 
     def test_episode_page(self):
         """A manual episode has a page like any other."""

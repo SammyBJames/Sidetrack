@@ -12,7 +12,7 @@ from django.utils.dateparse import parse_date
 from django.utils.html import format_html
 from unidecode import unidecode
 
-from app import config, helpers, quick_actions
+from app import config, helpers
 from app.models import MediaTypes, Sources, Status, is_caught_up
 from events.models import SentinelDatetime
 
@@ -216,18 +216,6 @@ def short_unit(media_type):
 def sources(media_type):
     """Template filter to get source options for a media type."""
     return config.get_sources(media_type)
-
-
-@register.simple_tag
-def get_quick_action(media_type, media):
-    """Return the one-click action of a media card, or None."""
-    return quick_actions.get_quick_action(media_type, media)
-
-
-@register.simple_tag
-def get_button_state(media):
-    """Return what a button without an action shows, or None."""
-    return quick_actions.get_button_state(media)
 
 
 @register.simple_tag

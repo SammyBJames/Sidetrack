@@ -254,6 +254,8 @@ STATUS_CONFIG = {
         "background_color": COLORS["indigo"]["background"],
         "background_color_strong": COLORS["indigo"]["background_strong"],
         "button_color": COLORS["indigo"]["button"],
+        # The clock of a release the entry waits on in this status
+        "clock_color": "text-indigo-300",
         "icon": "app/icons/states/in-progress.svg",
     },
     # Both repeat statuses share a color, told apart by their icons
@@ -263,6 +265,7 @@ STATUS_CONFIG = {
         "background_color": COLORS["teal"]["background"],
         "background_color_strong": COLORS["teal"]["background_strong"],
         "button_color": COLORS["teal"]["button"],
+        "clock_color": "text-teal-300",
         "icon": "app/icons/states/repeating.svg",
     },
     Status.PLANNING_REPEAT.value: {
@@ -272,6 +275,7 @@ STATUS_CONFIG = {
         "background_color": COLORS["teal"]["background"],
         "background_color_strong": COLORS["teal"]["background_strong"],
         "button_color": COLORS["teal"]["button"],
+        "clock_color": "text-teal-300",
         "icon": "app/icons/states/planning-repeat.svg",
     },
     Status.PAUSED.value: {
@@ -288,6 +292,7 @@ STATUS_CONFIG = {
         "background_color": COLORS["sky"]["background"],
         "background_color_strong": COLORS["sky"]["background_strong"],
         "button_color": COLORS["sky"]["button"],
+        "clock_color": COLORS["sky"]["text"],
         "icon": "app/icons/states/planning.svg",
     },
     Status.DROPPED.value: {
@@ -497,6 +502,11 @@ def get_status_background_color(status):
 def get_status_button_color(status):
     """Get the button background and hover classes for a status."""
     return get_status_property(status, "button_color")
+
+
+def get_status_clock_color(status):
+    """Get the clock color of a release waited on in a status, for those that wait."""
+    return get_status_property(status, "clock_color")
 
 
 def get_status_icon(status):

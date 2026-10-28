@@ -1,7 +1,9 @@
 {% load action_button_tags app_tags %}
 
-{# The one button every media's one-click action is drawn with, wherever it is: a chip (`size` "chip") on cards, list rows, the home page and a season's episodes, or the large button (`size` "large") of details and episode pages. `get_action_button` decides what it is, from the `ref`, `entry` and `card` it is included with (see there for the rest): the action, its finish companion on details pages, or, without an action, when the next release is, the status, or an invitation to track #}
-{% get_action_button as button %}
+{# The one button every media's one-click action is drawn with, wherever it is: a chip (`size` "chip") on cards, list rows, the home page and a season's episodes, or the large button (`size` "large") of details and episode pages. `get_action_button` decides what it is, from the `ref`, `entry` and `card` it is included with (see there for the rest), unless the `button` it made is given: the action, its finish companion on details pages, or, without an action, when the next release is, the status, or an invitation to track #}
+{% if not button %}
+  {% get_action_button as button %}
+{% endif %}
 {% if size == "large" %}
   <div class="flex w-full gap-2 md:w-auto">
     <div class="flex h-10 flex-1 overflow-hidden rounded-xl shadow-lg ring-1 shadow-black/30 ring-white/10 md:min-w-56 md:flex-none">
@@ -85,7 +87,7 @@
       </button>
     {% elif button.kind == "release" %}
       {# Nothing to do in one click, so it shows when the next release is, in its status's colors #}
-      {% include "app/components/release_button.html" with event=button.state.event event_label=button.label home_status=button.state.status clock_color=button.state.clock_color %}
+      {% include "app/components/release_button.html" with event=button.state.event label=button.label home_status=button.state.status clock_color=button.clock_color %}
     {% elif button.kind == "status" %}
       <div class="card-chip flex size-7 items-center justify-center"
            title="{{ button.title }}">

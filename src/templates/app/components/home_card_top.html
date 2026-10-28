@@ -1,25 +1,17 @@
-{% load app_tags %}
+{% load action_button_tags app_tags %}
 
-{# The top row of a home card: when the next part comes out, and the release date or status action. Takes media, home_status, caught_up and user from the card #}
+{# The top row of a home card: when the next part comes out, and the release date or status action. Takes item, media, home_status and user from the card #}
 
-{% get_quick_action item.media_type media as quick %}
-{% get_button_state media as state %}
-{# A release takes the button's place when there is no action #}
-{% if state.release and not quick %}
-  {% firstof "yes" as waiting %}
-{% endif %}
-
-{# Released media with more on the way shows when the next part comes out, unless that is what the button shows #}
-{% if not waiting %}
-  {% if media.next_event and not media.next_event.is_max_datetime %}
+{% with ref=item entry=media card="home" %}
+  {% get_action_button as button %}
+  {# Released media with more on the way shows when the next part comes out, unless that is what the button shows #}
+  {% if button.kind != "release" and media.next_event and not media.next_event.is_max_datetime %}
     <div class="card-chip flex min-w-0 items-center gap-1.5 px-2 py-0.5 whitespace-nowrap">
-      {% include "app/icons/clock.svg" with classes="size-3.5 shrink-0 "|add:state.clock_color %}
+      {% include "app/icons/clock.svg" with classes="size-3.5 shrink-0 "|add:button.clock_color %}
       <span class="truncate text-xs font-medium text-white">{{ media.next_event|release_label:user }}</span>
     </div>
   {% endif %}
-{% endif %}
 
-{# An action waits for hover where there is a mouse, as the row header already shows the status #}
-<div class="ml-auto">
-  {% include "app/components/action_button.html" with size="chip" card="home" ref=item entry=media %}
-</div>
+  {# An action waits for hover where there is a mouse, as the row header already shows the status #}
+  <div class="ml-auto">{% include "app/components/action_button.html" with size="chip" button=button %}</div>
+{% endwith %}
