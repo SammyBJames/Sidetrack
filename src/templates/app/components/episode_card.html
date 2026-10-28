@@ -1,29 +1,27 @@
 {% load app_tags %}
 
-{# One of a season's episodes in a card row on an episode page, linking to its own. The current one is outlined, and its row starts scrolled to it #}
+{# One of a season's episodes in a card row on an episode page, linking to its own, with its one-click action. The current one is outlined, and its row starts scrolled to it #}
 {% with current=entry.episode_number|str_equals:media.episode_number hidden=user.obfuscate_unseen_episodes %}
-  <a href="{% url 'episode_details' source=entry.source media_id=entry.media_id title=media.title|slug season_number=entry.season_number episode_number=entry.episode_number %}"
-     {% if entry.history or not hidden %}title="{{ entry.title }}"{% endif %}
-     class="hover-tap relative block overflow-hidden rounded-xl bg-surface-800 shadow-lg ring-1 shadow-black/30 transition duration-300 hover:shadow-black/60 {% if current %}ring-2 ring-indigo-400{% else %}ring-white/10 hover:ring-white/30{% endif %}"
-     {% if current %}aria-current="page" x-init="$nextTick(() => reveal($el))"{% endif %}>
-    <img alt=""
-         class="lazyload aspect-video w-full bg-surface-600 transition duration-500 ease-out parent-hover-tap:scale-105 {% if entry.image != IMG_NONE %}object-cover{% else %}object-contain p-[20%] opacity-30{% endif %} {% if hidden and not entry.history and entry.image != IMG_NONE %}blur{% endif %}"
-         data-src="{{ entry.image }}"
-         src="{{ IMG_NONE }}">
-    <div class="pointer-events-none absolute inset-0 bg-linear-to-t from-black/90 via-black/30 to-transparent"></div>
-    {% if entry.history %}
-      <span class="card-chip absolute top-2 right-2 flex size-7 items-center justify-center"
-            title="Watched">
-        <span class="size-3.5 {{ Status.COMPLETED.value|status_color }}">
-          {% include "app/icons/states/completed.svg" with classes="size-3.5" %}
-        </span>
-      </span>
-    {% endif %}
-    <div class="absolute inset-x-0 bottom-0 px-3 pt-3 pb-2.5">
-      <div class="text-xs text-gray-300">Episode {{ entry.episode_number }}</div>
-      <div class="mt-0.5 line-clamp-1 text-sm font-semibold text-white drop-shadow-md {% if hidden and not entry.history %}blur-sm{% endif %}">
-        {{ entry.title }}
+  <div class="hover-tap relative overflow-hidden rounded-xl bg-surface-800 shadow-lg ring-1 shadow-black/30 transition duration-300 hover:shadow-black/60 {% if current %}ring-2 ring-indigo-400{% else %}ring-white/10 hover:ring-white/30{% endif %}">
+    <a href="{% url 'episode_details' source=entry.source media_id=entry.media_id title=media.title|slug season_number=entry.season_number episode_number=entry.episode_number %}"
+       {% if entry.history or not hidden %}title="{{ entry.title }}"{% endif %}
+       class="relative block"
+       {% if current %}aria-current="page" x-init="$nextTick(() => reveal($el))"{% endif %}>
+      <img alt=""
+           class="lazyload aspect-video w-full bg-surface-600 transition duration-500 ease-out parent-hover-tap:scale-105 {% if entry.image != IMG_NONE %}object-cover{% else %}object-contain p-[20%] opacity-30{% endif %} {% if hidden and not entry.history and entry.image != IMG_NONE %}blur{% endif %}"
+           data-src="{{ entry.image }}"
+           src="{{ IMG_NONE }}">
+      <div class="pointer-events-none absolute inset-0 bg-linear-to-t from-black/90 via-black/30 to-transparent"></div>
+      <div class="absolute inset-x-0 bottom-0 px-3 pt-3 pb-2.5">
+        <div class="text-xs text-gray-300">Episode {{ entry.episode_number }}</div>
+        <div class="mt-0.5 line-clamp-1 text-sm font-semibold text-white drop-shadow-md {% if hidden and not entry.history %}blur-sm{% endif %}">
+          {{ entry.title }}
+        </div>
       </div>
+    </a>
+    {# Over the link, as buttons can't be inside it #}
+    <div class="pointer-events-none absolute inset-x-0 top-0 z-1 flex justify-end p-2 @container">
+      {% include "app/components/action_button.html" with size="chip" card="details" ref=entry entry=season_instance %}
     </div>
-  </a>
+  </div>
 {% endwith %}

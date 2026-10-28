@@ -1129,6 +1129,83 @@ class EpisodeDetailsViewTests(TestCase):
             ],
         )
 
+    def row(self, number):
+        """Return the markup of the season's episode cards on an episode's page."""
+        content = self.client.get(self.episode_url(number)).content.decode()
+        return content.split("Season 1</h2>")[1]
+
+    def test_episode_page_row_shows_each_episodes_action(self, _):
+        """Every card of the row, the current one too, has its episode's action."""
+        self.watch(1)
+
+        row = self.row(2)
+
+        for number, action in (
+            (1, quick_actions.PLAN_REPEAT),
+            (2, quick_actions.WATCH),
+        ):
+            self.assertRegex(
+                row,
+                rf'"episode_number": "{number}", "instance_id": "\d+", '
+                rf'"action": "{action}", "card": "details"',
+            )
+        # The one not out yet waits for its air date
+        self.assertNotIn('"episode_number": "3"', row)
+        self.assertIn("E3 \u00b7 January 1, 2099", row)
+        self.assertNotIn('title="Watched"', row)
+
+    def test_episode_page_row_offers_untracked_season_episodes_to_watch(self, _):
+        """Without the season tracked, an episode posts no entry and watches."""
+        row = self.row(1)
+
+        self.assertRegex(
+            row,
+            rf'"episode_number": "1", "instance_id": "", '
+            rf'"action": "{quick_actions.WATCH}"',
+        )
+
+    def act_from_list(self, number, action, **extra):
+        """Post a one-click action on an episode's card in a custom list."""
+        return self.client.post(
+            reverse("quick_action"),
+            {
+                "media_id": "1396",
+                "source": Sources.TMDB.value,
+                "season_number": 1,
+                "episode_number": number,
+                "media_type": MediaTypes.EPISODE.value,
+                "action": action,
+                "card": "grid",
+                "title": "Breaking Bad S1E1",
+                **extra,
+            },
+            headers={"HX-Request": "true"},
+        )
+
+    def test_acting_from_a_list_card_replaces_the_card(self, _):
+        """The card comes back with the new state, not a page reload."""
+        response = self.act_from_list(1, quick_actions.WATCH)
+
+        self.assertNotIn("HX-Location", response)
+        self.assertTemplateUsed(response, "app/components/media_card_response.html")
+        self.assertEqual(Season.objects.get(user=self.user).episodes.count(), 1)
+        self.assertContains(response, 'class="media-card')
+        self.assertContains(response, f'"action": "{quick_actions.PLAN_REPEAT}"')
+        self.assertContains(response, '"card": "grid"')
+
+    def test_acting_from_a_filtered_list_removes_a_card_that_left_the_filter(self, _):
+        """A season that no longer has the list's status takes the card out."""
+        self.watch(1)
+
+        response = self.act_from_list(
+            2,
+            quick_actions.WATCH,
+            status=Status.PLANNING.value,
+        )
+
+        self.assertEqual(response["HX-Reswap"], "delete")
+        self.assertEqual(Episode.objects.count(), 2)
+
 
 class ManualShowTests(TestCase):
     """Test the pages of a show made by hand, whose metadata has no air dates."""

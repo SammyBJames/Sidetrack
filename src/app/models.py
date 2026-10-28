@@ -886,6 +886,66 @@ class MediaManager(models.Manager):
 
         return media_by_item_id
 
+    def annotate_episode_states(self, items, user):
+        """Set what an episode card's action needs on the episode items of `items`.
+
+        Each gets `season_entry`, the user's entry of its season or None, and
+        `episode_state`, the episode as the providers' `process_episodes` gives it
+        (its air date being its calendar event's day, None when it has none, as for
+        a show that isn't tracked, or an unknown one). Costs three queries for all
+        of them, none without episodes.
+        """
+        episodes = [i for i in items if i.media_type == MediaTypes.EPISODE.value]
+        if not episodes:
+            return
+
+        seasons = {
+            (s.item.media_id, s.item.source, s.item.season_number): s
+            for s in Season.objects.filter(
+                user=user,
+                item__media_id__in={i.media_id for i in episodes},
+            ).select_related("item")
+        }
+        air_dates = {
+            (e.item.media_id, e.item.source, e.item.season_number, e.content_number): (
+                None if e.is_max_datetime else timezone.localtime(e.datetime).date()
+            )
+            for e in events.models.Event.objects.filter(
+                item__media_type=MediaTypes.SEASON.value,
+                item__media_id__in={i.media_id for i in episodes},
+                content_number__isnull=False,
+            ).select_related("item")
+        }
+        entries = {}
+        for entry in Episode.objects.filter(
+            item__in=episodes,
+            related_season__user=user,
+        ).select_related("item"):
+            entries.setdefault(entry.item_id, []).append(entry)
+
+        for item in episodes:
+            tracked = entries.get(item.id, [])
+            item.season_entry = seasons.get(
+                (item.media_id, item.source, item.season_number),
+            )
+            item.episode_state = {
+                "media_id": item.media_id,
+                "media_type": MediaTypes.EPISODE.value,
+                "source": item.source,
+                "season_number": item.season_number,
+                "episode_number": item.episode_number,
+                "air_date": air_dates.get(
+                    (
+                        item.media_id,
+                        item.source,
+                        item.season_number,
+                        item.episode_number,
+                    ),
+                ),
+                "title": item.title,
+                **episode_entry_state(tracked),
+            }
+
     def get_media(
         self,
         user,
@@ -1033,6 +1093,22 @@ class Status(models.TextChoices):
 
 # The statuses of media being gone through again after it was finished
 REPEAT_STATUSES = (Status.PLANNING_REPEAT.value, Status.REPEATING.value)
+
+
+def episode_entry_state(entries):
+    """Return what a user's entries of one episode say.
+
+    The keys are `history`, `watched` and `repeat_planned`.
+
+    Shared by the providers' `process_episodes` and the list cards, so that all
+    of them offer the same action for the same entries.
+    """
+    return {
+        "history": [e for e in entries if e.is_watch],
+        "watched": any(e.marks_watched for e in entries),
+        "repeat_planned": any(e.status in REPEAT_STATUSES for e in entries),
+    }
+
 
 # An episode's entry is a watch, one play of it, when it's completed. The
 # episode has been watched when it has an entry in any of these, as one planned

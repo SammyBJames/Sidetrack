@@ -7,7 +7,7 @@ from django.core.cache import cache
 from django.utils import timezone
 
 from app import helpers
-from app.models import REPEAT_STATUSES, MediaTypes, Sources
+from app.models import MediaTypes, Sources, episode_entry_state
 from app.providers import services
 
 logger = logging.getLogger(__name__)
@@ -969,9 +969,7 @@ def process_episodes(season_metadata, episodes_in_db):
                 "image": get_image_url(episode["still_path"]),
                 "title": episode["name"],
                 "overview": episode["overview"],
-                "history": [ep for ep in entries if ep.is_watch],
-                "watched": any(ep.marks_watched for ep in entries),
-                "repeat_planned": any(ep.status in REPEAT_STATUSES for ep in entries),
+                **episode_entry_state(entries),
                 "runtime": get_readable_duration(episode["runtime"]),
                 "runtime_minutes": episode["runtime"],
             },

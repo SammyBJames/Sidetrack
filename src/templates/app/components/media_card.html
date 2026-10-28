@@ -8,10 +8,9 @@
 {% endif %}
 {% firstof item|release_year "" as year %}
 
-{# A poster card; variant "home" swaps the top row and shade for a home section's, with the entry as `media` and `title`. No transform or backdrop filter on this root: the episode modal below is fixed and must stay relative to the viewport #}
+{# A poster card; variant "home" swaps the top row and shade for a home section's, with the entry as `media` and `title` #}
 <div {% if variant == "home" %}id="home-media-{{ item.media_type }}-{{ media.id }}"{% endif %}
-     class="media-card hover-tap relative overflow-hidden rounded-xl bg-surface-800 shadow-lg shadow-black/30 ring-1 transition duration-300 {% if active %}ring-2 ring-indigo-400{% else %}ring-white/10 parent-hover-tap:ring-white/30 parent-hover-tap:shadow-black/60{% endif %}"
-     {% if item.media_type == MediaTypes.EPISODE.value %}x-data="{ trackOpen: false }"{% endif %}>
+     class="media-card hover-tap relative overflow-hidden rounded-xl bg-surface-800 shadow-lg shadow-black/30 ring-1 transition duration-300 {% if active %}ring-2 ring-indigo-400{% else %}ring-white/10 parent-hover-tap:ring-white/30 parent-hover-tap:shadow-black/60{% endif %}">
   {% if variant == "home" %}
     {% include "app/components/card_poster.html" with url=item|media_url image=item.image alt=heading.full top_shade_on_hover=True %}
   {% else %}
@@ -34,19 +33,10 @@
         <div class="ml-auto">
           {% if request.user == user %}
             {% if item.media_type == MediaTypes.EPISODE.value %}
-              {# Opens the episode's latest entry, or adds its first #}
-              <button title="{% if media %}Edit tracking{% else %}Add to tracker{% endif %}"
-                      aria-label="{% if media %}Edit tracking{% else %}Add to tracker{% endif %}"
-                      hx-get="{% media_view_url 'track_modal' item %}"
-                      hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}"}'
-                      hx-target="#{% component_id 'track' item %}"
-                      class="card-chip pointer-events-auto flex size-7 cursor-pointer items-center justify-center text-white transition hover:bg-indigo-600">
-                {% if media %}
-                  {% include "app/icons/eye.svg" with classes="size-3.5" %}
-                {% else %}
-                  {% include "app/icons/eye-closed.svg" with classes="size-3.5" %}
-                {% endif %}
-              </button>
+              {# An episode is acted on through its season's entry, with the state its list loaded #}
+              {% if item.episode_state %}
+                {% include "app/components/action_button.html" with size="chip" card=action_card|default:"grid" ref=item.episode_state entry=item.season_entry %}
+              {% endif %}
             {% else %}
               {% include "app/components/action_button.html" with size="chip" card=action_card|default:"grid" ref=item entry=media %}
             {% endif %}
@@ -81,16 +71,4 @@
       <div class="absolute inset-x-0 bottom-0 z-1">{% include "app/components/progress_bar.html" %}</div>
     {% endif %}
   {% endwith %}
-
-  {% if item.media_type == MediaTypes.EPISODE.value %}
-    <div x-cloak
-         x-show="trackOpen"
-         @dialog-dismiss="trackOpen = false"
-         @dialog-ready="trackOpen = true"
-         class="dialog-backdrop">
-      <div class="dialog-box">
-        <div id="{% component_id 'track' item %}"></div>
-      </div>
-    </div>
-  {% endif %}
 </div>

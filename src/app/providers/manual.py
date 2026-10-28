@@ -1,7 +1,7 @@
 from django.conf import settings
 
 from app import models
-from app.models import REPEAT_STATUSES, MediaTypes, Sources
+from app.models import MediaTypes, Sources, episode_entry_state
 
 
 def metadata(media_id, media_type):
@@ -159,9 +159,7 @@ def process_episodes(season_metadata, episodes_in_db):
             "image": episode["image"],
             "title": episode["title"],
             "overview": "No synopsis available.",
-            "history": [ep for ep in entries if ep.is_watch],
-            "watched": any(ep.marks_watched for ep in entries),
-            "repeat_planned": any(ep.status in REPEAT_STATUSES for ep in entries),
+            **episode_entry_state(entries),
         }
         episodes_metadata.append(episode_data)
 

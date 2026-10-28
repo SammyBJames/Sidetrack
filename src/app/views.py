@@ -999,8 +999,8 @@ def quick_action(request):
     A `home` card is updated in place or removed when the entry left its section
     (`home_status`). A `details` page, whose parts all depend on the entry, is
     reloaded, back to `next`, as is the page an episode is acted on from. Other
-    cards are updated, or removed when the entry left the status filter it was
-    shown in.
+    cards, an episode's in a list included, are updated, or removed when the entry
+    left the status filter it was shown in.
     """
     media_id = request.POST["media_id"]
     source = request.POST["source"]
@@ -1072,7 +1072,7 @@ def quick_action(request):
     )
 
     card = request.POST.get("card")
-    if card == "details" or is_episode:
+    if card == "details":
         # The details page shows the entry in many places, so reload all of it
         return helpers.redirect_back(request)
     if card == "home":
@@ -1088,7 +1088,7 @@ def quick_action(request):
             media_type,
             request.POST.get("home_status"),
         )
-    return _list_card_response(request, media_type, media)
+    return _list_card_response(request, media_type, media, episode_number)
 
 
 def _episode_state(season, media_id, source, season_number, episode_number):
@@ -1127,8 +1127,12 @@ def _stale_response(request):
     return response
 
 
-def _list_card_response(request, media_type, media):
-    """Return an entry's updated card or row, or its removal from a filtered list."""
+def _list_card_response(request, media_type, media, episode_number=None):
+    """Return an entry's updated card or row, or its removal from a filtered list.
+
+    `media` is the entry acted on, which for an episode is its season, and
+    `episode_number` is the episode whose card is drawn, None for other media.
+    """
     if not _matches_status_filter(media, request.POST.get("status")):
         # The entry no longer matches the list's status filter
         response = render(request, "app/components/messages/messages_oob.html")
@@ -1136,7 +1140,39 @@ def _list_card_response(request, media_type, media):
         response["HX-Trigger"] = "libraryChanged"
         return response
 
+    if episode_number is not None:
+        return _episode_card_response(request, media, episode_number)
     return _quick_action_card(request, media_type, media.id)
+
+
+def _episode_card_response(request, season, episode_number):
+    """Return the card of an episode of a season in a list, with its fresh state."""
+    item = Item.objects.get(
+        media_id=season.item.media_id,
+        source=season.item.source,
+        media_type=MediaTypes.EPISODE.value,
+        season_number=season.item.season_number,
+        episode_number=episode_number,
+    )
+    manager = BasicMedia.objects
+    manager.annotate_episode_states([item], request.user)
+    if request.POST.get("release_year"):
+        item.release_year = request.POST["release_year"]
+    context = {
+        "item": item,
+        "media": manager.fetch_media_for_items(
+            [MediaTypes.EPISODE.value],
+            [item.id],
+            request.user,
+        ).get(item.id),
+        "title": request.POST.get("title") or item,
+        "filtered": "status" in request.POST,
+        "active": request.POST.get("active") == "true",
+    }
+    response = render(request, "app/components/media_card_response.html", context)
+    if context["filtered"]:
+        response["HX-Trigger"] = "libraryChanged"
+    return response
 
 
 @require_GET

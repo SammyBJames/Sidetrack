@@ -178,6 +178,7 @@ def list_detail(request, list_id):
     # Annotate items with media objects
     for item in items_page:
         item.media = media_by_item_id.get(item.id)
+    media_manager.annotate_episode_states(items_page, request.user)
 
     # Release events give movie cards their year
     prefetch_related_objects(

@@ -1,9 +1,13 @@
 import datetime
+import re
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import Client, RequestFactory, TestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
+from django.utils import timezone
 
 from app.models import (
     TV,
@@ -16,6 +20,7 @@ from app.models import (
     Sources,
     Status,
 )
+from events.models import Event, SentinelDatetime
 from lists.models import CustomList, CustomListItem
 
 
@@ -544,6 +549,210 @@ class ListDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "<span>2004</span>")
+
+
+class ListEpisodeCardTests(TestCase):
+    """Tests for the episode cards of a custom list."""
+
+    def setUp(self):
+        """Create a user with an empty list."""
+        self.credentials = {"username": "test", "password": "12345"}
+        self.user = get_user_model().objects.create_user(**self.credentials)
+        self.client.login(**self.credentials)
+        self.custom_list = CustomList.objects.create(name="List", owner=self.user)
+
+    def add_episode(
+        self,
+        media_id,
+        number,
+        *,
+        season=None,
+        watched=False,
+        status=Status.COMPLETED.value,
+        season_number=1,
+    ):
+        """Put an episode in the list, with a watch in `season` when `watched`."""
+        item, _ = Item.objects.get_or_create(
+            media_id=media_id,
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.EPISODE.value,
+            season_number=season_number,
+            episode_number=number,
+            defaults={"title": f"Show {media_id}"},
+        )
+        CustomListItem.objects.get_or_create(custom_list=self.custom_list, item=item)
+        if watched:
+            Episode.objects.bulk_create(
+                [Episode(item=item, related_season=season, status=status)]
+            )
+        return item
+
+    def add_season(self, media_id, number=1, *, user=None, status=None):
+        """Track a season of a show, for `user` (the viewer by default)."""
+        item, _ = Item.objects.get_or_create(
+            media_id=media_id,
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.SEASON.value,
+            season_number=number,
+            defaults={"title": f"Show {media_id}"},
+        )
+        return Season.objects.create(
+            item=item,
+            user=user or self.user,
+            status=status or Status.IN_PROGRESS.value,
+        )
+
+    def get_page(self):
+        """Return the list page's markup."""
+        return self.client.get(
+            reverse("list_detail", args=[self.custom_list.id]),
+        ).content.decode()
+
+    def test_cards_show_the_action_of_their_episode(self):
+        """Watched, unwatched and untracked-season episodes each get their action."""
+        season = self.add_season("1")
+        self.add_episode("1", 1, season=season, watched=True)
+        self.add_episode("1", 2, season=season)
+        self.add_episode("2", 1)
+
+        content = self.get_page()
+
+        for media_id, number, instance_id, action in (
+            ("1", 1, season.id, "plan_repeat"),
+            ("1", 2, season.id, "watch"),
+            ("2", 1, "", "watch"),
+        ):
+            self.assertRegex(
+                content,
+                rf'"media_id": "{media_id}".*"episode_number": "{number}", '
+                rf'"instance_id": "{instance_id}", "action": "{action}", '
+                r'"card": "grid"',
+            )
+        # Tracking is edited on the episode's page
+        self.assertNotIn("Edit tracking", content)
+        self.assertNotIn(reverse("track_modal", args=["tmdb", "episode", "1"]), content)
+
+    def test_unaired_episode_shows_no_action(self):
+        """An episode that is not out yet, by its calendar event, can't be watched."""
+        season = self.add_season("1")
+        Event.objects.create(
+            item=season.item,
+            content_number=3,
+            datetime=datetime.datetime(2099, 1, 1, 12, tzinfo=datetime.UTC),
+        )
+        Event.objects.create(
+            item=season.item,
+            content_number=2,
+            datetime=timezone.now() - datetime.timedelta(days=30),
+        )
+        self.add_episode("1", 3, season=season)
+        self.add_episode("1", 2, season=season)
+
+        content = self.get_page()
+
+        self.assertRegex(
+            content, r'"episode_number": "2", "instance_id": "\d+", "action": "watch"'
+        )
+        self.assertNotRegex(
+            content, r'"episode_number": "3", "instance_id": "\d+", "action": '
+        )
+        self.assertIn("E3 \u00b7 January 1, 2099", content)
+
+    def test_episode_with_unknown_date_can_be_watched(self):
+        """An episode whose event holds the unknown-date sentinel is not unaired."""
+        season = self.add_season("1")
+        Event.objects.create(
+            item=season.item,
+            content_number=1,
+            datetime=SentinelDatetime.max_datetime(),
+        )
+        self.add_episode("1", 1, season=season)
+
+        self.assertRegex(
+            self.get_page(),
+            r'"episode_number": "1", "instance_id": "\d+", "action": "watch"',
+        )
+
+    def test_planned_rewatch_of_an_episode_offers_to_watch_it_again(self):
+        """A watched episode with a planned rewatch is watched again from its card."""
+        season = self.add_season("1", status=Status.PLANNING_REPEAT.value)
+        self.add_episode("1", 1, season=season, watched=True)
+        self.add_episode(
+            "1",
+            1,
+            season=season,
+            watched=True,
+            status=Status.PLANNING_REPEAT.value,
+        )
+
+        content = self.get_page()
+
+        self.assertRegex(
+            content,
+            rf'"episode_number": "1", "instance_id": "{season.id}", "action": "watch"',
+        )
+
+    def test_other_users_entries_do_not_leak_into_cards(self):
+        """Another user's watch and season entry leave the viewer's card untouched."""
+        season = self.add_season("1")
+        other = get_user_model().objects.create_user(
+            username="other",
+            password="12345",  # noqa: S106
+        )
+        other_season = self.add_season("1", user=other)
+        self.add_episode("1", 1, season=other_season, watched=True)
+
+        content = self.get_page()
+
+        self.assertRegex(
+            content,
+            rf'"episode_number": "1", "instance_id": "{season.id}", "action": "watch"',
+        )
+
+    def test_episodes_of_two_seasons_use_their_own_season(self):
+        """Episodes of one show's seasons take the entry and events of their own."""
+        season_one = self.add_season("1")
+        Event.objects.create(
+            item=season_one.item,
+            content_number=1,
+            datetime=datetime.datetime(2099, 1, 1, 12, tzinfo=datetime.UTC),
+        )
+        self.add_episode("1", 1, season=season_one)
+        self.add_episode("1", 2, season=season_one, watched=True)
+        self.add_episode("1", 1, season_number=2)
+
+        content = self.get_page()
+
+        self.assertRegex(
+            content,
+            r'"season_number": "1", "episode_number": "2", '
+            rf'"instance_id": "{season_one.id}", "action": "plan_repeat"',
+        )
+        self.assertRegex(
+            content,
+            r'"season_number": "2", "episode_number": "1", '
+            r'"instance_id": "", "action": "watch"',
+        )
+
+    def test_query_count_does_not_grow_with_episode_cards(self):
+        """Loading the state of more episode cards costs no more queries."""
+        season = self.add_season("1")
+        self.add_episode("1", 1, season=season, watched=True)
+        self.get_page()  # warm up per-process caches
+        with CaptureQueriesContext(connection) as one:
+            self.get_page()
+
+        self.add_episode("1", 2, season=season, watched=True)
+        self.add_episode("1", 3, season=season)
+        other = self.add_season("2")
+        self.add_episode("2", 1, season=other, watched=True)
+        self.add_episode("3", 1)
+        with CaptureQueriesContext(connection) as many:
+            content = self.get_page()
+
+        self.assertEqual(len(re.findall(r'"episode_number"', content)), 5)
+        self.assertEqual(len(many), len(one))
+        self.assertEqual(len(re.findall("media-card ", content)), 5)
 
 
 class CreateListViewTest(TestCase):
