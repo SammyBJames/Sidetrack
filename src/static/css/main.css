@@ -3013,17 +3013,11 @@
     .group-hover\/qa\:hidden:is(:where(.group\/qa):hover *) {
       display: none;
     }
-    .group-hover\/qa\:max-w-32:is(:where(.group\/qa):hover *) {
-      max-width: calc(var(--spacing) * 32);
-    }
     .group-hover\/qa\:max-w-\[min\(10rem\,calc\(100cqw-2\.5rem\)\)\]:is(:where(.group\/qa):hover *) {
       max-width: min(10rem, calc(100cqw - 2.5rem));
     }
     .group-hover\/qa\:pl-2\.5:is(:where(.group\/qa):hover *) {
       padding-left: calc(var(--spacing) * 2.5);
-    }
-    .group-hover\/qa\:pl-3:is(:where(.group\/qa):hover *) {
-      padding-left: calc(var(--spacing) * 3);
     }
     .group-hover\/qa\:opacity-100:is(:where(.group\/qa):hover *) {
       opacity: 100%;

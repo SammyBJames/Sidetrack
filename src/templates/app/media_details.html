@@ -58,7 +58,12 @@
             <div class="pt-1">{% include "app/components/season_menu.html" %}</div>
           {% endif %}
 
-          <div class="flex justify-center pt-2 md:justify-start">{% include "app/components/details_track_button.html" %}</div>
+          {% media_view_url 'track_modal' media as track_url %}
+          {% component_id 'track' media current_instance.id as track_id %}
+          <div class="flex justify-center pt-2 md:justify-start">
+            {# Acts on the entry the track target gives, which for a show with episodes to watch is the season whose next episode it watches #}
+            {% include "app/components/action_button.html" with size="large" card="details" ref=track_target entry=track_target.entry all_entries=user_medias finish_ref=media finish_entry=current_instance form_url=track_url form_target="#"|add:track_id form_entry=current_instance %}
+          </div>
         </div>
 
         {# The other actions as icon buttons, starting with the tracking form #}
@@ -159,7 +164,9 @@
                               <h3 class="mt-1 line-clamp-1 text-base font-semibold text-white transition-colors group-hover:text-indigo-200 {% if user.obfuscate_unseen_episodes and not episode.history %}blur{% endif %}"
                                   :class="{ 'blur': obfuscated }">{{ episode.title }}</h3>
                             </div>
-                            <div class="relative z-2">{% include "app/components/episode_watch_chip.html" %}</div>
+                            <div class="relative z-2">
+                              {% include "app/components/action_button.html" with size="chip" card="details" ref=episode entry=current_instance on_card=False %}
+                            </div>
                           </div>
                           <p class="mt-2 line-clamp-2 text-sm leading-relaxed text-pretty text-gray-400 {% if user.obfuscate_unseen_episodes and not episode.history %}blur{% endif %}"
                              :class="{ 'blur': obfuscated }">{{ episode.overview }}</p>

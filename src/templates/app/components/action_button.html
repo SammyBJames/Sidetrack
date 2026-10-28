@@ -1,0 +1,96 @@
+{% load action_button_tags app_tags %}
+
+{# The one button every media's one-click action is drawn with, wherever it is: a chip (`size` "chip") on cards, list rows, the home page and a season's episodes, or the large button (`size` "large") of details and episode pages. `get_action_button` decides what it is, from the `ref`, `entry` and `card` it is included with (see there for the rest): the action, its finish companion on details pages, or, without an action, when the next release is, the status, or an invitation to track #}
+{% get_action_button as button %}
+{% if size == "large" %}
+  <div class="flex w-full gap-2 md:w-auto">
+    <div class="flex h-10 flex-1 overflow-hidden rounded-xl shadow-lg ring-1 shadow-black/30 ring-white/10 md:min-w-56 md:flex-none">
+      {% if button.kind == "action" %}
+        <button type="button"
+                aria-label="{{ button.action.label }}"
+                class="group/track relative flex flex-1 cursor-pointer items-center justify-center gap-2 px-5 text-sm font-semibold text-white transition-colors disabled:cursor-wait {{ button.base_fill }}"
+                {{ button.attrs }}>
+          {% if button.crossfade %}
+            {# Finished media says how often until hover, when it crosses over to the action #}
+            <span class="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover/track:opacity-100 group-focus-visible/track:opacity-100 {{ button.fill }}"></span>
+            {# Both labels share a place, so the button keeps its width while they cross over #}
+            <span class="relative grid place-items-center [.htmx-request_&]:invisible">
+              <span class="flex items-center gap-2 transition duration-300 ease-out [grid-area:1/1] motion-reduce:translate-none! group-hover/track:-translate-y-3 group-hover/track:opacity-0 group-focus-visible/track:-translate-y-3 group-focus-visible/track:opacity-0">
+                {% include button.rest_icon with classes="size-4 shrink-0" %}
+                {{ button.rest_label }}
+              </span>
+              <span class="flex translate-y-3 items-center gap-2 opacity-0 transition duration-300 ease-out [grid-area:1/1] motion-reduce:translate-none! group-hover/track:translate-y-0 group-hover/track:opacity-100 group-focus-visible/track:translate-y-0 group-focus-visible/track:opacity-100">
+                {% include button.icon with classes="size-4 shrink-0" %}
+                {{ button.action.label }}
+              </span>
+            </span>
+          {% else %}
+            <span class="flex items-center gap-2 [.htmx-request_&]:invisible">
+              {% include button.icon with classes="size-4 shrink-0" %}
+              {{ button.action.label }}
+            </span>
+          {% endif %}
+          <span class="htmx-indicator absolute top-1/2 left-1/2 size-4 -translate-1/2 animate-spin">
+            {% include "app/icons/circle-spinning-clockwise.svg" with classes="size-4" %}
+          </span>
+        </button>
+      {% else %}
+        {# Nothing to do in one click, e.g. once dropped or caught up to the latest episode, so it opens the form #}
+        <button type="button"
+                title="{{ button.title }}"
+                class="flex flex-1 items-center justify-center gap-2 px-5 text-sm font-semibold text-white transition-colors {% if button.form_attrs %}cursor-pointer{% endif %} {{ button.fill }}"
+                {{ button.form_attrs }}>
+          {% include button.icon with classes="size-4 shrink-0" %}
+          {{ button.label }}
+        </button>
+      {% endif %}
+    </div>
+
+    {% if button.finish %}
+      {# Beside watching the next episode or logging progress, it can be marked finished all at once #}
+      <button type="button"
+              class="tooltip relative flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl text-white shadow-lg ring-1 shadow-black/30 ring-white/10 transition-colors disabled:cursor-wait {{ button.finish.fill }}"
+              data-tooltip="{{ button.finish.action.label }}"
+              aria-label="{{ button.finish.action.label }}"
+              {{ button.finish.attrs }}>
+        <span class="[.htmx-request_&]:invisible">{% include button.finish.icon with classes="size-4" %}</span>
+        <span class="htmx-indicator absolute top-1/2 left-1/2 size-4 -translate-1/2 animate-spin">
+          {% include "app/icons/circle-spinning-clockwise.svg" with classes="size-4" %}
+        </span>
+      </button>
+    {% endif %}
+  </div>
+{% else %}
+  {# The status, which on hover turns into its one-click action to the next status #}
+  <div class="relative size-7 shrink-0 {% if button.reveal %}hover-reveal{% endif %}">
+    {% if button.kind == "action" %}
+      <button class="card-chip group/qa pointer-events-auto absolute top-0 right-0 flex h-7 cursor-pointer items-center overflow-hidden text-white transition-all duration-200 hover:ring-white/40 disabled:cursor-wait {% if button.tap_through %}pointer-coarse:pointer-events-none{% endif %}"
+              title="{{ button.title }}"
+              aria-label="{{ button.action.label }}"
+              {{ button.attrs }}>
+        {# The next status's color fills in on hover #}
+        <span class="absolute inset-0 opacity-0 transition-opacity duration-200 group-hover/qa:opacity-100 {{ button.fill }}"></span>
+        <span class="relative max-w-0 overflow-hidden text-xs font-semibold text-ellipsis whitespace-nowrap transition-all duration-300 group-hover/qa:max-w-[min(10rem,calc(100cqw-2.5rem))] group-hover/qa:pl-2.5">{{ button.action.label }}</span>
+        <span class="relative flex size-7 shrink-0 items-center justify-center">
+          <span class="size-3.5 group-hover/qa:hidden [.htmx-request_&]:invisible {{ button.rest_color }}">
+            {% include button.rest_icon with classes="size-3.5" %}
+          </span>
+          <span class="hidden size-3.5 group-hover/qa:block [.htmx-request_&]:invisible">
+            {% include button.icon with classes="size-3.5" %}
+          </span>
+          <span class="htmx-indicator absolute size-3.5 animate-spin">
+            {% include "app/icons/circle-spinning-clockwise.svg" with classes="size-3.5" %}
+          </span>
+        </span>
+      </button>
+    {% elif button.kind == "release" %}
+      {# Nothing to do in one click, so it shows when the next release is, in its status's colors #}
+      {% include "app/components/release_button.html" with event=button.state.event event_label=button.label home_status=button.state.status clock_color=button.state.clock_color %}
+    {% elif button.kind == "status" %}
+      <div class="card-chip flex size-7 items-center justify-center"
+           title="{{ button.title }}">
+        <span class="size-3.5 {{ button.rest_color }}">{% include button.rest_icon with classes="size-3.5" %}</span>
+      </div>
+    {% endif %}
+  </div>
+{% endif %}

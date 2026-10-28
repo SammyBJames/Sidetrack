@@ -982,6 +982,9 @@ class MediaManager(models.Manager):
         ).select_related("item")
         queryset = self._apply_prefetch_related(queryset, media_type)
         self.annotate_max_progress(queryset, media_type)
+        # Shows get theirs from their seasons, with `max_progress`
+        if media_type != MediaTypes.TV.value:
+            self._annotate_next_event(queryset)
 
         return queryset
 

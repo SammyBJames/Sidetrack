@@ -1,18 +1,16 @@
 {% load app_tags %}
 
-{# An upcoming release on a card, which reveals its date on hover. With an `event` it adds that to a calendar when clicked, named by `event_label` if given; without one it shows `label`. Takes home_status and clock_color from the including card #}
+{# An upcoming release in an action button's place, which reveals its date on hover. With an `event` it adds that to a calendar when clicked, named by `event_label` if given; without one it shows `label`. Takes home_status and clock_color from the including card #}
 {% firstof event_label event|release_label:user label as label %}
-<div class="relative size-7 shrink-0">
-  {% if event %}
-    <a href="{% url 'download_event' event.id %}"
-       download
-       class="card-chip group/qa pointer-events-auto absolute top-0 right-0 flex h-7 items-center overflow-hidden text-white transition-all duration-200 hover:ring-white/40{% if user.clickable_media_cards %} pointer-coarse:pointer-events-none{% endif %}"
-       title="Add to calendar"
-       aria-label="Add to calendar: {{ label }}">{% include "app/components/release_button_content.html" %}</a>
-  {% else %}
-    <span class="card-chip group/qa pointer-events-auto absolute top-0 right-0 flex h-7 items-center overflow-hidden text-white"
-          tabindex="0"
-          title="Not released yet"
-          aria-label="Not released yet: {{ label }}">{% include "app/components/release_button_content.html" %}</span>
-  {% endif %}
-</div>
+{% if event %}
+  <a href="{% url 'download_event' event.id %}"
+     download
+     class="card-chip group/qa pointer-events-auto absolute top-0 right-0 flex h-7 items-center overflow-hidden text-white transition-all duration-200 hover:ring-white/40{% if user.clickable_media_cards %} pointer-coarse:pointer-events-none{% endif %}"
+     title="Add to calendar"
+     aria-label="Add to calendar: {{ label }}">{% include "app/components/release_button_content.html" %}</a>
+{% else %}
+  <span class="card-chip group/qa pointer-events-auto absolute top-0 right-0 flex h-7 items-center overflow-hidden text-white"
+        tabindex="0"
+        title="Not released yet"
+        aria-label="Not released yet: {{ label }}">{% include "app/components/release_button_content.html" %}</span>
+{% endif %}

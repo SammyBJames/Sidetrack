@@ -50,7 +50,10 @@
           {# The episode, as a menu of the season's others #}
           <div class="pt-1">{% include "app/components/episode_menu.html" %}</div>
 
-          <div class="flex justify-center pt-2 md:justify-start">{% include "app/components/episode_watch_button.html" %}</div>
+          {% component_id 'track' media as track_id %}
+          <div class="flex justify-center pt-2 md:justify-start">
+            {% include "app/components/action_button.html" with size="large" card="details" ref=media entry=season_instance form_url=track_url form_target="#"|add:track_id form_entry=latest_entry %}
+          </div>
         </div>
 
         {# The other actions as icon buttons, starting with the tracking form #}

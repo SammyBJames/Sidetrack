@@ -1,5 +1,6 @@
 import json
 from datetime import UTC
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from django.template.loader import render_to_string
@@ -466,12 +467,6 @@ class AppTagsTests(TestCase):
         with timezone.override("America/Denver"):
             self.assertEqual(app_tags.entry_dates(entry), "Started Mar 1")
 
-    def test_unreleased(self):
-        """Media is unreleased until its air date, or while it has none."""
-        self.assertTrue(app_tags.unreleased("2099-01-01"))
-        self.assertTrue(app_tags.unreleased(None))
-        self.assertFalse(app_tags.unreleased("2008-01-20"))
-
     def test_related_title(self):
         """Row keys read as titles, and names from the source keep their case."""
         cases = [
@@ -592,8 +587,14 @@ class StatusBadgeTests(TestCase):
         item = Item(media_type=MediaTypes.BOOK.value)
 
         html = render_to_string(
-            "app/components/status_badge.html",
-            {"status": Status.REPEATING.value, "item": item},
+            "app/components/action_button.html",
+            {
+                "size": "chip",
+                "card": "grid",
+                "ref": item,
+                "entry": SimpleNamespace(status=Status.REPEATING.value),
+                "readonly": True,
+            },
         )
 
         self.assertIn('title="Rereading"', html)

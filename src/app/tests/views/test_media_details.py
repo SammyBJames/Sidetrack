@@ -9,10 +9,12 @@ from django.db import connection
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
+from django.utils import timezone
 
 from app import config
 from app.models import (
     TV,
+    Anime,
     Book,
     Episode,
     Game,
@@ -23,6 +25,7 @@ from app.models import (
     Sources,
     Status,
 )
+from events.models import Event
 
 
 class MediaDetailsViewTests(TestCase):
@@ -426,6 +429,52 @@ class MediaDetailsViewTests(TestCase):
         )
         # Until hovered, it shows the movie is watched
         self.assertRegex(response.content.decode(), r"</svg>\s*Watched\s*</span>")
+
+    @patch("app.providers.services.get_media_metadata")
+    def test_caught_up_anime_without_a_total_shows_its_release(self, mock_meta):
+        """With no total known, being caught up shows the release, as cards do."""
+        mock_meta.return_value = {
+            "media_id": "9",
+            "title": "Test Anime",
+            "media_type": MediaTypes.ANIME.value,
+            "source": Sources.MANUAL.value,
+            "image": "http://example.com/image.jpg",
+            "max_progress": None,
+            "overview": "",
+        }
+        item = Item.objects.create(
+            media_id="9",
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.ANIME.value,
+            title="Test Anime",
+            image="http://example.com/image.jpg",
+        )
+        Anime.objects.create(
+            item=item,
+            user=self.user,
+            status=Status.IN_PROGRESS.value,
+            progress=3,
+        )
+        Event.objects.create(
+            item=item,
+            content_number=4,
+            datetime=timezone.now() + timezone.timedelta(days=3),
+        )
+
+        response = self.client.get(
+            reverse(
+                "media_details",
+                kwargs={
+                    "source": Sources.MANUAL.value,
+                    "media_type": MediaTypes.ANIME.value,
+                    "media_id": "9",
+                    "title": "test-anime",
+                },
+            ),
+        )
+
+        self.assertContains(response, "E4 · ")
+        self.assertNotContains(response, "+1 episode")
 
     @patch("app.providers.services.get_media_metadata")
     def test_watched_movie_counts_its_plays(self, mock_get_metadata):

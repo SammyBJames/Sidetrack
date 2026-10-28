@@ -469,9 +469,10 @@ def media_details(request, source, media_type, media_id, title):  # noqa: ARG001
         "current_instance": current_instance,
         "watch_providers": watch_providers,
         "watch_provider_region": request.user.watch_provider_region,
-        "next_release": _next_release(current_instance),
         # The entry the tracking button acts on
         "track_target": {
+            "media_id": media_id,
+            "source": source,
             "entry": next_season or current_instance,
             "media_type": MediaTypes.SEASON.value if next_season else media_type,
             "season_number": (next_season.item.season_number if next_season else None),
@@ -560,9 +561,10 @@ def season_details(request, source, media_id, title, season_number):  # noqa: AR
         "user_medias": user_medias,
         "entries": current_instance.runs if current_instance else [],
         "current_instance": current_instance,
-        "next_release": _next_release(current_instance),
         # The entry the tracking button acts on
         "track_target": {
+            "media_id": media_id,
+            "source": source,
             "entry": current_instance,
             "media_type": MediaTypes.SEASON.value,
             "season_number": season_number,
@@ -577,20 +579,6 @@ def season_details(request, source, media_id, title, season_number):  # noqa: AR
         ),
     }
     return render(request, "app/media_details.html", context)
-
-
-def _next_release(entry):
-    """Return the next release of a show or season with episodes to watch, or None.
-
-    Its tracking button shows it once there's nothing out to watch.
-    """
-    if (
-        entry is None
-        or entry.item.media_type not in quick_actions.EPISODIC_TYPES
-        or entry.status not in quick_actions.EPISODE_STATUSES
-    ):
-        return None
-    return helpers.get_next_release(entry)
 
 
 @require_GET

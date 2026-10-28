@@ -656,8 +656,14 @@ class HomeViewTests(TestCase):
 
         for card in ("grid", "row"):
             html = render_to_string(
-                "app/components/quick_action_button.html",
-                {"item": loaded.item, "media": loaded, "card": card, "user": self.user},
+                "app/components/action_button.html",
+                {
+                    "size": "chip",
+                    "ref": loaded.item,
+                    "entry": loaded,
+                    "card": card,
+                    "user": self.user,
+                },
             )
             self.assertIn(reverse("download_event", args=[release.id]), html)
             self.assertNotIn("Mark watched", html)
@@ -799,7 +805,7 @@ class HomeViewTests(TestCase):
         card = card.split('id="home-media-')[0]
         self.assertIn("card-chip flex min-w-0", card)
         self.assertIn("text-indigo-300", card)
-        self.assertIn('<div class="hover-reveal">', card)
+        self.assertIn("shrink-0 hover-reveal", card)
         self.assertIn(reverse("quick_action"), card)
         self.assertIn('"action": "next", "card": "home"', card)
         self.assertNotIn("download_event", card)

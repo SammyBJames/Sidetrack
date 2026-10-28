@@ -673,9 +673,10 @@ class EpisodeDetailsViewTests(TestCase):
 
         for action in (quick_actions.PLAN_REPEAT, quick_actions.WATCH):
             self.assertContains(season, f'"action": "{action}", "card": "details"')
-        self.assertContains(
-            episode,
-            f'"media_type": "episode", "action": "{quick_actions.WATCH}"',
+        self.assertRegex(
+            episode.content.decode(),
+            rf'"episode_number": "2", "instance_id": "\d+", '
+            rf'"action": "{quick_actions.WATCH}"',
         )
         self.assertContains(season, f'hx-post="{reverse("quick_action")}?next=')
 
@@ -761,6 +762,22 @@ class EpisodeDetailsViewTests(TestCase):
             Status.COMPLETED.value,
         )
 
+    def test_episode_chips_stay_tappable_with_clickable_cards(self, _):
+        """Clickable cards leave taps to the card's link, but not on episode chips."""
+        self.user.clickable_media_cards = True
+        self.user.save(update_fields=["clickable_media_cards"])
+        self.watch(1)
+
+        content = self.client.get(self.season_url()).content.decode()
+
+        chips = re.findall(
+            r'<button[^>]*aria-label="(?:Mark watched|Plan to rewatch)"[^>]*>',
+            content,
+        )
+        self.assertEqual(len(chips), 2)
+        for chip in chips:
+            self.assertNotIn("pointer-coarse:pointer-events-none", chip)
+
     def test_season_episodes_link_to_their_pages(self, _):
         """A season's episodes open their pages, and can be watched in one click."""
         self.watch(1)
@@ -772,7 +789,6 @@ class EpisodeDetailsViewTests(TestCase):
         # The watched episode offers to plan a rewatch, and the unwatched one to
         # mark it
         self.assertContains(response, 'aria-label="Plan to rewatch"', 1)
-        self.assertContains(response, 'title="Watched 1 time"', 1)
         self.assertContains(response, 'aria-label="Mark watched"', 1)
         # The unaired episode shows when it airs instead
         self.assertContains(
@@ -821,7 +837,8 @@ class EpisodeDetailsViewTests(TestCase):
 
         content = self.client.get(self.season_url()).content.decode()
 
-        self.assertIn('aria-label="Rewatched"', content)
+        # Done in the rewatch, so it shows its status, not an action
+        self.assertIn('title="Watched 2 times"', content)
         repeat_color = config.get_status_text_color(Status.PLANNING_REPEAT.value)
         self.assertRegex(
             content,
@@ -957,9 +974,9 @@ class EpisodeDetailsViewTests(TestCase):
         )
         self.assertIn("3 Episodes", content)
         self.assertNotIn("1 / 3", content)
-        # The unreleased season shows when it comes out instead of an action
-        self.assertIn('aria-label="Not released yet: E1 · January 1, 2099"', content)
-        self.assertEqual(content.count("Not released yet:"), 1)
+        # The unreleased season is offered like any untracked one
+        self.assertIn('aria-label="Watchlist"', content)
+        self.assertNotIn("Not released yet:", content)
 
     def test_caught_up_season_and_show_show_the_next_release(self, _):
         """With every released episode watched, both pages show the next one's date."""
@@ -984,9 +1001,11 @@ class EpisodeDetailsViewTests(TestCase):
             },
         )
 
-        for url in (self.season_url(), show_url):
+        # The show's release is its season's, so it names the season too
+        for url, label in ((self.season_url(), "E3"), (show_url, "S1E3")):
             content = self.client.get(url).content.decode()
-            self.assertRegex(content, r'<span title="Next episode">S1E3 · ')
+            self.assertRegex(content, rf">\s*{label} · ")
+            self.assertNotIn("Add to tracker", content)
             self.assertNotIn("Mark S1E3 watched", content)
 
     def test_show_in_progress_watches_its_next_episode(self, _):
@@ -1160,22 +1179,3 @@ class ManualShowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Manual Episode 2</h1>")
         self.assertContains(response, 'aria-label="Previous episode"')
-
-    def test_season_cards_are_not_upcoming(self):
-        """Manual seasons have no air dates, so they aren't shown as unreleased."""
-        response = self.client.get(
-            reverse(
-                "media_details",
-                kwargs={
-                    "source": Sources.MANUAL.value,
-                    "media_type": MediaTypes.TV.value,
-                    "media_id": "m1",
-                    "title": "home-movies",
-                },
-            ),
-        )
-
-        self.assertContains(response, "2 Episodes")
-        self.assertNotContains(response, "Not released yet")
-        # The card offers its action, as the release date would replace it
-        self.assertContains(response, 'aria-label="Watchlist"')

@@ -17,7 +17,6 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from app import config
 from app.models import BasicMedia, Item, MediaTypes, Status
 from app.providers import omdb
-from events.models import Event, SentinelDatetime
 
 YEAR_ONLY_PARTS = 1
 YEAR_MONTH_PARTS = 2
@@ -272,29 +271,6 @@ def _add_stored_show_counts(enriched_items, source):
                 "season_count": item.season_count,
                 "length": item.length,
             }
-
-
-def get_next_release(entry):
-    """Return the next dated release of a tracked show or season, or None.
-
-    A show's releases are its seasons', other than specials.
-    """
-    if entry.item.media_type == MediaTypes.TV.value:
-        releases = Event.objects.filter(
-            item__media_id=entry.item.media_id,
-            item__source=entry.item.source,
-            item__media_type=MediaTypes.SEASON.value,
-            item__season_number__gt=0,
-        )
-    else:
-        releases = Event.objects.filter(item=entry.item)
-    return (
-        releases.filter(datetime__gt=timezone.now())
-        .exclude(datetime=SentinelDatetime.max_datetime())
-        .select_related("item")
-        .order_by("datetime")
-        .first()
-    )
 
 
 def _build_user_media_lookup(user, items, media_type):

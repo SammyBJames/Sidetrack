@@ -219,24 +219,15 @@ def sources(media_type):
 
 
 @register.simple_tag
-def get_finish_action(media_type, media):
-    """Return the action that marks a whole show or season watched, or None."""
-    return quick_actions.get_finish_action(media_type, media)
+def get_quick_action(media_type, media):
+    """Return the one-click action of a media card, or None."""
+    return quick_actions.get_quick_action(media_type, media)
 
 
 @register.simple_tag
-def get_quick_action(media_type, media, episode=None):
-    """Return the one-click action of a media card or episode, or None.
-
-    An episode's `media` is its season entry, and `episode` its state.
-    """
-    return quick_actions.get_quick_action(media_type, media, episode)
-
-
-@register.simple_tag
-def get_button_state(media, air_date=None):
+def get_button_state(media):
     """Return what a button without an action shows, or None."""
-    return quick_actions.get_button_state(media, air_date)
+    return quick_actions.get_button_state(media)
 
 
 @register.simple_tag
@@ -425,12 +416,6 @@ def air_date_label(air_date, episode_number=None):
     if episode_number is None:
         return day
     return f"E{episode_number} \u00b7 {day}"
-
-
-@register.filter
-def unreleased(air_date):
-    """Return whether something with this air date, or none, isn't out yet."""
-    return not helpers.is_released_date(air_date)
 
 
 @register.simple_tag

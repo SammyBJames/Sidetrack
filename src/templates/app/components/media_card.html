@@ -33,10 +33,7 @@
         {# Current status, which turns into the action to the next one on hover #}
         <div class="ml-auto">
           {% if request.user == user %}
-            {% if upcoming %}
-              {# Nothing to act on until it comes out, so it shows when that is #}
-              {% include "app/components/release_button.html" with event=None label=upcoming_label home_status=Status.PLANNING.value clock_color="text-sky-400" %}
-            {% elif item.media_type == MediaTypes.EPISODE.value %}
+            {% if item.media_type == MediaTypes.EPISODE.value %}
               {# Opens the episode's latest entry, or adds its first #}
               <button title="{% if media %}Edit tracking{% else %}Add to tracker{% endif %}"
                       aria-label="{% if media %}Edit tracking{% else %}Add to tracker{% endif %}"
@@ -51,11 +48,11 @@
                 {% endif %}
               </button>
             {% else %}
-              {% include "app/components/quick_action_button.html" with card=action_card|default:"grid" %}
+              {% include "app/components/action_button.html" with size="chip" card=action_card|default:"grid" ref=item entry=media %}
             {% endif %}
           {% elif media.status %}
             {# Someone else's card shows their status without an action #}
-            {% include "app/components/status_badge.html" with status=media.status %}
+            {% include "app/components/action_button.html" with size="chip" card="grid" ref=item entry=media readonly=True %}
           {% endif %}
         </div>
       {% endif %}

@@ -19,13 +19,7 @@
   {% endif %}
 {% endif %}
 
+{# An action waits for hover where there is a mouse, as the row header already shows the status #}
 <div class="ml-auto">
-  {% if waiting %}
-    {% include "app/components/release_button.html" with event=state.event home_status=state.status clock_color=state.clock_color %}
-  {% elif quick %}
-    {# Current status, which turns into the action to the next one; the row header already shows the status, so it waits for hover where there is a mouse #}
-    <div class="hover-reveal">{% include "app/components/quick_action_button.html" with card="home" %}</div>
-  {% else %}
-    {% include "app/components/quick_action_button.html" with card="home" %}
-  {% endif %}
+  {% include "app/components/action_button.html" with size="chip" card="home" ref=item entry=media %}
 </div>
