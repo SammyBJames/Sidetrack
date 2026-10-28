@@ -398,10 +398,6 @@ class ShowRewatchTests(TestCase):
         self.assertEqual(self.statuses()[0], Status.REPEATING.value)
 
         season = Season.objects.get(pk=season.pk)
-        season.decrease_progress()
-        season = Season.objects.get(pk=season.pk)
-        self.assertEqual(season.progress, 0)
-        self.assertEqual(season.episodes.watches().count(), 2)
 
         # Finished from the tracking form
         season.status = Status.COMPLETED.value

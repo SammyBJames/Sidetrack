@@ -500,7 +500,7 @@ class IntegrationTest(StaticLiveServerTestCase):
         # Seasons have no list of their own, so their page shows the entry
         expect(self.page.get_by_role("main")).to_contain_text("Your History")
         # A finished season shows it, and offers to plan a rewatch on hover
-        track_button = self.page.locator("""[hx-vals*='"card": "details"']""")
+        track_button = self.page.locator("""[hx-vals*='"card": "details"']""").first
         expect(track_button).to_contain_text("Watched")
         expect(track_button).to_contain_text("Plan to rewatch")
         expect(self.page.get_by_role("main")).to_contain_text("Progress\n7")

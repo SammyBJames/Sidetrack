@@ -567,23 +567,6 @@ class RepeatStatusLabelTests(TestCase):
             self.assertEqual(app_tags.media_status_readable(status, media_type), label)
 
 
-class UnreleasedOnHomeTests(TestCase):
-    """Test which home cards wait on their next release."""
-
-    def test_repeat_with_released_episodes_left_is_not_waiting(self):
-        """A weekly show being rewatched offers its next episode, not its release.
-
-        Once its released episodes are watched, it waits on the next one.
-        """
-        next_event = MagicMock(is_max_datetime=False)
-        behind = MagicMock(next_event=next_event, max_progress=5, progress=3)
-        caught_up = MagicMock(next_event=next_event, max_progress=5, progress=5)
-        for status in (Status.IN_PROGRESS.value, Status.REPEATING.value):
-            with self.subTest(status=status):
-                self.assertFalse(app_tags.unreleased_on_home(behind, status))
-                self.assertTrue(app_tags.unreleased_on_home(caught_up, status))
-
-
 class PlaysHeadingTests(TestCase):
     """Test the heading of the list of times through media."""
 

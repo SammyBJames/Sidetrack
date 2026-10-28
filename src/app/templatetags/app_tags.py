@@ -13,8 +13,7 @@ from django.utils.html import format_html
 from unidecode import unidecode
 
 from app import config, helpers, quick_actions
-from app import home as home_helpers
-from app.models import REPEAT_STATUSES, MediaTypes, Sources, Status, is_caught_up
+from app.models import MediaTypes, Sources, Status, is_caught_up
 from events.models import SentinelDatetime
 
 register = template.Library()
@@ -226,9 +225,18 @@ def get_finish_action(media_type, media):
 
 
 @register.simple_tag
-def get_quick_action(media_type, media):
-    """Return the one-click action of a media card, or None."""
-    return quick_actions.get_quick_action(media_type, media)
+def get_quick_action(media_type, media, episode=None):
+    """Return the one-click action of a media card or episode, or None.
+
+    An episode's `media` is its season entry, and `episode` its state.
+    """
+    return quick_actions.get_quick_action(media_type, media, episode)
+
+
+@register.simple_tag
+def get_button_state(media, air_date=None):
+    """Return what a button without an action shows, or None."""
+    return quick_actions.get_button_state(media, air_date)
 
 
 @register.simple_tag
@@ -425,22 +433,6 @@ def unreleased(air_date):
     return not helpers.is_released_date(air_date)
 
 
-@register.filter
-def repeat_state(episode, season):
-    """Return where a rewatch of one of a season's episodes is.
-
-    While the season is rewatched, that's "left" while the episode has an
-    entry to watch it again and "done" once it's watched. Otherwise, it's
-    "planned" for a watched episode planned to be watched again on its own. It's
-    "" for the rest, like episodes not watched before.
-    """
-    if season is None or not episode["watched"]:
-        return ""
-    if season.status in REPEAT_STATUSES:
-        return "left" if episode["repeat_planned"] else "done"
-    return "planned" if episode["repeat_planned"] else ""
-
-
 @register.simple_tag
 def play_count(entry, entries):
     """Return how many times media was finished, by its entry and all of them.
@@ -613,12 +605,6 @@ def _show_counts(item, media):
     seasons = _field(item, "season_count")
     episodes = _field(item, "length")
     return (seasons, episodes) if seasons and episodes else None
-
-
-@register.filter
-def unreleased_on_home(media, home_status):
-    """Return whether a home card is waiting on its next release."""
-    return home_helpers.is_unreleased_home_media(media, home_status)
 
 
 @register.filter

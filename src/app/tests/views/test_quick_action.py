@@ -189,10 +189,12 @@ class QuickActionViewTests(TestCase):
             quick_actions.COMPLETE,
             instance_id=movie.id,
             card="home",
+            home_status=Status.PLANNING.value,
         )
 
         self.assertEqual(response["HX-Reswap"], "delete")
         self.assertEqual(response["HX-Trigger"], "mediaChanged")
+        self.assertEqual(response["HX-Retarget"], f"#home-media-movie-{movie.id}")
 
     def test_details_page_reloads(self):
         """On a details page the action reloads the page, keeping its message."""
@@ -202,14 +204,21 @@ class QuickActionViewTests(TestCase):
             status=Status.PLANNING.value,
         )
 
-        response = self.post(
-            self.movie_item,
-            quick_actions.COMPLETE,
-            instance_id=movie.id,
-            card="details",
+        response = self.client.post(
+            f"{reverse('quick_action')}?next=/details/page",
+            {
+                "media_id": self.movie_item.media_id,
+                "source": self.movie_item.source,
+                "media_type": self.movie_item.media_type,
+                "action": quick_actions.COMPLETE,
+                "instance_id": movie.id,
+                "card": "details",
+            },
+            headers={"HX-Request": "true"},
         )
 
-        self.assertEqual(response["HX-Refresh"], "true")
+        self.assertNotIn("HX-Refresh", response)
+        self.assertIn('"/details/page"', response["HX-Location"])
         movie.refresh_from_db()
         self.assertEqual(movie.status, Status.COMPLETED.value)
         # Shown by the reloaded page, so not consumed by this response

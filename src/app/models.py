@@ -1232,12 +1232,6 @@ class Media(models.Model):
         self.save()
         logger.info("Incresed progress of %s to %s", self, self.progress)
 
-    def decrease_progress(self):
-        """Decrease the progress of the media by one."""
-        self.progress -= 1
-        self.save()
-        logger.info("Decreased progress of %s to %s", self, self.progress)
-
 
 class BasicMedia(Media):
     """Model for basic media types."""
@@ -2486,41 +2480,6 @@ class Season(Media):
         entry.save()
         logger.info("%s watched.", entry)
 
-    def decrease_progress(self):
-        """Unwatch the current episode of the season."""
-        if self.status in REPEAT_STATUSES:
-            self._undo_latest_repeat()
-            return
-
-        self.unwatch(self.progress)
-
-    def _undo_latest_repeat(self):
-        """Plan to watch again the episode last watched again in the rewatch.
-
-        Its latest watch goes back to being the entry to watch it again.
-        """
-        rewatched = self.repeated_episode_numbers
-        counts = Counter(episode.item.episode_number for episode in self.watches)
-        latest = max(
-            (
-                episode
-                for episode in self.watches
-                if episode.item.episode_number in rewatched
-                # An earlier watch stays, as rewatching added one
-                and counts[episode.item.episode_number] > 1
-            ),
-            key=lambda episode: (
-                episode.end_date is not None,
-                episode.end_date or episode.created_at,
-                episode.created_at,
-            ),
-            default=None,
-        )
-        if latest is not None:
-            latest.status = Status.PLANNING_REPEAT.value
-            latest.end_date = None
-            latest.save()
-
     def unwatch(self, episode_number):
         """Unwatch the episode instance."""
         item = self.get_episode_item(episode_number)
@@ -3074,12 +3033,6 @@ class Game(Media):
     def increase_progress(self):
         """Increase the progress of the media by 30 minutes."""
         self.progress += 30
-        self.save()
-        logger.info("Changed playtime of %s to %s", self, self.formatted_progress)
-
-    def decrease_progress(self):
-        """Decrease the progress of the media by 30 minutes."""
-        self.progress -= 30
         self.save()
         logger.info("Changed playtime of %s to %s", self, self.formatted_progress)
 

@@ -367,23 +367,6 @@ class EpisodeEntryCascadeTests(TestCase):
             [(number, Status.COMPLETED.value) for number in (1, 2, 3)],
         )
 
-    def test_rewatching_an_episode_undone_plans_it_again(self, *_):
-        """Taking back the latest episode of a rewatch makes it left to watch again."""
-        Season.objects.filter(pk=self.season.pk).update(status=Status.COMPLETED.value)
-        for number in (1, 2, 3):
-            self.add(number, Status.COMPLETED.value)
-        season = self.set_status(Status.REPEATING.value)
-        season.increase_progress()
-        season = Season.objects.get(pk=season.pk)
-        self.assertEqual((season.progress, season.next_repeat_episode_number), (1, 2))
-
-        season.decrease_progress()
-
-        season = Season.objects.get(pk=season.pk)
-        self.assertEqual((season.progress, season.next_repeat_episode_number), (0, 1))
-        self.assertEqual(season.episodes.watches().count(), 3)
-        self.assertEqual(season.plays, 1)
-
     def test_leaving_a_rewatch_drops_what_was_left(self, *_):
         """A rewatch given up leaves no entries to watch again, nor new plays."""
         Season.objects.filter(pk=self.season.pk).update(status=Status.COMPLETED.value)
@@ -467,25 +450,6 @@ class EpisodeEntryCascadeTests(TestCase):
                     ],
                 )
 
-    def test_undoing_a_rewatch_takes_back_its_latest_episode(self, *_):
-        """With two episodes watched again, taking one back leaves the first."""
-        Season.objects.filter(pk=self.season.pk).update(status=Status.COMPLETED.value)
-        for number in (1, 2, 3):
-            self.add(
-                number,
-                Status.COMPLETED.value,
-                end_date=datetime(2023, 1, 1, tzinfo=UTC),
-            )
-        season = self.set_status(Status.REPEATING.value)
-        for _ in range(2):
-            Season.objects.get(pk=season.pk).increase_progress()
-
-        Season.objects.get(pk=season.pk).decrease_progress()
-
-        season = Season.objects.get(pk=season.pk)
-        self.assertEqual(season.repeated_episode_numbers, {1})
-        self.assertEqual(season.next_repeat_episode_number, 2)
-
     def test_starting_the_next_season_resumes_its_paused_entries(
         self, mock_metadata, _
     ):
@@ -524,29 +488,6 @@ class EpisodeEntryCascadeTests(TestCase):
         self.assertEqual(
             self.entries(),
             [(number, Status.PLANNING.value) for number in (1, 2, 3)],
-        )
-
-    def test_undoing_a_rewatch_leaves_episodes_watched_once(self, *_):
-        """An episode first watched during the rewatch isn't taken back by it."""
-        Season.objects.filter(pk=self.season.pk).update(status=Status.REPEATING.value)
-        self.add(1, Status.COMPLETED.value, end_date=datetime(2023, 1, 1, tzinfo=UTC))
-        self.add(1, Status.COMPLETED.value, end_date=datetime(2024, 1, 1, tzinfo=UTC))
-        self.add(2, Status.COMPLETED.value, end_date=datetime(2023, 1, 1, tzinfo=UTC))
-        self.add(2, Status.PLANNING_REPEAT.value)
-        # Out after the rewatch was planned, so watched for the first time
-        self.add(3, Status.COMPLETED.value, end_date=datetime(2024, 2, 1, tzinfo=UTC))
-
-        Season.objects.get(pk=self.season.pk).decrease_progress()
-
-        self.assertEqual(
-            self.entries(),
-            [
-                (1, Status.COMPLETED.value),
-                (1, Status.PLANNING_REPEAT.value),
-                (2, Status.COMPLETED.value),
-                (2, Status.PLANNING_REPEAT.value),
-                (3, Status.COMPLETED.value),
-            ],
         )
 
     def test_a_watch_planned_again_keeps_its_season_finished(self, *_):

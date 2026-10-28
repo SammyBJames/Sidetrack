@@ -8,7 +8,13 @@ from django.db.models import Min
 from django.utils import timezone
 
 from app import config, helpers
-from app.models import REPEAT_STATUSES, BasicMedia, MediaTypes, Status
+from app.models import (
+    REPEAT_STATUSES,
+    BasicMedia,
+    MediaTypes,
+    Status,
+    is_caught_up,
+)
 from app.providers import services
 from events.models import Event
 
@@ -21,6 +27,8 @@ PLAN_REPEAT = "plan_repeat"
 REPEAT = "repeat"
 LOG = "log"
 START_REPEAT = "start_repeat"
+# An episode's own action: watching it now, whether for the first time or again
+WATCH = "watch"
 
 # Media that is usually finished in one sitting, so planning leads to completing
 SINGLE_SITTING_TYPES = {MediaTypes.MOVIE.value}
@@ -49,6 +57,30 @@ DERIVED_DATE_TYPES = {MediaTypes.TV.value, MediaTypes.SEASON.value}
 # Shows and seasons: one entry per user, which repeats through its episodes
 # rather than through new entries
 EPISODIC_TYPES = DERIVED_DATE_TYPES
+
+
+# What colours a release's clock by the status the entry waits in
+CLOCK_COLORS = {
+    Status.PLANNING.value: "text-sky-400",
+    Status.IN_PROGRESS.value: "text-indigo-300",
+    Status.REPEATING.value: "text-teal-300",
+    Status.PLANNING_REPEAT.value: "text-teal-300",
+}
+
+
+@dataclass(frozen=True)
+class ButtonState:
+    """What a button shows when it has no action: a release, or a status.
+
+    `status` is the status shown, or for a release, the one it waits in, whose
+    colours it takes. A release has the `event` it waits for, or none when only
+    its air date is known.
+    """
+
+    status: str | None
+    release: bool
+    event: Event | None
+    clock_color: str
 
 
 @dataclass(frozen=True)
@@ -92,23 +124,28 @@ ACTIONS = {
         "app/icons/states/repeating.svg",
         Status.REPEATING.value,
     ),
+    WATCH: ("Mark {past}", "app/icons/states/completed.svg", Status.COMPLETED.value),
     # Not one click: it asks for the page or time, and keeps the status
     LOG: ("Log {logged}", "app/icons/edit.svg", Status.IN_PROGRESS.value),
 }
 
 
-def get_quick_action(media_type, media):
+def get_quick_action(media_type, media, episode=None):
     """Return the most likely next action for a media type and tracked entry.
 
     `media` is the user's entry, or None when they don't track it yet. Returns
-    None when there is nothing sensible to offer, e.g. for episodes, caught up
-    entries, or entries that are dropped. Finished media is planned to be
-    repeated, which then marks a new play. Shows and seasons, planned or not,
-    watch their next episode. Books and games in progress or repeating get the
-    log action, which asks for a page or time and keeps the status.
+    None when there is nothing sensible to offer, e.g. for caught up entries, or
+    entries that are dropped. Finished media is planned to be repeated, which
+    then marks a new play. Shows and seasons, planned or not, watch their next
+    episode. Books and games in progress or repeating get the log action, which
+    asks for a page or time and keeps the status.
+
+    An episode is acted on through its season entry as `media` and its state as
+    `episode`, as a provider's processed episode gives it. Without that state
+    there is no action.
     """
     if media_type == MediaTypes.EPISODE.value:
-        return None
+        return None if episode is None else _get_episode_action(media, episode)
 
     status = media.status if media else None
     if media_type == MediaTypes.TV.value and status in EPISODE_STATUSES:
@@ -129,7 +166,7 @@ def get_quick_action(media_type, media):
             # Its planned seasons are still to air
             return None
 
-    key = _action_key(media_type, media)
+    key = None if media and _waiting(media) else _action_key(media_type, media)
     if key is None:
         return None
 
@@ -138,6 +175,34 @@ def get_quick_action(media_type, media):
     if key in (NEXT, LOG) and status in REPEAT_STATUSES:
         target_status = Status.REPEATING.value
     return QuickAction(key, label, icon, target_status)
+
+
+def get_button_state(media, air_date=None):
+    """Return what a button shows when it has no action, or None for nothing.
+
+    A known next release comes first: the next event of an entry planned, in
+    progress or repeated, or an `air_date` still to come. Its clock takes the
+    colours of the status the entry waits in, which is planning once it has all
+    that is out. Otherwise it is the entry's status, if it has one. Used only
+    when `get_quick_action` has no action.
+    """
+    status = media.status if media else None
+    event = getattr(media, "next_event", None)
+    if event is not None and (event.is_max_datetime or status not in CLOCK_COLORS):
+        event = None
+    unaired = bool(air_date) and not helpers.is_released_date(air_date)
+    if event is None and not unaired:
+        return (
+            ButtonState(status, release=False, event=None, clock_color="")
+            if status
+            else None
+        )
+
+    if status not in CLOCK_COLORS or is_caught_up(media):
+        status = Status.PLANNING.value
+    return ButtonState(
+        status, release=True, event=event, clock_color=CLOCK_COLORS[status]
+    )
 
 
 def get_finish_action(media_type, media):
@@ -173,15 +238,44 @@ def get_finish_action(media_type, media):
     )
 
 
+def _get_episode_action(season, episode):
+    """Return the action of an episode of a season entry, or None.
+
+    A watched one is planned to be watched again, which then watches it again, as
+    do those left to watch in a season's rewatch. Once watched in that rewatch,
+    or while it's still to air, there is nothing to do. `season` is None when the
+    user doesn't track the season.
+    """
+    watched = season is not None and episode["watched"]
+    if watched and not episode["repeat_planned"]:
+        # Done in its season's rewatch, else watched and offered again
+        if season.status in REPEAT_STATUSES:
+            return None
+        return _episode_action(PLAN_REPEAT)
+    if episode["air_date"] and not helpers.is_released_date(episode["air_date"]):
+        return None
+    return _episode_action(WATCH, again=watched)
+
+
+def _episode_action(key, *, again=False):
+    """Return an episode's action, with a label for watching it again if `again`."""
+    label, icon, target_status = ACTIONS[key]
+    verb = config.get_verb(MediaTypes.EPISODE.value, past_tense=False)
+    past = config.get_verb(MediaTypes.EPISODE.value, past_tense=True)
+    return QuickAction(
+        key,
+        label.format(verb=verb, past=f"re{past}" if again else past),
+        icon,
+        target_status,
+    )
+
+
 def _action_key(media_type, media):
     """Return the key of the action for a media type and tracked entry, or None."""
     status = media.status if media else None
     if status is None:
         return PLAN
     if media_type == MediaTypes.SEASON.value and status in EPISODE_STATUSES:
-        if status == Status.PLANNING.value and _unaired(media.item):
-            # Nothing to watch until it airs
-            return None
         return _progress_action_key(media_type, media)
     if status in (Status.IN_PROGRESS.value, Status.REPEATING.value):
         return _progress_action_key(media_type, media)
@@ -238,8 +332,12 @@ def _label_and_icon(key, media_type, media):
     return label, icon
 
 
-def apply_quick_action(action, media):
+def apply_quick_action(action, media, episode_number=None):
     """Apply a quick action to a tracked entry, or to an unsaved one to create it.
+
+    For an episode's action, `media` is its season and `episode_number` the
+    episode: watching it now, or planning to watch it again. A season not saved
+    yet is, with the episode, started.
 
     Saves `media` and returns it, or the new entry that planning a repeat
     starts, which keeps the finished one as an earlier play. A start or end date
@@ -247,6 +345,10 @@ def apply_quick_action(action, media):
     from its episodes. Planning a show plans its seasons too, and planning a
     season its episodes.
     """
+    if episode_number is not None:
+        _apply_episode_action(action, media, episode_number)
+        return media
+
     if action.key == NEXT:
         if media.item.media_type == MediaTypes.TV.value:
             _watch_show_next_episode(media)
@@ -281,6 +383,24 @@ def apply_quick_action(action, media):
         elif action.key == PLAN and media.item.media_type == MediaTypes.SEASON.value:
             media.plan_episodes()
     return media
+
+
+def _apply_episode_action(action, season, episode_number):
+    """Watch an episode of a season now, or plan to watch it again.
+
+    Saves a season not tracked yet as in progress.
+    """
+    with transaction.atomic():
+        if season.pk is None:
+            season.status = Status.IN_PROGRESS.value
+            season.save()
+        if action.key == WATCH:
+            season.watch(
+                episode_number,
+                timezone.now().replace(second=0, microsecond=0),
+            )
+        else:
+            season.plan_repeat_entries(episode_number)
 
 
 def book_total(book):
@@ -341,10 +461,19 @@ def _watch_show_next_episode(tv):
         season.increase_progress()
 
 
-def success_message(action, media):
-    """Return the confirmation message for a quick action applied to `media`."""
+def success_message(action, media, episode_number=None):
+    """Return the confirmation message for a quick action applied to `media`.
+
+    An episode's action names the episode of the season `media`.
+    """
     verb = config.get_verb(media.item.media_type, past_tense=False)
     past = config.get_verb(media.item.media_type, past_tense=True)
+    if episode_number is not None:
+        subject = f"{media.item} E{episode_number}"
+        return {
+            WATCH: f"{subject} marked as {past}.",
+            PLAN_REPEAT: f"Planning to re{verb} {subject}.",
+        }[action.key]
     messages = {
         PLAN: (
             f"{media.item} added to your watchlist."
@@ -408,18 +537,37 @@ def get_show_next_season(tv):
     return None
 
 
-def _unaired(item):
+def _waiting(media):
+    """Return whether an entry waits on its releases, so there is nothing to act on.
+
+    That's when it is caught up on everything out, or is planned with every known
+    release still to come. Seasons look their releases up when they weren't
+    loaded, as in a list; other media goes by those loaded, so a card costs no
+    query.
+    """
+    if media.status in (Status.IN_PROGRESS.value, Status.REPEATING.value):
+        return is_caught_up(media)
+    item = getattr(media, "item", None)
+    if item and media.status == Status.PLANNING.value:
+        return _unaired(item, lookup=item.media_type == MediaTypes.SEASON.value)
+    return False
+
+
+def _unaired(item, *, lookup):
     """Return whether all of an item's known releases are still to come.
 
-    Uses the item's `prefetched_events` when they were loaded.
+    Uses the item's `prefetched_events` when they were loaded, else queries them
+    if `lookup`.
     """
     events = getattr(item, "prefetched_events", None)
     if events is not None:
         first_release = min((event.datetime for event in events), default=None)
-    else:
+    elif lookup:
         first_release = Event.objects.filter(item=item).aggregate(
             first=Min("datetime"),
         )["first"]
+    else:
+        return False
     return first_release is not None and first_release > timezone.now()
 
 

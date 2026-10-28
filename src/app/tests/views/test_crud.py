@@ -153,13 +153,14 @@ class CreateMedia(TestCase):
         """One click marks an episode watched now, without the form's fields."""
         before = timezone.now().replace(second=0, microsecond=0)
         self.client.post(
-            reverse("episode_save"),
+            reverse("quick_action"),
             {
                 "media_id": "1668",
                 "season_number": 1,
                 "episode_number": 2,
                 "source": Sources.TMDB.value,
-                "quick": "1",
+                "media_type": MediaTypes.EPISODE.value,
+                "action": "watch",
             },
         )
         episode = Episode.objects.get(

@@ -57,11 +57,6 @@ urlpatterns = [
         name="track_modal",
     ),
     path(
-        "progress_edit/<media_type:media_type>/<int:instance_id>",
-        views.progress_edit,
-        name="progress_edit",
-    ),
-    path(
         "log_modal/<media_type:media_type>/<int:instance_id>",
         views.log_modal,
         name="log_modal",
@@ -80,11 +75,6 @@ urlpatterns = [
         name="mark_user_messages_shown",
     ),
     path("episode_save", views.episode_save, name="episode_save"),
-    path(
-        "episode_plan_repeat",
-        views.episode_plan_repeat,
-        name="episode_plan_repeat",
-    ),
     path(
         "history_modal/<source:source>/<media_type:media_type>/<str:media_id>",
         views.history_modal,

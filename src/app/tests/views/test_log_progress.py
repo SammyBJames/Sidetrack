@@ -271,9 +271,15 @@ class LogProgressViewTests(TestCase):
         """On a details page the log reloads the page, keeping its message."""
         book = self.book(progress=10)
 
-        response = self.log(book, page="20", card="details")
+        url = reverse("log_progress", args=[MediaTypes.BOOK.value, book.id])
+        response = self.client.post(
+            f"{url}?next=/details/page",
+            {"page": "20", "card": "details"},
+            headers={"HX-Request": "true"},
+        )
 
-        self.assertEqual(response["HX-Refresh"], "true")
+        self.assertNotIn("HX-Refresh", response)
+        self.assertIn('"/details/page"', response["HX-Location"])
         self.assertEqual(
             [str(message) for message in get_messages(response.wsgi_request)],
             ["Test Book is now on page 20."],

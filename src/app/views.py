@@ -9,7 +9,6 @@ from django.contrib.auth.decorators import login_not_required
 from django.core.cache import cache
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
-from django.db.models import Prefetch, prefetch_related_objects
 from django.db.models.functions import Coalesce
 from django.http import Http404, HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -35,11 +34,9 @@ from app.forms import (
     get_form_class,
 )
 from app.models import (
-    REPEAT_STATUSES,
     TV,
     WATCH_STATUS,
     BasicMedia,
-    Episode,
     Item,
     MediaTypes,
     Season,
@@ -50,7 +47,6 @@ from app.models import (
 )
 from app.providers import manual, services, tmdb
 from app.templatetags import app_tags
-from events.models import Event
 from users.models import (
     DateFormatChoices,
     LayoutChoices,
@@ -86,44 +82,6 @@ def home(request):
     """Home page with a row of entries per status and media type."""
     context = {"home_rows": home_helpers.build_home_rows(request.user, items_limit=20)}
     return render(request, "app/home.html", context)
-
-
-@require_POST
-def progress_edit(request, media_type, instance_id):
-    """Increase or decrease the progress of a media item from the home page.
-
-    Returns the updated card, or removes it and refreshes the home sections when
-    the entry no longer belongs in the section named by `home_status`.
-    """
-    operation = request.POST["operation"]
-    home_status = request.POST.get("home_status")
-
-    media = helpers.get_owned_media_or_404(
-        request, media_type, instance_id, prefetch=True
-    )
-
-    if operation == "increase":
-        media.increase_progress()
-    elif operation == "decrease":
-        media.decrease_progress()
-
-    if media_type == MediaTypes.SEASON.value:
-        # clear prefetch cache to get the updated episodes
-        media.refresh_from_db()
-        prefetch_related_objects(
-            [media],
-            Prefetch(
-                "episodes",
-                queryset=Episode.objects.select_related("item"),
-            ),
-            Prefetch(
-                "item__event_set",
-                queryset=Event.objects.all(),
-                to_attr="prefetched_events",
-            ),
-        )
-
-    return _home_card_response(request, media, media_type, home_status)
 
 
 def _home_card_response(request, media, media_type, home_status):
@@ -1041,15 +999,20 @@ def media_save(request):
 
 @require_POST
 def quick_action(request):
-    """Apply the one-click action of a media card and return the updated card.
+    """Apply a one-click action and return what the `card` it came from shows.
 
     The entry is the one given by `instance_id`, else the user's entry for the
-    media, which is created if missing. `action` is the key the card showed, or
+    media, which is created if missing. `action` is the key the button showed, or
     with `finish`, that of the button marking a whole show, season, book or game
-    done. If it no longer matches, or is the log action, which `log_progress`
-    handles, nothing is changed. Removes the card instead of updating it when
-    the entry left the section or status filter it was shown in, and reloads the
-    page when the action came from a details page.
+    done. An episode is posted with its `episode_number` and acts on its season's
+    entry. If the action no longer matches, or is the log action, which
+    `log_progress` handles, nothing is changed.
+
+    A `home` card is updated in place or removed when the entry left its section
+    (`home_status`). A `details` page, whose parts all depend on the entry, is
+    reloaded, back to `next`, as is the page an episode is acted on from. Other
+    cards are updated, or removed when the entry left the status filter it was
+    shown in.
     """
     media_id = request.POST["media_id"]
     source = request.POST["source"]
@@ -1057,14 +1020,18 @@ def quick_action(request):
     season_number = request.POST.get("season_number") or None
     instance_id = request.POST.get("instance_id")
     expected_action = request.POST["action"]
+    is_episode = media_type == MediaTypes.EPISODE.value
+    episode_number = int(request.POST["episode_number"]) if is_episode else None
+    # An episode is tracked by its season
+    entry_type = MediaTypes.SEASON.value if is_episode else media_type
 
     if instance_id:
-        media = helpers.get_owned_media_or_404(request, media_type, instance_id)
+        media = helpers.get_owned_media_or_404(request, entry_type, instance_id)
     else:
         media = BasicMedia.objects.filter_media(
             request.user,
             media_id,
-            media_type,
+            entry_type,
             source,
             season_number=season_number,
         ).first()
@@ -1072,12 +1039,19 @@ def quick_action(request):
     # A show or season's second button marks all of it watched
     if request.POST.get("finish"):
         action = quick_actions.get_finish_action(media_type, media)
+    elif is_episode:
+        action = quick_actions.get_quick_action(
+            media_type,
+            media,
+            _episode_state(media, media_id, source, season_number, episode_number),
+        )
     else:
         action = quick_actions.get_quick_action(media_type, media)
     # Planning a repeat adds a newer entry, which leaves the older one's cards stale
     if (
         action is not None
         and action.key == quick_actions.PLAN_REPEAT
+        and not is_episode
         and media_type not in quick_actions.EPISODIC_TYPES
         and BasicMedia.objects.filter_media(
             request.user,
@@ -1099,27 +1073,62 @@ def quick_action(request):
         return response
 
     if media is None:
-        item = _get_or_create_item(media_id, source, media_type, season_number)
-        model = apps.get_model(app_label="app", model_name=media_type)
+        item = _get_or_create_item(media_id, source, entry_type, season_number)
+        model = apps.get_model(app_label="app", model_name=entry_type)
         media = model(item=item, user=request.user)
-    media = quick_actions.apply_quick_action(action, media)
+    media = quick_actions.apply_quick_action(action, media, episode_number)
     logger.info("Applied quick action %s to %s", action.key, media)
-    messages.success(request, quick_actions.success_message(action, media))
+    messages.success(
+        request,
+        quick_actions.success_message(action, media, episode_number),
+    )
 
-    if request.POST.get("card") == "details":
+    card = request.POST.get("card")
+    if card == "details" or is_episode:
         # The details page shows the entry in many places, so reload all of it
-        response = HttpResponse()
-        response["HX-Refresh"] = "true"
-        return response
-
-    if request.POST.get("card") == "home":
-        # Home actions change the status, so the card moves to another section
-        response = render(request, "app/components/messages/messages_oob.html")
-        response["HX-Reswap"] = "delete"
-        response["HX-Trigger"] = "mediaChanged"
-        return response
-
+        return helpers.redirect_back(request)
+    if card == "home":
+        # Fresh, so the card shows what the action did to its episodes
+        media = BasicMedia.objects.get_media_prefetch(
+            request.user,
+            media_type,
+            media.id,
+        )
+        return _home_card_response(
+            request,
+            media,
+            media_type,
+            request.POST.get("home_status"),
+        )
     return _list_card_response(request, media_type, media)
+
+
+def _episode_state(season, media_id, source, season_number, episode_number):
+    """Return the state of an episode of a user's season, which may be untracked.
+
+    It's the provider's processed episode, with the user's entries and its air
+    date, or None for an episode the season doesn't have, e.g. a mistyped number.
+    """
+    metadata = services.get_media_metadata(
+        "tv_with_seasons",
+        media_id,
+        source,
+        [int(season_number)],
+    )[f"season/{season_number}"]
+    process = (
+        manual.process_episodes
+        if source == Sources.MANUAL.value
+        else tmdb.process_episodes
+    )
+    entries = season.episodes.select_related("item") if season else []
+    return next(
+        (
+            episode
+            for episode in process(metadata, entries)
+            if episode["episode_number"] == episode_number
+        ),
+        None,
+    )
 
 
 def _stale_response(request):
@@ -1147,7 +1156,7 @@ def log_modal(request, media_type, instance_id):
     """Return the dialog to log a book's page or a game session for an entry.
 
     The `card` the dialog was opened from, and the display state its response
-    needs (`title`, `release_year`, `active`, `home_status`, `status`, `sort`),
+    needs (`title`, `release_year`, `active`, `home_status`, `status`, `sort`, `next`),
     are carried in the query and posted back with the log.
     """
     if media_type not in quick_actions.LOGGED_TYPES:
@@ -1165,6 +1174,7 @@ def log_modal(request, media_type, instance_id):
         "home_status",
         "status",
         "sort",
+        "next",
     )
     return render(
         request,
@@ -1190,7 +1200,7 @@ def log_progress(request, media_type, instance_id):
     user's own entry in progress or repeating, which finishes a book logged at
     its last page. Invalid input gets a 422 with the form's `errors` as JSON,
     and an entry no longer in progress changes nothing. The response follows
-    `card` as a quick action's does, with the home card as progress_edit's.
+    `card` as a quick action's does.
     """
     form_class = {
         MediaTypes.BOOK.value: BookLogForm,
@@ -1219,9 +1229,7 @@ def log_progress(request, media_type, instance_id):
 
     card = request.POST.get("card")
     if card == "details":
-        response = HttpResponse()
-        response["HX-Refresh"] = "true"
-        return response
+        return helpers.redirect_back(request)
     if card == "home":
         return _home_card_response(
             request,
@@ -1355,28 +1363,22 @@ def mark_user_messages_shown(request):
 def episode_save(request):
     """Add an entry of an episode, tracking its season if it isn't yet.
 
-    `quick` watches it now in one click. Otherwise the posted EpisodeForm is
-    the entry: a watch turns an entry planning the episode into it, as
-    `Season.watch` does, and any other status adds an entry as it is.
+    The posted EpisodeForm is the entry: a watch turns an entry planning the
+    episode into it, as `Season.watch` does, and any other status adds an entry
+    as it is.
     """
     media_id = request.POST["media_id"]
     season_number = int(request.POST["season_number"])
     episode_number = int(request.POST["episode_number"])
     source = request.POST["source"]
 
-    if request.POST.get("quick"):
-        # One click marks it watched now, like a season's next episode action
-        end_date = timezone.now().replace(second=0, microsecond=0)
-        notes = ""
-        status = WATCH_STATUS
-    else:
-        form = EpisodeForm(request.POST)
-        if not form.is_valid():
-            logger.error("Form validation failed: %s", form.errors)
-            return HttpResponseBadRequest("Invalid form data")
-        end_date = form.cleaned_data["end_date"]
-        notes = form.cleaned_data["notes"]
-        status = form.cleaned_data["status"]
+    form = EpisodeForm(request.POST)
+    if not form.is_valid():
+        logger.error("Form validation failed: %s", form.errors)
+        return HttpResponseBadRequest("Invalid form data")
+    end_date = form.cleaned_data["end_date"]
+    notes = form.cleaned_data["notes"]
+    status = form.cleaned_data["status"]
 
     try:
         related_season = Season.objects.get(
@@ -1418,19 +1420,7 @@ def episode_save(request):
 
         logger.info("%s did not exist, it was created successfully.", related_season)
 
-    # One click is only offered for an episode not watched, or planned to be
-    # watched again, so a second one, e.g. while the page reloads, doesn't add
-    # another watch
-    statuses = set(
-        related_season.episodes.filter(
-            item__episode_number=episode_number,
-        ).values_list("status", flat=True),
-    )
-    already_watched = WATCH_STATUS in statuses and not statuses & set(REPEAT_STATUSES)
-    if request.POST.get("quick"):
-        if not already_watched:
-            related_season.watch(episode_number, end_date, notes)
-    elif status == WATCH_STATUS:
+    if status == WATCH_STATUS:
         related_season.watch(
             episode_number,
             end_date,
@@ -1445,25 +1435,6 @@ def episode_save(request):
         entry.save()
         logger.info("%s added as %s.", entry, status)
 
-    return helpers.redirect_back(request)
-
-
-@require_POST
-def episode_plan_repeat(request):
-    """Plan to watch a watched episode of the user's season again on its own.
-
-    It gets an entry to watch it again, unless it has one already.
-    """
-    season = get_object_or_404(
-        Season,
-        item__media_id=request.POST["media_id"],
-        item__source=request.POST["source"],
-        item__season_number=int(request.POST["season_number"]),
-        user=request.user,
-    )
-    episode_number = int(request.POST["episode_number"])
-    if season.plan_repeat_entries(episode_number):
-        logger.info("Planned to rewatch %s E%s", season, episode_number)
     return helpers.redirect_back(request)
 
 

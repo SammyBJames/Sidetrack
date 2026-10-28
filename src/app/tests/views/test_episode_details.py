@@ -1,13 +1,15 @@
 import re
 from datetime import UTC, datetime
 from unittest.mock import patch
+from urllib.parse import quote
 
 from django.contrib.auth import get_user_model
+from django.contrib.messages import get_messages
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from app import config
+from app import config, quick_actions
 from app.models import Episode, Item, MediaTypes, Season, Sources, Status
 from events.models import Event
 
@@ -592,11 +594,12 @@ class EpisodeDetailsViewTests(TestCase):
             "source": Sources.TMDB.value,
             "season_number": 1,
             "episode_number": 2,
-            "quick": "1",
+            "media_type": MediaTypes.EPISODE.value,
+            "action": quick_actions.WATCH,
         }
 
-        self.client.post(reverse("episode_save"), data)
-        self.client.post(reverse("episode_save"), data)
+        first = self.client.post(reverse("quick_action"), data)
+        second = self.client.post(reverse("quick_action"), data)
 
         self.assertEqual(
             Episode.objects.filter(
@@ -605,6 +608,111 @@ class EpisodeDetailsViewTests(TestCase):
             ).count(),
             1,
         )
+        self.assertNotIn("HX-Reswap", first)
+        self.assertEqual(second["HX-Reswap"], "none")
+
+    def act(self, number, action, **extra):
+        """Post a one-click action on an episode of the first season's page."""
+        return self.client.post(
+            f"{reverse('quick_action')}?next={self.season_url()}",
+            {
+                "media_id": "1396",
+                "source": Sources.TMDB.value,
+                "season_number": 1,
+                "episode_number": number,
+                "media_type": MediaTypes.EPISODE.value,
+                "action": action,
+                "card": "details",
+                **extra,
+            },
+            headers={"HX-Request": "true"},
+        )
+
+    def test_one_click_watch_tracks_the_season_and_reloads_the_page(self, _):
+        """Watching an episode of an untracked season starts the season."""
+        response = self.act(1, quick_actions.WATCH)
+
+        season = Season.objects.get(user=self.user)
+        self.assertEqual(season.status, Status.IN_PROGRESS.value)
+        self.assertEqual(season.episodes.watches().count(), 1)
+        self.assertNotIn("HX-Refresh", response)
+        self.assertIn(self.season_url(), response["HX-Location"])
+        messages = [str(message) for message in get_messages(response.wsgi_request)]
+        self.assertEqual(len(messages), 1)
+        self.assertIn("E1 marked as watched.", messages[0])
+
+    def test_one_click_plan_rewatch_reloads_the_page(self, _):
+        """Planning a rewatch of a watched episode adds its entry."""
+        self.watch(1)
+
+        response = self.act(1, quick_actions.PLAN_REPEAT)
+
+        self.assertIn(self.season_url(), response["HX-Location"])
+        self.assertEqual(
+            Episode.objects.filter(status=Status.PLANNING_REPEAT.value).count(),
+            1,
+        )
+
+    def test_one_click_does_nothing_for_what_the_page_did_not_offer(self, _):
+        """A button out of date, or for an episode not aired, changes nothing."""
+        self.watch(1)
+
+        stale = self.act(1, quick_actions.WATCH)
+        unaired = self.act(3, quick_actions.WATCH)
+
+        for response in (stale, unaired):
+            self.assertEqual(response["HX-Reswap"], "none")
+        self.assertEqual(Episode.objects.count(), 1)
+
+    def test_season_page_posts_each_episode_action_to_the_quick_action(self, _):
+        """Episode chips and the page's button post the key of their action."""
+        self.watch(1)
+
+        season = self.client.get(self.season_url())
+        episode = self.client.get(self.episode_url(2))
+
+        for action in (quick_actions.PLAN_REPEAT, quick_actions.WATCH):
+            self.assertContains(season, f'"action": "{action}", "card": "details"')
+        self.assertContains(
+            episode,
+            f'"media_type": "episode", "action": "{quick_actions.WATCH}"',
+        )
+        self.assertContains(season, f'hx-post="{reverse("quick_action")}?next=')
+
+    def quick_action_buttons(self, url):
+        """Return the opening tags of a page's buttons posting a quick action."""
+        content = self.client.get(url).content.decode()
+        return re.findall(r'<button[^>]*hx-post="/quick_action[^>]*>', content)
+
+    def assertReloadsPage(self, buttons, url):  # noqa: N802
+        """Assert each button posts its action from a details page, back to it."""
+        self.assertTrue(buttons)
+        for button in buttons:
+            self.assertIn(f'hx-post="/quick_action?next={quote(url)}"', button)
+            self.assertIn('"card": "details"', button)
+
+    def test_season_page_buttons_reload_the_page(self, _):
+        """The main, finish and episode buttons post from the page, back to it."""
+        self.watch(1)
+
+        buttons = self.quick_action_buttons(self.season_url())
+
+        self.assertReloadsPage(buttons, self.season_url())
+        self.assertTrue([b for b in buttons if '"finish": "1"' in b])
+        self.assertTrue([b for b in buttons if '"media_type": "episode"' in b])
+
+    def test_show_page_season_cards_reload_the_page(self, _):
+        """A show's season cards act from the page too, not as cards of a list."""
+        url = reverse(
+            "media_details",
+            args=[Sources.TMDB.value, MediaTypes.TV.value, "1396", "breaking-bad"],
+        )
+
+        buttons = self.quick_action_buttons(url)
+
+        # The show's own button and its seasons that are out
+        self.assertGreaterEqual(len(buttons), 3)
+        self.assertReloadsPage(buttons, url)
 
     def test_last_episode_has_no_next(self, _):
         """The season's last episode leads back to the one before it only."""
@@ -717,7 +825,7 @@ class EpisodeDetailsViewTests(TestCase):
         repeat_color = config.get_status_text_color(Status.PLANNING_REPEAT.value)
         self.assertRegex(
             content,
-            rf'(?s)aria-label="Mark watched"(?:(?!</button>).)*{repeat_color}',
+            rf'(?s)aria-label="Mark rewatched"(?:(?!</button>).)*{repeat_color}',
         )
         self.assertContains(self.client.get(self.episode_url(2)), "Mark rewatched")
 
@@ -726,10 +834,11 @@ class EpisodeDetailsViewTests(TestCase):
             "source": Sources.TMDB.value,
             "season_number": 1,
             "episode_number": 2,
-            "quick": "1",
+            "media_type": MediaTypes.EPISODE.value,
+            "action": quick_actions.WATCH,
         }
-        self.client.post(reverse("episode_save"), data)
-        self.client.post(reverse("episode_save"), data)
+        self.client.post(reverse("quick_action"), data)
+        self.client.post(reverse("quick_action"), data)
 
         self.assertEqual(season.episodes.filter(item__episode_number=2).count(), 2)
         season.refresh_from_db()
@@ -743,17 +852,19 @@ class EpisodeDetailsViewTests(TestCase):
         Season.save_base(season)
         page = self.client.get(self.episode_url(1))
         self.assertContains(page, "Plan to rewatch")
-        self.assertContains(page, reverse("episode_plan_repeat"))
+        self.assertContains(page, reverse("quick_action"))
         data = {
             "media_id": "1396",
             "source": Sources.TMDB.value,
             "season_number": 1,
             "episode_number": 1,
+            "media_type": MediaTypes.EPISODE.value,
+            "action": quick_actions.PLAN_REPEAT,
         }
 
-        self.client.post(reverse("episode_plan_repeat"), data)
+        self.client.post(reverse("quick_action"), data)
         # An unwatched episode isn't planned
-        self.client.post(reverse("episode_plan_repeat"), {**data, "episode_number": 2})
+        self.client.post(reverse("quick_action"), {**data, "episode_number": 2})
 
         self.assertEqual(
             list(
@@ -766,12 +877,13 @@ class EpisodeDetailsViewTests(TestCase):
         repeat_color = config.get_status_text_color(Status.PLANNING_REPEAT.value)
         self.assertRegex(
             self.client.get(self.season_url()).content.decode(),
-            rf'(?s)aria-label="Mark watched"(?:(?!</button>).)*{repeat_color}',
+            rf'(?s)aria-label="Mark rewatched"(?:(?!</button>).)*{repeat_color}',
         )
         self.assertContains(self.client.get(self.episode_url(1)), "Mark rewatched")
 
-        self.client.post(reverse("episode_save"), {**data, "quick": "1"})
-        self.client.post(reverse("episode_save"), {**data, "quick": "1"})
+        watch = {**data, "action": quick_actions.WATCH}
+        self.client.post(reverse("quick_action"), watch)
+        self.client.post(reverse("quick_action"), watch)
 
         season.refresh_from_db()
         self.assertEqual(season.episodes.count(), 2)
@@ -950,13 +1062,14 @@ class EpisodeDetailsViewTests(TestCase):
         self.entry(2, Status.PLANNING.value)
 
         self.client.post(
-            reverse("episode_save"),
+            reverse("quick_action"),
             {
                 "media_id": "1396",
                 "source": Sources.TMDB.value,
                 "season_number": 1,
                 "episode_number": 2,
-                "quick": "1",
+                "media_type": MediaTypes.EPISODE.value,
+                "action": quick_actions.WATCH,
             },
         )
 
@@ -976,11 +1089,13 @@ class EpisodeDetailsViewTests(TestCase):
             "media_id": "1396",
             "source": Sources.TMDB.value,
             "season_number": 1,
+            "media_type": MediaTypes.EPISODE.value,
+            "action": quick_actions.PLAN_REPEAT,
         }
 
         for number in (1, 1, 2):
             self.client.post(
-                reverse("episode_plan_repeat"),
+                reverse("quick_action"),
                 {**data, "episode_number": number},
             )
 

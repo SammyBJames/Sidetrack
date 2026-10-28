@@ -1,6 +1,6 @@
 from django.utils.text import slugify
 
-from app.models import BasicMedia, Status, is_caught_up
+from app.models import BasicMedia, Status
 from users.models import HomeSortChoices
 
 # The home page's rows, in the order they are shown: a status, or the media in
@@ -46,10 +46,3 @@ def build_home_rows(user, items_limit):
                 },
             )
     return rows
-
-
-def is_unreleased_home_media(media, section_key):
-    """Return True when a home card is waiting on its next release."""
-    if section_key in (Status.IN_PROGRESS.value, Status.REPEATING.value):
-        return is_caught_up(media)
-    return bool(media.next_event and not media.next_event.is_max_datetime)

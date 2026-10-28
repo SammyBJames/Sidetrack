@@ -39,8 +39,16 @@ class ProgressEditHomeCardTests(TestCase):
     def increase(self):
         """Post +1 from the In Progress section of the home page."""
         return self.client.post(
-            reverse("progress_edit", args=[MediaTypes.ANIME.value, self.anime.id]),
-            {"operation": "increase", "home_status": Status.IN_PROGRESS.value},
+            reverse("quick_action"),
+            {
+                "media_id": self.anime.item.media_id,
+                "source": self.anime.item.source,
+                "media_type": MediaTypes.ANIME.value,
+                "instance_id": self.anime.id,
+                "action": "next",
+                "card": "home",
+                "home_status": Status.IN_PROGRESS.value,
+            },
         )
 
     def test_card_is_updated_in_place(self, *_):
@@ -52,6 +60,7 @@ class ProgressEditHomeCardTests(TestCase):
         self.assertContains(response, f'id="home-media-anime-{self.anime.id}"')
         self.assertNotIn("HX-Reswap", response)
         self.assertNotIn("HX-Trigger", response)
+        self.assertContains(response, "progress updated")
 
     def test_card_is_the_one_the_page_shows(self, *_):
         """The re-rendered card is the card home draws for the entry, repeats too."""

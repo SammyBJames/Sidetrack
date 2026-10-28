@@ -1,9 +1,16 @@
 {% load app_tags %}
 
-{# An episode page's tracking button: marks it watched now in one click. Once it is, it shows how often until hover offers to plan watching it again, which one click then does in the same way. While its season is rewatched, one click watches it again until it is, and after that it opens the form of the `latest_entry` from `track_url`, as the page's Edit tracking does #}
-{% with repeat=media|repeat_state:season_instance watches=media.history|length %}
+{# An episode page's tracking button: marks it watched now in one click, or shows when it airs. Once it is, it shows how often until hover offers to plan watching it again, which one click then does in the same way. While its season is rewatched, one click watches it again until it is, and after that it opens the form of the `latest_entry` from `track_url`, as the page's Edit tracking does #}
+{% get_quick_action "episode" season_instance media as quick %}
+{% with watches=media.history|length %}
   <div class="flex h-10 w-full overflow-hidden rounded-xl shadow-lg ring-1 shadow-black/30 ring-white/10 md:w-auto md:min-w-56">
-    {% if repeat == "done" %}
+    {% if not quick and not media.watched %}
+      {# Nothing to watch until it airs #}
+      <div class="flex flex-1 items-center justify-center gap-2 px-5 text-sm font-semibold text-white {{ Status.PLANNING.value|status_button_color }}">
+        {% include "app/icons/clock.svg" with classes="size-4 shrink-0" %}
+        {{ media.air_date|air_date_label:media.episode_number }}
+      </div>
+    {% elif not quick %}
       <button type="button"
               class="flex flex-1 cursor-pointer items-center justify-center gap-2 px-5 text-sm font-semibold text-white transition-colors {{ Status.COMPLETED.value|status_button_color }}"
               hx-get="{{ track_url }}"
@@ -12,12 +19,12 @@
         {% include "app/icons/states/completed.svg" with classes="size-4 shrink-0" %}
         Watched{% if watches > 1 %} {{ watches }} times{% endif %}
       </button>
-    {% elif media.history and not repeat %}
+    {% elif quick.key == "plan_repeat" %}
       <button type="button"
               aria-label="Plan to rewatch"
               class="group/track relative flex flex-1 cursor-pointer items-center justify-center gap-2 px-5 text-sm font-semibold text-white transition-colors disabled:cursor-wait {{ Status.COMPLETED.value|status_button_color }}"
-              hx-post="{% url 'episode_plan_repeat' %}?next={{ request.get_full_path|urlencode }}"
-              hx-vals='{"media_id": "{{ media.media_id|escapejs }}", "source": "{{ media.source }}", "season_number": "{{ media.season_number }}", "episode_number": "{{ media.episode_number }}"}'
+              hx-post="{% url 'quick_action' %}?next={{ request.get_full_path|urlencode }}"
+              hx-vals='{"media_id": "{{ media.media_id|escapejs }}", "source": "{{ media.source }}", "season_number": "{{ media.season_number }}", "episode_number": "{{ media.episode_number }}", "media_type": "{{ media.media_type }}", "action": "{{ quick.key }}", "card": "details"}'
               hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
               hx-swap="none"
               hx-disabled-elt="this">
@@ -29,14 +36,14 @@
     {% else %}
       <button type="button"
               class="relative flex flex-1 cursor-pointer items-center justify-center gap-2 px-5 text-sm font-semibold text-white transition-colors disabled:cursor-wait {{ Status.COMPLETED.value|status_button_color }}"
-              hx-post="{% url 'episode_save' %}?next={{ request.get_full_path|urlencode }}"
-              hx-vals='{"media_id": "{{ media.media_id|escapejs }}", "source": "{{ media.source }}", "season_number": "{{ media.season_number }}", "episode_number": "{{ media.episode_number }}", "quick": "1"}'
+              hx-post="{% url 'quick_action' %}?next={{ request.get_full_path|urlencode }}"
+              hx-vals='{"media_id": "{{ media.media_id|escapejs }}", "source": "{{ media.source }}", "season_number": "{{ media.season_number }}", "episode_number": "{{ media.episode_number }}", "media_type": "{{ media.media_type }}", "action": "{{ quick.key }}", "card": "details"}'
               hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
               hx-swap="none"
               hx-disabled-elt="this">
         <span class="flex items-center gap-2 [.htmx-request_&]:invisible">
           {% include "app/icons/states/completed.svg" with classes="size-4 shrink-0" %}
-          {% if repeat %}Mark rewatched{% else %}Mark watched{% endif %}
+          {{ quick.label }}
         </span>
         <span class="htmx-indicator absolute top-1/2 left-1/2 size-4 -translate-1/2 animate-spin">
           {% include "app/icons/circle-spinning-clockwise.svg" with classes="size-4" %}

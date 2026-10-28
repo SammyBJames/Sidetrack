@@ -599,6 +599,74 @@ class HomeViewTests(TestCase):
         self.assertIn(reverse("download_event", args=[release.id]), card)
         self.assertNotIn("Mark watched", card)
 
+    def test_airing_planned_card_offers_its_action(self):
+        """Planned media with something out has its action, and what is next."""
+        item = Item.objects.create(
+            media_id="airing-card",
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.ANIME.value,
+            title="Airing Anime",
+            image="http://example.com/image.jpg",
+        )
+        anime = Anime.objects.create(
+            item=item,
+            user=self.user,
+            status=Status.PLANNING.value,
+        )
+        Event.objects.create(
+            item=item,
+            content_number=1,
+            datetime=timezone.now() - timezone.timedelta(days=1),
+        )
+        release = Event.objects.create(
+            item=item,
+            content_number=2,
+            datetime=timezone.now() + timezone.timedelta(days=7),
+        )
+
+        response = self.client.get(reverse("home"))
+
+        card = response.content.decode().split(f'id="home-media-anime-{anime.id}"')[1]
+        card = card.split('id="home-media-')[0]
+        self.assertIn('"action": "start", "card": "home"', card)
+        self.assertIn("card-chip flex min-w-0", card)
+        self.assertNotIn(reverse("download_event", args=[release.id]), card)
+
+    def test_unreleased_planned_movie_waits_in_every_position(self):
+        """Grid, row and home show the release of a movie not out, not an action."""
+        item = Item.objects.create(
+            media_id="waiting-movie",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.MOVIE.value,
+            title="Waiting Movie",
+            image="http://example.com/image.jpg",
+        )
+        movie = Movie.objects.create(
+            item=item,
+            user=self.user,
+            status=Status.PLANNING.value,
+        )
+        release = Event.objects.create(
+            item=item,
+            datetime=timezone.now() + timezone.timedelta(days=30),
+        )
+        loaded = Movie.objects.get(id=movie.id)
+        loaded.item.prefetched_events = [release]
+        loaded.next_event = release
+
+        for card in ("grid", "row"):
+            html = render_to_string(
+                "app/components/quick_action_button.html",
+                {"item": loaded.item, "media": loaded, "card": card, "user": self.user},
+            )
+            self.assertIn(reverse("download_event", args=[release.id]), html)
+            self.assertNotIn("Mark watched", html)
+        home = self.client.get(reverse("home")).content.decode()
+        card = home.split(f'id="home-media-movie-{movie.id}"')[1]
+        card = card.split('id="home-media-')[0]
+        self.assertIn(reverse("download_event", args=[release.id]), card)
+        self.assertNotIn("Mark watched", card)
+
     def test_game_card_shows_no_time_played(self):
         """A game card on the home page leaves out its time played."""
         item = Item.objects.create(
@@ -732,7 +800,8 @@ class HomeViewTests(TestCase):
         self.assertIn("card-chip flex min-w-0", card)
         self.assertIn("text-indigo-300", card)
         self.assertIn('<div class="hover-reveal">', card)
-        self.assertIn(reverse("progress_edit", args=["anime", anime.id]), card)
+        self.assertIn(reverse("quick_action"), card)
+        self.assertIn('"action": "next", "card": "home"', card)
         self.assertNotIn("download_event", card)
 
     def test_home_and_library_cards_share_their_caption(self):

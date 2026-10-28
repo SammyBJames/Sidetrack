@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -17,7 +17,6 @@ from app.models import (
     is_caught_up,
 )
 from app.providers import manual, tmdb
-from app.templatetags.app_tags import repeat_state
 
 # The first season's four episodes, as the season's metadata lists them
 SEASON_METADATA = {
@@ -177,28 +176,6 @@ class EpisodeStatusTests(TestCase):
         self.assertEqual(season.plays, 0)
         self.assertIsNone(season.end_date)
 
-    @patch(
-        "app.models.providers.services.get_media_metadata",
-        return_value=SEASON_METADATA,
-    )
-    def test_unwatching_removes_a_watch(self, _):
-        """Unwatching the current episode deletes its latest watch, not an entry."""
-        planned = self.add(2, Status.PLANNING_REPEAT.value, day(9))
-
-        self.season.decrease_progress()
-
-        self.assertEqual(
-            Episode.objects.filter(
-                item__episode_number=2,
-                status=Status.COMPLETED.value,
-            ).count(),
-            1,
-        )
-        self.assertTrue(Episode.objects.filter(pk=planned.pk).exists())
-        self.assertEqual(
-            Episode.objects.exclude(status=Status.COMPLETED.value).count(), 3
-        )
-
     def test_a_rewatch_goes_through_its_entries_to_watch_again(self):
         """Episodes with an entry to watch them again are left, then become watches."""
         Episode.objects.all().delete()
@@ -261,25 +238,6 @@ class EpisodeStatusTests(TestCase):
                     [episode["watched"] for episode in episodes],
                     [True, True, True, False],
                 )
-
-    def test_repeat_state_goes_by_whether_the_episode_was_watched(self):
-        """An episode only planned again was watched, and one only planned wasn't."""
-        self.season.status = Status.REPEATING.value
-        rewatch_planned = {
-            "episode_number": 3,
-            "watched": True,
-            "repeat_planned": True,
-            "history": [],
-        }
-        planned = {
-            "episode_number": 4,
-            "watched": False,
-            "repeat_planned": False,
-            "history": [],
-        }
-
-        self.assertEqual(repeat_state(rewatch_planned, self.season), "left")
-        self.assertEqual(repeat_state(planned, self.season), "")
 
     def test_statistics_count_watches_only(self):
         """Episodes watched count watches, and a planned entry adds no season."""

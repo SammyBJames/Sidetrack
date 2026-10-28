@@ -273,11 +273,201 @@ class GetQuickActionTests(TestCase):
         self.assertEqual(action.label, "Mark E4 watched")
         self.assertIn("repeating", action.icon)
 
-    def test_episodes_have_no_action(self):
-        """Episode cards keep their own tracking button."""
+    def test_episode_without_state_has_no_action(self):
+        """An episode entry of a list, which has no state yet, offers nothing."""
         self.assertIsNone(
             quick_actions.get_quick_action(MediaTypes.EPISODE.value, None),
         )
+
+
+def episode_state(**fields):
+    """Return the state of an episode not watched, with the fields given."""
+    return {
+        "watched": False,
+        "repeat_planned": False,
+        "history": [],
+        "air_date": "2008-01-20",
+        **fields,
+    }
+
+
+class EpisodeActionTests(TestCase):
+    """Test the one-click action of an episode by its season entry and state."""
+
+    def action(self, season, **fields):
+        """Return the action of an episode with the state fields, or None."""
+        return quick_actions.get_quick_action(
+            MediaTypes.EPISODE.value,
+            season,
+            episode_state(**fields),
+        )
+
+    def test_unwatched_episode_is_watched(self):
+        """An episode not watched yet offers to mark it watched, tracked or not."""
+        for season in (None, entry(Status.IN_PROGRESS.value)):
+            action = self.action(season)
+            self.assertEqual(action.key, quick_actions.WATCH)
+            self.assertEqual(action.label, "Mark watched")
+            self.assertEqual(action.target_status, Status.COMPLETED.value)
+
+    def test_watched_episode_is_planned_to_be_rewatched(self):
+        """A watched episode of a season not rewatched offers to plan a rewatch."""
+        for status in (Status.COMPLETED.value, Status.IN_PROGRESS.value):
+            action = self.action(
+                entry(status),
+                watched=True,
+                history=[object()],
+            )
+            self.assertEqual(action.key, quick_actions.PLAN_REPEAT)
+            self.assertEqual(action.label, "Plan to rewatch")
+            self.assertEqual(action.target_status, Status.PLANNING_REPEAT.value)
+
+    def test_episode_planned_to_be_rewatched_is_rewatched(self):
+        """One planned again is rewatched, on its own or in its season's rewatch."""
+        for status in (Status.COMPLETED.value, Status.PLANNING_REPEAT.value):
+            action = self.action(
+                entry(status),
+                watched=True,
+                repeat_planned=True,
+                history=[object()],
+            )
+            self.assertEqual(action.key, quick_actions.WATCH)
+            self.assertEqual(action.label, "Mark rewatched")
+
+    def test_episode_done_in_a_rewatch_has_no_action(self):
+        """Once watched again in its season's rewatch, there is nothing to do."""
+        for status in (Status.PLANNING_REPEAT.value, Status.REPEATING.value):
+            self.assertIsNone(
+                self.action(entry(status), watched=True, history=[object()]),
+            )
+
+    def test_unaired_episode_has_no_action(self):
+        """An episode still to air waits, but a date in the past or none doesn't."""
+        season = entry(Status.IN_PROGRESS.value)
+        self.assertIsNone(self.action(season, air_date="2099-01-01"))
+        self.assertEqual(self.action(season, air_date=None).key, quick_actions.WATCH)
+
+
+class WaitingTests(TestCase):
+    """Test the planned media that has nothing to act on until it comes out."""
+
+    def planned(self, media_type, *offsets):
+        """Return a planned entry with releases that many days from now."""
+        events = [
+            SimpleNamespace(datetime=timezone.now() + timedelta(days=days))
+            for days in offsets
+        ]
+        item = SimpleNamespace(media_type=media_type, prefetched_events=events)
+        return SimpleNamespace(status=Status.PLANNING.value, item=item)
+
+    def test_planned_media_with_every_release_to_come_has_no_action(self):
+        """A movie or season not out yet waits, whatever its type."""
+        for media_type in (MediaTypes.MOVIE.value, MediaTypes.SEASON.value):
+            self.assertIsNone(
+                quick_actions.get_quick_action(
+                    media_type, self.planned(media_type, 30)
+                ),
+            )
+
+    def test_planned_media_airing_has_its_action(self):
+        """With a release out already, planned media is acted on as usual."""
+        movie = self.planned(MediaTypes.MOVIE.value, -1, 30)
+        action = quick_actions.get_quick_action(MediaTypes.MOVIE.value, movie)
+        self.assertEqual(action.key, quick_actions.COMPLETE)
+        season = self.planned(MediaTypes.SEASON.value, -1, 30)
+        season.progress = 0
+        season.item.season_number = 1
+        action = quick_actions.get_quick_action(MediaTypes.SEASON.value, season)
+        self.assertEqual(action.key, quick_actions.NEXT)
+
+    def test_caught_up_media_has_no_action(self):
+        """Media in progress with all that is out done waits, even a game."""
+        game = SimpleNamespace(
+            status=Status.IN_PROGRESS.value,
+            next_event=SimpleNamespace(is_max_datetime=False),
+            progress=10,
+            max_progress=None,
+            item=SimpleNamespace(media_type=MediaTypes.GAME.value),
+        )
+        self.assertIsNone(quick_actions.get_quick_action(MediaTypes.GAME.value, game))
+        game.next_event = None
+        self.assertEqual(
+            quick_actions.get_quick_action(MediaTypes.GAME.value, game).key,
+            quick_actions.LOG,
+        )
+
+    def test_planned_media_without_known_releases_has_its_action(self):
+        """No release known means nothing is to come, and no query to find out."""
+        movie = self.planned(MediaTypes.MOVIE.value)
+        self.assertEqual(
+            quick_actions.get_quick_action(MediaTypes.MOVIE.value, movie).key,
+            quick_actions.COMPLETE,
+        )
+
+
+class ButtonStateTests(TestCase):
+    """Test what a button shows when it has no action."""
+
+    def media(self, status, *, released=False, caught_up=False):
+        """Return an entry with a next release, or none when `released`."""
+        event = SimpleNamespace(is_max_datetime=False)
+        return SimpleNamespace(
+            status=status,
+            next_event=None if released else event,
+            progress=5 if caught_up else 1,
+            max_progress=5,
+        )
+
+    def test_next_release_comes_with_the_clock_of_its_status(self):
+        """A known release shows in the colour of the status it waits in."""
+        colors = {
+            Status.PLANNING.value: "text-sky-400",
+            Status.IN_PROGRESS.value: "text-indigo-300",
+            Status.REPEATING.value: "text-teal-300",
+            Status.PLANNING_REPEAT.value: "text-teal-300",
+        }
+        for status, color in colors.items():
+            with self.subTest(status=status):
+                state = quick_actions.get_button_state(self.media(status))
+                self.assertTrue(state.release)
+                self.assertEqual(state.clock_color, color)
+
+    def test_caught_up_media_waits_like_planned_media(self):
+        """Media with all that is out done is in the colours of planning."""
+        for status in (Status.IN_PROGRESS.value, Status.REPEATING.value):
+            state = quick_actions.get_button_state(
+                self.media(status, caught_up=True),
+            )
+            self.assertTrue(state.release)
+            self.assertEqual(state.status, Status.PLANNING.value)
+            self.assertEqual(state.clock_color, "text-sky-400")
+
+    def test_without_a_release_it_is_the_status(self):
+        """Without a known release it shows the status, and nothing without one."""
+        state = quick_actions.get_button_state(
+            self.media(Status.IN_PROGRESS.value, released=True),
+        )
+        self.assertFalse(state.release)
+        self.assertEqual(state.status, Status.IN_PROGRESS.value)
+        self.assertIsNone(quick_actions.get_button_state(None))
+
+    def test_unknown_release_date_is_no_release(self):
+        """A release without a date, and one of finished media, isn't shown."""
+        media = self.media(Status.PLANNING.value)
+        media.next_event.is_max_datetime = True
+        self.assertFalse(quick_actions.get_button_state(media).release)
+        completed = self.media(Status.COMPLETED.value)
+        state = quick_actions.get_button_state(completed)
+        self.assertFalse(state.release)
+        self.assertEqual(state.status, Status.COMPLETED.value)
+
+    def test_unaired_season_or_episode_waits_in_planning(self):
+        """An air date to come is a release, in planning's colours if untracked."""
+        state = quick_actions.get_button_state(None, "2099-01-01")
+        self.assertTrue(state.release)
+        self.assertIsNone(state.event)
+        self.assertEqual(state.clock_color, "text-sky-400")
+        self.assertFalse(quick_actions.get_button_state(None, "2008-01-20"))
 
 
 class ShowNextSeasonTests(TestCase):
@@ -400,7 +590,7 @@ class ShowNextSeasonTests(TestCase):
         item.prefetched_events = list(Event.objects.filter(item=item))
 
         with self.assertNumQueries(0):
-            self.assertFalse(quick_actions._unaired(item))
+            self.assertFalse(quick_actions._unaired(item, lookup=True))
 
         item.prefetched_events[0].datetime = timezone.now() + timedelta(days=1)
-        self.assertTrue(quick_actions._unaired(item))
+        self.assertTrue(quick_actions._unaired(item, lookup=True))

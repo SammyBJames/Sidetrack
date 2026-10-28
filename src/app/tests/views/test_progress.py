@@ -21,6 +21,19 @@ from app.models import (
 from events.models import Event
 
 
+def next_data(media, **extra):
+    """Return the post of the one-click action watching an entry's next part."""
+    return {
+        "media_id": media.item.media_id,
+        "source": media.item.source,
+        "media_type": media.item.media_type,
+        "season_number": media.item.season_number or "",
+        "instance_id": media.id,
+        "action": "next",
+        **extra,
+    }
+
+
 class ProgressEditSeason(TestCase):
     """Test for editing a season progress through views."""
 
@@ -63,16 +76,8 @@ class ProgressEditSeason(TestCase):
     def test_progress_increase(self):
         """Test the increase of progress for a season."""
         self.client.post(
-            reverse(
-                "progress_edit",
-                kwargs={
-                    "media_type": MediaTypes.SEASON.value,
-                    "instance_id": self.season.id,
-                },
-            ),
-            {
-                "operation": "increase",
-            },
+            reverse("quick_action"),
+            next_data(self.season),
         )
 
         self.assertEqual(
@@ -85,26 +90,6 @@ class ProgressEditSeason(TestCase):
                 item__media_id="1668",
                 item__episode_number=2,
             ).exists(),
-        )
-
-    def test_progress_decrease(self):
-        """Test the decrease of progress for a season."""
-        self.client.post(
-            reverse(
-                "progress_edit",
-                kwargs={
-                    "media_type": MediaTypes.SEASON.value,
-                    "instance_id": self.season.id,
-                },
-            ),
-            {
-                "operation": "decrease",
-            },
-        )
-
-        self.assertEqual(
-            Episode.objects.filter(item__media_id="1668").count(),
-            0,
         )
 
     def test_progress_increase_moves_caught_up_card(self):
@@ -123,17 +108,8 @@ class ProgressEditSeason(TestCase):
         self.user.save(update_fields=["home_hide_unreleased"])
 
         response = self.client.post(
-            reverse(
-                "progress_edit",
-                kwargs={
-                    "media_type": MediaTypes.SEASON.value,
-                    "instance_id": self.season.id,
-                },
-            ),
-            {
-                "operation": "increase",
-                "home_status": Status.IN_PROGRESS.value,
-            },
+            reverse("quick_action"),
+            next_data(self.season, card="home", home_status=Status.IN_PROGRESS.value),
             headers={"HX-Request": "true"},
         )
 
@@ -177,36 +153,11 @@ class ProgressEditAnime(TestCase):
     def test_progress_increase(self):
         """Test the increase of progress for an anime."""
         self.client.post(
-            reverse(
-                "progress_edit",
-                kwargs={
-                    "media_type": MediaTypes.ANIME.value,
-                    "instance_id": self.anime.id,
-                },
-            ),
-            {
-                "operation": "increase",
-            },
+            reverse("quick_action"),
+            next_data(self.anime),
         )
 
         self.assertEqual(Anime.objects.get(item__media_id="1").progress, 3)
-
-    def test_progress_decrease(self):
-        """Test the decrease of progress for an anime."""
-        self.client.post(
-            reverse(
-                "progress_edit",
-                kwargs={
-                    "media_type": MediaTypes.ANIME.value,
-                    "instance_id": self.anime.id,
-                },
-            ),
-            {
-                "operation": "decrease",
-            },
-        )
-
-        self.assertEqual(Anime.objects.get(item__media_id="1").progress, 1)
 
     def test_progress_increase_moves_caught_up_card(self):
         """Catching up moves the card out of the in progress row."""
@@ -224,17 +175,8 @@ class ProgressEditAnime(TestCase):
         self.user.save(update_fields=["home_hide_unreleased"])
 
         response = self.client.post(
-            reverse(
-                "progress_edit",
-                kwargs={
-                    "media_type": MediaTypes.ANIME.value,
-                    "instance_id": self.anime.id,
-                },
-            ),
-            {
-                "operation": "increase",
-                "home_status": Status.IN_PROGRESS.value,
-            },
+            reverse("quick_action"),
+            next_data(self.anime, card="home", home_status=Status.IN_PROGRESS.value),
             headers={"HX-Request": "true"},
         )
 
@@ -265,14 +207,8 @@ class ProgressEditAnime(TestCase):
         Anime.save_base(anime)
 
         response = self.client.post(
-            reverse(
-                "progress_edit",
-                kwargs={
-                    "media_type": MediaTypes.ANIME.value,
-                    "instance_id": anime.id,
-                },
-            ),
-            {"operation": "increase"},
+            reverse("quick_action"),
+            next_data(anime),
         )
 
         self.assertEqual(response.status_code, 404)
@@ -335,11 +271,11 @@ class ProgressEditPersistentMessages(TestCase):
         Episode.save_base(episode)
 
     @patch("app.models.providers.services.get_media_metadata")
-    def test_progress_edit_htmx_appends_persistent_messages(
+    def test_quick_action_htmx_appends_persistent_messages(
         self,
         mock_get_media_metadata,
     ):
-        """HTMX progress edits should append newly created persistent toasts."""
+        """HTMX quick actions should append newly created persistent toasts."""
         mock_get_media_metadata.return_value = {
             "episodes": [
                 {"episode_number": 1},
@@ -357,14 +293,8 @@ class ProgressEditPersistentMessages(TestCase):
         }
 
         response = self.client.post(
-            reverse(
-                "progress_edit",
-                kwargs={
-                    "media_type": MediaTypes.SEASON.value,
-                    "instance_id": self.season.id,
-                },
-            ),
-            {"operation": "increase"},
+            reverse("quick_action"),
+            next_data(self.season, card="home"),
             headers={"HX-Request": "true"},
         )
 

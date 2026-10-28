@@ -147,6 +147,31 @@ class LogModalViewTests(TestCase):
         self.client.login(**other)
         self.assertEqual(self.modal(self.book).status_code, 404)
 
+    def test_dialog_from_a_details_page_posts_back_to_it(self):
+        """The page the dialog was opened from is where the log returns to."""
+        response = self.modal(self.book, card="details", next="/x")
+
+        self.assertContains(response, "/log_progress/book/")
+        self.assertContains(response, "?next=/x")
+
+    def test_details_page_log_button_sends_its_page(self):
+        """The details page's log button asks for the dialog with the page's URL."""
+        url = reverse(
+            "media_details",
+            args=[Sources.MANUAL.value, MediaTypes.BOOK.value, "1", "test-book"],
+        )
+
+        content = self.client.get(url).content.decode()
+
+        button = re.search(
+            rf'<button[^>]*hx-get="{reverse("log_modal", args=["book", self.book.id])}"'
+            r"[^>]*>",
+            content,
+        ).group(0)
+        values = json.loads(re.search(r"hx-vals='([^']*)'", button).group(1))
+        self.assertEqual(values["card"], "details")
+        self.assertEqual(values["next"], url)
+
     def test_book_chip_opens_the_dialog_instead_of_posting(self):
         """In a library, a book in progress's chip fetches the dialog."""
         response = self.client.get(

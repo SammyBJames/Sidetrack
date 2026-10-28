@@ -44,13 +44,6 @@ class GameModel(TestCase):
 
         self.assertEqual(self.game.progress, initial_progress + 30)
 
-    def test_decrease_progress(self):
-        """Test decreasing the progress of a game."""
-        initial_progress = self.game.progress
-        self.game.decrease_progress()
-
-        self.assertEqual(self.game.progress, initial_progress - 30)
-
     def test_field_tracker(self):
         """Test that the field tracker is tracking changes."""
         # Initially, there should be no changes
@@ -70,8 +63,3 @@ class GameModel(TestCase):
         self.game.increase_progress()
 
         self.assertEqual(self.game.progress, 120)
-
-        # Decrease progress once
-        self.game.decrease_progress()
-
-        self.assertEqual(self.game.progress, 90)
