@@ -394,10 +394,6 @@ class ActivityFeedTests(TestCase):
         self.assertEqual({r.id for r in records}, {self.movie.id})
         self.assertEqual(len(seen), 6)
         self.assertEqual(seen, sorted(seen, key=lambda r: (r[0], r[2]), reverse=True))
-        self.assertEqual(
-            history_processor.get_journal_count(self.user, scope=scope),
-            6,
-        )
 
     def test_scope_of_season_and_show_hold_their_children(self):
         """A season's scope holds its episodes, a show's seasons and episodes."""
@@ -459,11 +455,8 @@ class ActivityFeedTests(TestCase):
 
         removed, to_four, rated, finished, created = newest_first
         self.assertEqual(removed[0]["description"], "Removed rating")
-        self.assertEqual(removed[0]["label"], "Removed rating")
         self.assertEqual(to_four[0]["description"], "Changed rating from 9 to 4")
-        self.assertEqual(to_four[0]["label"], "Rating 9 → 4")
         self.assertEqual(rated[0]["description"], "Rated 9/10")
-        self.assertEqual(rated[0]["label"], "Rated 9/10")
         self.assertEqual(
             (finished[0]["old"], finished[0]["new"]),
             (Status.PLANNING.value, Status.COMPLETED.value),
@@ -485,7 +478,6 @@ class ActivityFeedTests(TestCase):
         self.assertEqual(len(entries), 2)  # the fold and the creation
         self.assertEqual(folded["count"], 8)
         self.assertEqual(len(folded["members"]), 8)
-        self.assertEqual(folded["changes"][0]["label"], "Rated 8/10")
         self.assertEqual(folded["changes"][0]["description"], "Rated 8/10")
         self.assertEqual(folded["accent"], "score")
 
@@ -493,11 +485,13 @@ class ActivityFeedTests(TestCase):
         """The net change runs from the first old score to the last new one."""
         self._edit(self.movie, -30, score=2)
         entries = self._ratings((1, 5), (2, 7))
-        self.assertEqual(entries[0]["changes"][0]["label"], "Rating 2 → 7")
+        self.assertEqual(
+            entries[0]["changes"][0]["description"], "Changed rating from 2 to 7"
+        )
 
         self._edit(self.movie, 3, score=None)
         entries = history_processor.collapse_entries(self._entries(), self.user)
-        self.assertEqual(entries[0]["changes"][0]["label"], "Removed rating")
+        self.assertEqual(entries[0]["changes"][0]["description"], "Removed rating")
         self.assertEqual(entries[0]["count"], 3)
 
     def test_fold_with_no_net_change_says_so(self):
@@ -552,7 +546,6 @@ class ActivityFeedTests(TestCase):
         scope = {MediaTypes.MOVIE.value: {self.movie.id}}
         summary = history_processor.activity_summary(
             self.user,
-            MediaTypes.MOVIE.value,
             scope,
             [self.movie],
         )
@@ -572,21 +565,18 @@ class ActivityFeedTests(TestCase):
         for record in episodes[1].history.all():
             self._stamp(record, 1000)
 
-        def summary(media_type, entries, scope):
+        def summary(entries, scope):
             return history_processor.activity_summary(
                 self.user,
-                media_type,
                 scope,
                 entries,
             )
 
         show = summary(
-            MediaTypes.TV.value,
             [tv],
             self._scope(MediaTypes.TV.value, "9"),
         )
         season = summary(
-            MediaTypes.SEASON.value,
             [seasons[1]],
             self._scope(MediaTypes.SEASON.value, "9", season_number=2),
         )
@@ -602,7 +592,6 @@ class ActivityFeedTests(TestCase):
         unwatched = self._movie("3")
         self.assertEqual(
             summary(
-                MediaTypes.MOVIE.value,
                 [unwatched],
                 {MediaTypes.MOVIE.value: {unwatched.id}},
             )["finished"],
@@ -678,23 +667,6 @@ class ActivityFeedTests(TestCase):
         mine = [e for e in entries if e["object_id"] == episode.id]
         self.assertEqual(len(mine), 3)
         self.assertNotIn("members", mine[0])
-
-    def test_episode_status_change_carries_old(self):
-        """An episode moved from one status to another keeps the old status."""
-        _tv, _seasons, episodes = self._show()
-        episode = episodes[0]
-        episode.status = Status.PAUSED.value
-        episode._history_user = self.user
-        episode.save_base()
-        self._stamp(episode.history.first(), 5)
-
-        entry = self._entries(
-            {MediaTypes.EPISODE.value: {episode.id}},
-        )[0]
-        self.assertEqual(
-            (entry["changes"][0]["old"], entry["changes"][0]["new"]),
-            (Status.COMPLETED.value, Status.PAUSED.value),
-        )
 
     def test_status_fold_takes_the_newest_accent(self):
         """A run of status edits reads as its last status."""

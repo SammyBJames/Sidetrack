@@ -85,6 +85,27 @@ class HistoryModalViewTests(TestCase):
         self.assertContains(response, "Finished 1 time")
         self.assertContains(response, "Last activity just now")
 
+    def test_history_modal_folds_rapid_edits(self):
+        """Rapid rating edits show in the popup as one expandable row."""
+        for score in (3, 4, 5):
+            self.movie.score = score
+            self.movie.save()
+        self.movie.history.update(history_user=self.user)
+
+        response = self.client.get(
+            reverse(
+                "history_modal",
+                kwargs={
+                    "source": Sources.TMDB.value,
+                    "media_type": MediaTypes.MOVIE.value,
+                    "media_id": "238",
+                },
+            ),
+        )
+
+        self.assertContains(response, "3 edits")
+        self.assertContains(response, 'id="activity-member-movie-')
+
     def test_history_modal_empty(self):
         """A media with no activity says so, with no summary."""
         response = self.client.get(
@@ -182,6 +203,7 @@ class HistoryTimelineTests(TestCase):
         self.assertContains(response, "E30")
         self.assertNotContains(response, "E31<")
         self.assertContains(response, "Watched")
+        self.assertContains(response, "Finished 1 time")
 
     def test_show_popup_lists_seasons_and_episodes(self):
         """A show's popup holds its season's and episodes' activity."""
@@ -351,7 +373,6 @@ class ActivityChangeTemplateTests(TestCase):
                 "field": "score",
                 "old": 9.0,
                 "new": 4.0,
-                "label": "Rating 9 → 4",
                 "description": "x",
             },
         )

@@ -1,0 +1,8 @@
+{# The records a folded entry stands for, each a deletable row, shown when the Alpine scope's `open` is set; expects `entry` #}
+<ul x-cloak
+    x-show="open"
+    class="w-full divide-y divide-white/5 border-l border-white/10 pl-2">
+  {% for member in entry.members %}
+    {% include "app/components/activity_row.html" with entry=member member=True %}
+  {% endfor %}
+</ul>

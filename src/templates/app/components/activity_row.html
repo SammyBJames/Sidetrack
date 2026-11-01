@@ -1,5 +1,5 @@
 {% load app_tags %}
-{% comment %}One activity as a compact row of a list: its changes, the time and a delete that asks inline first. Expects `entry`; `member` marks one record of a folded entry (no badge). A folded entry shows its net change and its records to expand.{% endcomment %}
+{# One activity as a compact row of a list: its changes, the time and a delete that asks inline first. Expects `entry`; `member` marks one record of a folded entry (no badge). A folded entry shows its net change and its records to expand #}
 <li id="activity-{% if member %}member-{% endif %}{{ entry.media_type }}-{{ entry.id }}"
     x-data="{ confirming: false, open: false, count: {{ entry.count|default:0 }} }"
     @member-deleted="count--"
@@ -22,7 +22,7 @@
         </p>
       {% endfor %}
       {% if entry.members and not member %}
-        {% include "app/components/activity_members.html" with part="toggle" %}
+        {% include "app/components/activity_fold_toggle.html" %}
       {% endif %}
     </div>
     <time class="mt-0.5 shrink-0 text-xs text-gray-500"
@@ -39,7 +39,7 @@
     {% endif %}
   </div>
   {% if entry.members and not member %}
-    <div x-show="!confirming">{% include "app/components/activity_members.html" with part="list" %}</div>
+    <div x-show="!confirming">{% include "app/components/activity_fold_list.html" %}</div>
   {% endif %}
   <div x-cloak
        x-show="confirming"

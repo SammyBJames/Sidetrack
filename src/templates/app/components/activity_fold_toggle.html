@@ -1,0 +1,10 @@
+{# The button showing how many records a folded entry stands for, inside an Alpine scope with `open` and `count`; expects `entry` #}
+<button type="button"
+        @click="open = !open"
+        :aria-expanded="open"
+        class="mt-0.5 inline-flex cursor-pointer items-center gap-1 rounded-md text-xs text-gray-400 transition-colors hover:text-white">
+  <span x-text="count + (count == 1 ? ' edit' : ' edits')">{{ entry.count }} edits</span>
+  <span class="transition-transform" :class="open && 'rotate-180'">
+    {% include "app/icons/chevron-down.svg" with classes="size-3.5" %}
+  </span>
+</button>

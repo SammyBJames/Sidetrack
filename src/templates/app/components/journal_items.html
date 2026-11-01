@@ -42,13 +42,13 @@
           <p class="mt-1">{% include "app/components/activity_change.html" with change=change media_type=entry.media_type %}</p>
         {% endfor %}
         {% if entry.members %}
-          <div>{% include "app/components/activity_members.html" with part="toggle" %}</div>
+          <div>{% include "app/components/activity_fold_toggle.html" %}</div>
         {% endif %}
         <time class="mt-auto self-end pt-2 text-xs text-gray-500"
               title="{{ entry.date|datetime_format:user }}">{{ entry.date|naturaltime }}</time>
       </div>
       {% if entry.members %}
-        {% include "app/components/activity_members.html" with part="list" %}
+        {% include "app/components/activity_fold_list.html" %}
       {% endif %}
 
       {# Delete confirmation modal #}

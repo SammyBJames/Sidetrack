@@ -1594,7 +1594,6 @@ def history_modal(
     The first request renders the dialog sheet with the summary; a request with a
     ``cursor_*`` (the sentinel's) returns only the next items.
     """
-    cursor = history_processor.parse_journal_cursor(request)
     scope = history_processor.activity_scope(
         request.user,
         media_type,
@@ -1603,48 +1602,22 @@ def history_modal(
         season_number=season_number,
         episode_number=episode_number,
     )
-    page_rows, has_next = history_processor.get_journal_page(
+    context = history_processor.build_feed_page(
+        request,
         request.user,
-        limit=HISTORY_PAGE_SIZE,
-        cursor=cursor,
+        HISTORY_PAGE_SIZE,
         scope=scope,
+        scope_type=media_type,
     )
-    entries = history_processor.collapse_entries(
-        history_processor.build_journal_entries(
-            page_rows,
-            request.user,
-            scope_type=media_type,
-        ),
-        request.user,
-    )
-    journal_days = history_processor.build_journal_days(entries, request.user)
+    context["media_type"] = media_type
 
-    next_query = ""
-    if page_rows:
-        last_date, last_type, last_id = page_rows[-1]
-        next_query = urlencode(
-            {
-                "cursor_date": last_date.isoformat(),
-                "cursor_type": last_type,
-                "cursor_id": last_id,
-            },
-        )
-    prev_day = request.GET.get("last_day", "")
-    context = {
-        "media_type": media_type,
-        "journal_days": journal_days,
-        "prev_day": prev_day,
-        "last_day": journal_days[-1]["day_iso"] if journal_days else prev_day,
-        "has_next": has_next,
-        "next_query": next_query,
-    }
-
-    if cursor and request.headers.get("HX-Request"):
+    if history_processor.parse_journal_cursor(request) and request.headers.get(
+        "HX-Request",
+    ):
         return render(request, "app/components/history_items.html", context)
 
     context["summary"] = history_processor.activity_summary(
         request.user,
-        media_type,
         scope,
         BasicMedia.objects.filter_media_prefetch(
             request.user,
@@ -1744,56 +1717,27 @@ def journal(request):
     """Return the journal page: a global feed of the user's tracking activity."""
     start_date, end_date = stats.parse_activity_date_range(request)
 
-    items_per_page = 20
-    # Keyset pagination: the cursor points just past the previous page's last
-    # row, so each request reads at most one page per media type regardless of
-    # scroll depth (never re-scanning everything above the current page).
-    cursor = history_processor.parse_journal_cursor(request)
-    page_rows, has_next = history_processor.get_journal_page(
-        request.user,
-        start_date,
-        end_date,
-        limit=items_per_page,
-        cursor=cursor,
-    )
-    entries = history_processor.collapse_entries(
-        history_processor.build_journal_entries(page_rows, request.user),
-        request.user,
-    )
-    journal_days = history_processor.build_journal_days(entries, request.user)
-
     # Preserve the active date range when the feed paginates via HTMX.
     date_params = {
         key: request.GET[key]
         for key in ("start-date", "end-date")
         if key in request.GET
     }
-
-    # Cursor for the next page: the last row rendered on this one.
-    next_params = dict(date_params)
-    if page_rows:
-        last_date, last_type, last_id = page_rows[-1]
-        next_params["cursor_date"] = last_date.isoformat()
-        next_params["cursor_type"] = last_type
-        next_params["cursor_id"] = last_id
-
-    prev_day = request.GET.get("last_day", "")
-
-    context = {
-        "entries": entries,
-        "journal_days": journal_days,
-        # The previous page's last day, so a day split across pages isn't
-        # relabelled; the last day on this page, forwarded to the next page.
-        # Falls back to prev_day when this page rendered no days, so a day that
-        # spans an all-filtered page isn't shown twice.
-        "prev_day": prev_day,
-        "last_day": journal_days[-1]["day_iso"] if journal_days else prev_day,
-        "has_next": has_next,
-        "next_query": urlencode(next_params),
-        "filter_query": urlencode(date_params),
-        "start_date": start_date,
-        "end_date": end_date,
-    }
+    context = history_processor.build_feed_page(
+        request,
+        request.user,
+        20,
+        extra_params=date_params,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    context.update(
+        {
+            "filter_query": urlencode(date_params),
+            "start_date": start_date,
+            "end_date": end_date,
+        },
+    )
 
     # The activity dashboard only appears on the full page, so skip its queries
     # on the HTMX partial requests that load additional feed pages. Soft

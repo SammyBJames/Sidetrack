@@ -1,5 +1,6 @@
 from collections import defaultdict
 from datetime import timedelta
+from urllib.parse import urlencode
 
 from django.apps import apps
 from django.db.models import Max, Min, Q
@@ -91,14 +92,11 @@ def get_journal_page(
     return index[:limit], len(index) > limit
 
 
-def get_journal_count(user, start_date=None, end_date=None, scope=None):
-    """Count the user's non-deletion history rows across all media types.
-
-    ``scope`` limits the count as it does :func:`get_journal_page`.
-    """
+def get_journal_count(user, start_date=None, end_date=None):
+    """Count the user's non-deletion history rows across all media types."""
     return sum(
         queryset.count()
-        for _, queryset in _journal_querysets(user, start_date, end_date, scope)
+        for _, queryset in _journal_querysets(user, start_date, end_date, None)
     )
 
 
@@ -164,7 +162,7 @@ def activity_scope(
     return scope
 
 
-def activity_summary(user, media_type, scope, entries):
+def activity_summary(user, scope, entries):
     """Summarise a media's activity: first and last activity and times finished.
 
     ``entries`` are the user's entries of the media (as
@@ -180,10 +178,7 @@ def activity_summary(user, media_type, scope, entries):
             first = min(first or bounds["first"], bounds["first"])
             last = max(last or bounds["last"], bounds["last"])
 
-    if media_type in (MediaTypes.TV.value, MediaTypes.SEASON.value):
-        finished = sum(entry.plays for entry in entries)
-    else:
-        finished = sum(entry.status == WATCH_STATUS for entry in entries)
+    finished = app_tags.play_count(entries[0], entries) if entries else 0
     return {"first": first, "last": last, "finished": finished}
 
 
@@ -201,6 +196,48 @@ def parse_journal_cursor(request):
     if cursor_date is None or cursor_type not in MediaTypes.values:
         return None
     return (cursor_date, cursor_type, cursor_id)
+
+
+def build_feed_page(request, user, limit, extra_params=None, **feed):
+    """Read, build and group one page of a feed for a view's context.
+
+    ``feed`` goes to :func:`get_journal_page` (dates, ``scope``) and
+    ``scope_type`` to :func:`build_journal_entries`. The result has the
+    context keys the feed templates read: ``journal_days``, ``has_next``,
+    ``next_query`` (the cursor of the page's last row, after ``extra_params``)
+    and the day bookkeeping, ``prev_day`` (the last page's final day, so a day
+    split across pages isn't relabelled) and ``last_day`` (this page's, falling
+    back to ``prev_day`` when it rendered no days, so a day isn't shown twice).
+    """
+    scope_type = feed.pop("scope_type", None)
+    page_rows, has_next = get_journal_page(
+        user,
+        limit=limit,
+        cursor=parse_journal_cursor(request),
+        **feed,
+    )
+    entries = collapse_entries(
+        build_journal_entries(page_rows, user, scope_type=scope_type),
+        user,
+    )
+    days = build_journal_days(entries, user)
+
+    next_params = dict(extra_params or {})
+    if page_rows:
+        last_date, last_type, last_id = page_rows[-1]
+        next_params["cursor_date"] = last_date.isoformat()
+        next_params["cursor_type"] = last_type
+        next_params["cursor_id"] = last_id
+
+    prev_day = request.GET.get("last_day", "")
+    return {
+        "entries": entries,
+        "journal_days": days,
+        "prev_day": prev_day,
+        "last_day": days[-1]["day_iso"] if days else prev_day,
+        "has_next": has_next,
+        "next_query": urlencode(next_params),
+    }
 
 
 def build_journal_days(entries, user):
@@ -239,8 +276,7 @@ def build_journal_entries(index_page, user, scope_type=None):
     Each entry is a dict with ``id`` (history id), ``object_id``, ``date``,
     ``media_type``, ``item``, ``changes``, ``accent`` and ``context``. A change
     has ``description`` (plain text), ``field`` and, where there is one, ``old``
-    and ``new``; score changes add ``label`` ("Rated 9/10", "4 → 9", "Removed
-    rating"). ``scope_type`` is the media type of the feed's own media: its
+    and ``new``. ``scope_type`` is the media type of the feed's own media: its
     seasons and episodes get a short ``context`` ("S2", "S2E3", "E3"), else it
     is empty.
     """
@@ -353,8 +389,6 @@ def _fold_run(run, user):
     else:
         description = format_description(field, old, new, media_type, user)
     change = {"description": description, "field": field, "old": old, "new": new}
-    if field == "score":
-        change["label"] = description if old == new else _score_label(old, new)
 
     return {
         **run[0],
@@ -384,15 +418,6 @@ def _value_text(field, value, media_type, user):
 def _score_text(value):
     """Return a score without a trailing ".0", e.g. 8.0 as "8" and 8.5 as "8.5"."""
     return f"{float(value):g}"
-
-
-def _score_label(old, new):
-    """Return what a score change's row draws next to its star."""
-    if new is None:
-        return "Removed rating"
-    if not old:
-        return f"Rated {_score_text(new)}/10"
-    return f"Rating {_score_text(old)} → {_score_text(new)}"
 
 
 def _entry_accent(changes):
@@ -527,7 +552,6 @@ def _episode_changes(record, prev_record, info):
             {
                 "description": f"{wording[record.status]} {episode_number}",
                 "field": "status",
-                "old": None if prev_record is None else prev_record.status,
                 "new": record.status,
             },
         ]
@@ -715,10 +739,6 @@ def build_changes_list(changes, processed_entry):
 
     # Add other changes
     processed_entry["changes"].extend(changes["other_changes"])
-
-    for change in processed_entry["changes"]:
-        if change["field"] == "score":
-            change["label"] = _score_label(change.get("old"), change["new"])
 
 
 def format_description(field_name, old_value, new_value, media_type=None, user=None):  # noqa: C901, PLR0911, PLR0912

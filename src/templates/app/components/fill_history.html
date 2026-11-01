@@ -5,7 +5,7 @@
   {% include "app/components/dialog_header.html" with title="Activity History" %}
   {% if summary.first %}
     <p class="shrink-0 px-5 pb-2 text-xs text-gray-400">
-      Added {{ summary.first|date:user.date_format }}
+      Added {{ summary.first|date_format:user }}
       {% if summary.finished %}
         · Finished {{ summary.finished }} time{{ summary.finished|pluralize }}
       {% endif %}

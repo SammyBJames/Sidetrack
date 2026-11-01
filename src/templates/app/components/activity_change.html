@@ -1,5 +1,5 @@
 {% load app_tags %}
-{% comment %}One change of an activity entry, for the popup and the Journal. Expects `change` and `media_type`: a status change between two statuses shows the old one quietly and the new one as a coloured chip, a score its label, anything else its description.{% endcomment %}
+{# One change of an activity entry, for the popup and the Journal. Expects `change` and `media_type`: a status change between two statuses shows the old one quietly and the new one as a coloured chip, a score change an arrow, anything else its description #}
 {% if change.field == "status" and change.old and change.old != change.new %}
   <span class="text-sm text-gray-400">{{ change.old|media_status_readable:media_type }}</span>
   <span class="inline-flex items-center gap-1 text-sm font-medium {{ change.new|status_color }}">
@@ -8,14 +8,12 @@
     {{ change.new|media_status_readable:media_type }}
   </span>
   <span class="sr-only">{{ change.description }}</span>
-{% elif change.field == "score" and change.old and change.new and change.old != change.new %}
+{% elif change.field == "score" and change.old and change.new is not None and change.old != change.new %}
   <span class="inline-flex items-center gap-1 text-sm text-gray-200">
     Rating {{ change.old|floatformat:"-1" }}
     {% include "app/icons/right-arrow.svg" with classes="size-3.5 shrink-0 text-gray-500" %}
     {{ change.new|floatformat:"-1" }}
   </span>
-{% elif change.label %}
-  <span class="text-sm text-gray-200">{{ change.label }}</span>
 {% else %}
   <span class="text-sm text-gray-200">{{ change.description }}</span>
 {% endif %}

@@ -140,6 +140,18 @@ class JournalViewTests(TestCase):
             folded["changes"][0]["description"], "Changed rating from 8 to 5"
         )
 
+    def test_journal_episode_status_change_names_the_episode(self):
+        """An episode moved between statuses still reads with its number."""
+        self._add_episode()
+        episode = Episode.objects.get()
+        episode.status = Status.IN_PROGRESS.value
+        episode._history_user = self.user
+        Episode.save_base(episode)
+
+        response = self.client.get(reverse("journal"))
+
+        self.assertContains(response, 'text-gray-200">Started episode 1</span>')
+
     def test_journal_folded_row_expands_to_deletable_records(self):
         """A folded row lists its records, each with its own delete."""
         for score in (3, 4, 5):

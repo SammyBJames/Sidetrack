@@ -1,4 +1,4 @@
-{% comment %}A page of a media's activity timeline: day headings and rows, then a sentinel that loads the next page when scrolled to.{% endcomment %}
+{# A page of a media's activity timeline: day headings and rows, then a sentinel that loads the next page when scrolled to #}
 {% for day in journal_days %}
   {% if not forloop.first or day.day_iso != prev_day %}
     <li class="flex items-center gap-3 pt-3 pb-1 first:pt-0">
