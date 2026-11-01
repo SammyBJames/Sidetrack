@@ -1719,7 +1719,10 @@ def journal(request):
         limit=items_per_page,
         cursor=cursor,
     )
-    entries = history_processor.build_journal_entries(page_rows, request.user)
+    entries = history_processor.collapse_entries(
+        history_processor.build_journal_entries(page_rows, request.user),
+        request.user,
+    )
     journal_days = history_processor.build_journal_days(entries, request.user)
 
     # Preserve the active date range when the feed paginates via HTMX.

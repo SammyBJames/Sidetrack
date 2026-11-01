@@ -101,7 +101,7 @@ class JournalViewTests(TestCase):
             for change in entry["changes"]
         ]
         self.assertIn("Finished watching", descriptions)
-        self.assertIn("Rated 8.0/10", descriptions)
+        self.assertIn("Rated 8/10", descriptions)
         self.assertIn("Marked as currently watching", descriptions)
 
         # Newest activity is first
@@ -124,6 +124,20 @@ class JournalViewTests(TestCase):
         self.assertEqual(
             accents["Marked as currently watching"],
             Status.IN_PROGRESS.value,
+        )
+
+    def test_journal_folds_rapid_edits(self):
+        """Rapid edits of one field show in the journal as one entry."""
+        for score in (3, 4, 5):
+            self.movie.score = score
+            self.movie.save()
+
+        response = self.client.get(reverse("journal"))
+
+        folded = response.context["entries"][0]
+        self.assertEqual(folded["count"], 3)
+        self.assertEqual(
+            folded["changes"][0]["description"], "Changed rating from 8 to 5"
         )
 
     def test_journal_entries_expose_history_id(self):

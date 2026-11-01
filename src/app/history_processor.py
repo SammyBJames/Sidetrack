@@ -2,19 +2,35 @@ from collections import defaultdict
 from datetime import timedelta
 
 from django.apps import apps
-from django.db.models import Q
+from django.db.models import Max, Min, Q
 from django.template.defaultfilters import pluralize
 from django.utils import formats, timezone
 from django.utils.dateparse import parse_datetime
 
 from app import config, helpers
-from app.models import REPEAT_STATUSES, WATCH_STATUS, MediaTypes, Status
+from app.models import (
+    REPEAT_STATUSES,
+    WATCH_STATUS,
+    BasicMedia,
+    Episode,
+    MediaTypes,
+    Season,
+    Status,
+)
 from app.templatetags import app_tags
 
+# Rapid edits of one field fold into one entry when each is this close to the last.
+COLLAPSE_WINDOW = timedelta(minutes=10)
 
-def _journal_queryset(model, user, start_date, end_date):
-    """Build the base non-deletion history queryset for a media type."""
+
+def _journal_queryset(model, user, start_date, end_date, object_ids=None):
+    """Build the base non-deletion history queryset for a media type.
+
+    ``object_ids`` limits it to the history of those objects.
+    """
     queryset = model.objects.filter(history_user_id=user).exclude(history_type="-")
+    if object_ids is not None:
+        queryset = queryset.filter(id__in=object_ids)
     if start_date:
         queryset = queryset.filter(history_date__gte=start_date)
     if end_date:
@@ -22,7 +38,14 @@ def _journal_queryset(model, user, start_date, end_date):
     return queryset
 
 
-def get_journal_page(user, start_date=None, end_date=None, limit=20, cursor=None):
+def get_journal_page(
+    user,
+    start_date=None,
+    end_date=None,
+    limit=20,
+    cursor=None,
+    scope=None,
+):
     """Return one keyset page of the user's non-deletion history, newest first.
 
     Returns ``(rows, has_next)`` where each row is a
@@ -37,11 +60,12 @@ def get_journal_page(user, start_date=None, end_date=None, limit=20, cursor=None
     each request reads at most ``limit + 1`` rows per media type regardless of
     how deep the feed is scrolled, instead of re-scanning everything above the
     current page. ``start_date``/``end_date`` are optional aware datetimes.
+
+    ``scope`` (see :func:`activity_scope`) limits the feed to those objects'
+    history and reads only their tables.
     """
     index = []
-    for media_type in MediaTypes.values:
-        model = apps.get_model(app_label="app", model_name=f"historical{media_type}")
-        queryset = _journal_queryset(model, user, start_date, end_date)
+    for media_type, queryset in _journal_querysets(user, start_date, end_date, scope):
         if cursor is not None:
             cur_date, cur_type, cur_id = cursor
             cond = Q(history_date__lt=cur_date) | Q(
@@ -53,7 +77,7 @@ def get_journal_page(user, start_date=None, end_date=None, limit=20, cursor=None
             # (date, id).
             if media_type < cur_type:
                 cond |= Q(history_date=cur_date, history_id=cur_id)
-            queryset = queryset.filter(cond)
+            queryset = queryset.filter(cond)  # noqa: PLW2901
 
         rows = queryset.order_by("-history_date", "-history_id").values_list(
             "history_date",
@@ -67,13 +91,100 @@ def get_journal_page(user, start_date=None, end_date=None, limit=20, cursor=None
     return index[:limit], len(index) > limit
 
 
-def get_journal_count(user, start_date=None, end_date=None):
-    """Count the user's non-deletion history rows across all media types."""
-    total = 0
+def get_journal_count(user, start_date=None, end_date=None, scope=None):
+    """Count the user's non-deletion history rows across all media types.
+
+    ``scope`` limits the count as it does :func:`get_journal_page`.
+    """
+    return sum(
+        queryset.count()
+        for _, queryset in _journal_querysets(user, start_date, end_date, scope)
+    )
+
+
+def _journal_querysets(user, start_date, end_date, scope):
+    """Yield ``(media_type, queryset)`` for each history table a feed reads.
+
+    Without a scope that is every media type; with one, the scope's non-empty
+    types, limited to their objects.
+    """
     for media_type in MediaTypes.values:
+        if scope is not None and not scope.get(media_type):
+            continue
         model = apps.get_model(app_label="app", model_name=f"historical{media_type}")
-        total += _journal_queryset(model, user, start_date, end_date).count()
-    return total
+        yield (
+            media_type,
+            _journal_queryset(
+                model,
+                user,
+                start_date,
+                end_date,
+                None if scope is None else scope[media_type],
+            ),
+        )
+
+
+def activity_scope(
+    user,
+    media_type,
+    media_id,
+    source,
+    season_number=None,
+    episode_number=None,
+):
+    """Return the objects whose history one media's feed shows.
+
+    The result maps a media type to a set of object ids, for the ``scope`` of
+    :func:`get_journal_page`. It holds the user's entries of the item (every
+    run), and for a season its episodes' entries, for a show its seasons' and
+    those seasons' episodes'. Only the user's own entries are found.
+    """
+    entries = BasicMedia.objects.filter_media(
+        user,
+        media_id,
+        media_type,
+        source,
+        season_number=season_number,
+        episode_number=episode_number,
+    )
+    scope = {media_type: set(entries.values_list("id", flat=True))}
+    if media_type == MediaTypes.TV.value:
+        scope[MediaTypes.SEASON.value] = set(
+            Season.objects.filter(related_tv_id__in=scope[media_type]).values_list(
+                "id",
+                flat=True,
+            ),
+        )
+    if media_type in (MediaTypes.TV.value, MediaTypes.SEASON.value):
+        scope[MediaTypes.EPISODE.value] = set(
+            Episode.objects.filter(
+                related_season_id__in=scope[MediaTypes.SEASON.value],
+            ).values_list("id", flat=True),
+        )
+    return scope
+
+
+def activity_summary(user, media_type, scope, entries):
+    """Summarise a media's activity: first and last activity and times finished.
+
+    ``entries`` are the user's entries of the media (as
+    ``filter_media_prefetch`` returns them, so a show's plays read prefetched
+    seasons). The dates come from aggregates over the scope, not a page. A
+    show's or season's finishes are its plays, as the details page counts them,
+    else the completed entries; ``finished`` is 0 when none.
+    """
+    first = last = None
+    for _, queryset in _journal_querysets(user, None, None, scope):
+        bounds = queryset.aggregate(first=Min("history_date"), last=Max("history_date"))
+        if bounds["first"] is not None:
+            first = min(first or bounds["first"], bounds["first"])
+            last = max(last or bounds["last"], bounds["last"])
+
+    if media_type in (MediaTypes.TV.value, MediaTypes.SEASON.value):
+        finished = sum(entry.plays for entry in entries)
+    else:
+        finished = sum(entry.status == WATCH_STATUS for entry in entries)
+    return {"first": first, "last": last, "finished": finished}
 
 
 def parse_journal_cursor(request):
@@ -118,12 +229,20 @@ def build_journal_days(entries, user):
     return days
 
 
-def build_journal_entries(index_page, user):
+def build_journal_entries(index_page, user, scope_type=None):
     """Turn a page of the journal index into renderable activity entries.
 
     ``index_page`` is a page from :func:`get_journal_page`. Historical records,
     their display items and their predecessors are fetched in batches per media
     type, then each record is rendered into human-readable changes.
+
+    Each entry is a dict with ``id`` (history id), ``object_id``, ``date``,
+    ``media_type``, ``item``, ``changes``, ``accent`` and ``context``. A change
+    has ``description`` (plain text), ``field`` and, where there is one, ``old``
+    and ``new``; score changes add ``label`` ("Rated 9/10", "4 → 9", "Removed
+    rating"). ``scope_type`` is the media type of the feed's own media: its
+    seasons and episodes get a short ``context`` ("S2", "S2E3", "E3"), else it
+    is empty.
     """
     records = _fetch_history_records(index_page)
     display = _resolve_display_items(records)
@@ -161,14 +280,119 @@ def build_journal_entries(index_page, user):
         entries.append(
             {
                 "id": record.history_id,
+                "object_id": record.id,
                 "date": record.history_date,
                 "media_type": media_type,
                 "item": info["item"],
                 "changes": changes,
                 "accent": _entry_accent(changes),
+                "context": _context_label(scope_type, media_type, info),
             },
         )
     return entries
+
+
+def _context_label(scope_type, media_type, info):
+    """Name where a record sits under the feed's own media, or ``""``."""
+    if scope_type == MediaTypes.TV.value:
+        if media_type == MediaTypes.SEASON.value:
+            return f"S{info['item'].season_number}"
+        if media_type == MediaTypes.EPISODE.value:
+            return f"S{info['item'].season_number}E{info['episode_number']}"
+    if scope_type == MediaTypes.SEASON.value and media_type == MediaTypes.EPISODE.value:
+        return f"E{info['episode_number']}"
+    return ""
+
+
+def collapse_entries(entries, user):
+    """Fold rapid edits of one field into single entries.
+
+    ``entries`` are from :func:`build_journal_entries`, newest first. Adjacent
+    entries of the same object whose only change is the same field, each within
+    ``COLLAPSE_WINDOW`` of the one before, become one entry: the newest, with the
+    net change (the oldest ``old`` to the newest ``new``), ``count`` and
+    ``members`` (the originals, newest first). Episodes don't fold, their
+    wording names the episode. Runs fold within the given page only.
+    """
+    folded = []
+    run = []
+    for entry in [*entries, None]:
+        if run and not (entry is not None and _continues_run(run[-1], entry)):
+            folded.append(run[0] if len(run) == 1 else _fold_run(run, user))
+            run = []
+        if entry is not None:
+            run.append(entry)
+    return folded
+
+
+def _continues_run(previous, entry):
+    """Say whether ``entry`` (older) extends a run ending at ``previous``."""
+    return (
+        entry["media_type"] != MediaTypes.EPISODE.value
+        and (entry["media_type"], entry["object_id"])
+        == (previous["media_type"], previous["object_id"])
+        and len(entry["changes"]) == 1
+        and len(previous["changes"]) == 1
+        and entry["changes"][0]["field"] == previous["changes"][0]["field"]
+        and previous["date"] - entry["date"] <= COLLAPSE_WINDOW
+    )
+
+
+def _fold_run(run, user):
+    """Fold a run of entries (newest first) into one with their net change."""
+    field = run[0]["changes"][0]["field"]
+    old = run[-1]["changes"][0].get("old")
+    new = run[0]["changes"][0].get("new")
+    media_type = run[0]["media_type"]
+
+    if old == new:
+        description = (
+            f"Changed {_field_label(field)} {len(run)} times, "
+            f"back to {_value_text(field, new, media_type, user)}"
+        )
+    else:
+        description = format_description(field, old, new, media_type, user)
+    change = {"description": description, "field": field, "old": old, "new": new}
+    if field == "score":
+        change["label"] = description if old == new else _score_label(old, new)
+
+    return {
+        **run[0],
+        "changes": [change],
+        "accent": _entry_accent([change]),
+        "count": len(run),
+        "members": run,
+    }
+
+
+def _field_label(field):
+    """Return a field's name as words."""
+    return "rating" if field == "score" else field.replace("_", " ")
+
+
+def _value_text(field, value, media_type, user):
+    """Return a field value as words, for "back to ..."."""
+    if field == "score":
+        return "no rating" if value is None else f"{_score_text(value)}/10"
+    if field == "status":
+        return _status_label(value, media_type)
+    if field in ("start_date", "end_date"):
+        return app_tags.datetime_format(value, user)
+    return str(value)
+
+
+def _score_text(value):
+    """Return a score without a trailing ".0", e.g. 8.0 as "8" and 8.5 as "8.5"."""
+    return f"{float(value):g}"
+
+
+def _score_label(old, new):
+    """Return what a score change's row draws next to its star."""
+    if new is None:
+        return "Removed rating"
+    if not old:
+        return f"Rated {_score_text(new)}/10"
+    return f"{_score_text(old)} → {_score_text(new)}"
 
 
 def _entry_accent(changes):
@@ -303,6 +527,7 @@ def _episode_changes(record, prev_record, info):
             {
                 "description": f"{wording[record.status]} {episode_number}",
                 "field": "status",
+                "old": None if prev_record is None else prev_record.status,
                 "new": record.status,
             },
         ]
@@ -440,6 +665,7 @@ def collect_creation_changes(new_record, history_model, media_type, user):
 
         change_data = {
             "field": field.name,
+            "old": None,
             "new": value,
             "description": format_description(
                 field.name,
@@ -505,6 +731,10 @@ def build_changes_list(changes, processed_entry):
     # Add other changes
     processed_entry["changes"].extend(changes["other_changes"])
 
+    for change in processed_entry["changes"]:
+        if change["field"] == "score":
+            change["label"] = _score_label(change.get("old"), change["new"])
+
 
 def format_description(field_name, old_value, new_value, media_type=None, user=None):  # noqa: C901, PLR0911, PLR0912
     """Format change description in a human-readable way.
@@ -535,7 +765,7 @@ def format_description(field_name, old_value, new_value, media_type=None, user=N
                 return f"{action} {_status_label(new_value, media_type).lower()}"
 
         if field_name == "score":
-            return f"Rated {new_value}/10"
+            return f"Rated {_score_text(new_value)}/10"
 
         if field_name == "progress" and media_type:
             verb = config.get_verb(media_type, past_tense=True).title()
@@ -588,9 +818,13 @@ def format_description(field_name, old_value, new_value, media_type=None, user=N
         )
 
     if field_name == "score":
+        if new_value is None:
+            return "Removed rating"
         if old_value == 0:
-            return f"Rated {new_value}/10"
-        return f"Changed rating from {old_value} to {new_value}"
+            return f"Rated {_score_text(new_value)}/10"
+        return (
+            f"Changed rating from {_score_text(old_value)} to {_score_text(new_value)}"
+        )
 
     if field_name == "progress":
         diff = new_value - old_value
