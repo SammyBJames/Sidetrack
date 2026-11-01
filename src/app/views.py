@@ -58,6 +58,9 @@ from users.models import (
 
 logger = logging.getLogger(__name__)
 
+# Activity entries per page of a media's history popup.
+HISTORY_PAGE_SIZE = 30
+
 # The highest score, matching the stars' ten half points
 MAX_SCORE = 10
 
@@ -1586,39 +1589,73 @@ def history_modal(
     season_number=None,
     episode_number=None,
 ):
-    """Return the history page for a media item."""
-    user_medias = BasicMedia.objects.filter_media(
+    """Return one media's activity timeline, or its next page of items.
+
+    The first request renders the dialog sheet with the summary; a request with a
+    ``cursor_*`` (the sentinel's) returns only the next items.
+    """
+    cursor = history_processor.parse_journal_cursor(request)
+    scope = history_processor.activity_scope(
         request.user,
-        media_id,
         media_type,
+        media_id,
         source,
         season_number=season_number,
         episode_number=episode_number,
     )
-
-    total_medias = user_medias.count()
-    timeline_entries = []
-    for index, media in enumerate(user_medias, start=1):
-        if history := media.history.all():
-            media_entry_number = total_medias - index + 1
-            timeline_entries.extend(
-                history_processor.process_history_entries(
-                    history,
-                    media_type,
-                    media_entry_number,
-                    request.user,
-                ),
-            )
-    return render(
-        request,
-        "app/components/fill_history.html",
-        {
-            "media_type": media_type,
-            "timeline": timeline_entries,
-            "total_medias": total_medias,
-            "return_url": request.GET["return_url"],
-        },
+    page_rows, has_next = history_processor.get_journal_page(
+        request.user,
+        limit=HISTORY_PAGE_SIZE,
+        cursor=cursor,
+        scope=scope,
     )
+    entries = history_processor.collapse_entries(
+        history_processor.build_journal_entries(
+            page_rows,
+            request.user,
+            scope_type=media_type,
+        ),
+        request.user,
+    )
+    journal_days = history_processor.build_journal_days(entries, request.user)
+
+    next_query = ""
+    if page_rows:
+        last_date, last_type, last_id = page_rows[-1]
+        next_query = urlencode(
+            {
+                "cursor_date": last_date.isoformat(),
+                "cursor_type": last_type,
+                "cursor_id": last_id,
+            },
+        )
+    prev_day = request.GET.get("last_day", "")
+    context = {
+        "media_type": media_type,
+        "journal_days": journal_days,
+        "prev_day": prev_day,
+        "last_day": journal_days[-1]["day_iso"] if journal_days else prev_day,
+        "has_next": has_next,
+        "next_query": next_query,
+    }
+
+    if cursor and request.headers.get("HX-Request"):
+        return render(request, "app/components/history_items.html", context)
+
+    context["summary"] = history_processor.activity_summary(
+        request.user,
+        media_type,
+        scope,
+        BasicMedia.objects.filter_media_prefetch(
+            request.user,
+            media_id,
+            media_type,
+            source,
+            season_number=season_number,
+            episode_number=episode_number,
+        ),
+    )
+    return render(request, "app/components/fill_history.html", context)
 
 
 @require_http_methods(["DELETE"])

@@ -8,7 +8,7 @@ from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 
 from app import config, history_processor
-from app.history_processor import format_description, process_history_entries
+from app.history_processor import format_description
 from app.models import (
     TV,
     Episode,
@@ -232,22 +232,17 @@ class HistoryProcessorTests(TestCase):
             media_type=MediaTypes.MOVIE.value,
             title="Movie",
         )
-        movie = Movie.objects.create(
-            item=item,
-            user=user,
-            status=Status.PLANNING_REPEAT.value,
-        )
+        movie = Movie(item=item, user=user, status=Status.PLANNING_REPEAT.value)
+        movie._history_user = user
+        movie.save()
         movie.status = Status.REPEATING.value
+        movie._history_user = user
         movie.save()
 
+        rows, _ = history_processor.get_journal_page(user)
         descriptions = [
             change["description"]
-            for entry in process_history_entries(
-                movie.history.all(),
-                MediaTypes.MOVIE.value,
-                1,
-                user,
-            )
+            for entry in history_processor.build_journal_entries(rows, user)
             for change in entry["changes"]
         ]
 
@@ -466,7 +461,7 @@ class ActivityFeedTests(TestCase):
         self.assertEqual(removed[0]["description"], "Removed rating")
         self.assertEqual(removed[0]["label"], "Removed rating")
         self.assertEqual(to_four[0]["description"], "Changed rating from 9 to 4")
-        self.assertEqual(to_four[0]["label"], "9 → 4")
+        self.assertEqual(to_four[0]["label"], "Rating 9 → 4")
         self.assertEqual(rated[0]["description"], "Rated 9/10")
         self.assertEqual(rated[0]["label"], "Rated 9/10")
         self.assertEqual(
@@ -498,7 +493,7 @@ class ActivityFeedTests(TestCase):
         """The net change runs from the first old score to the last new one."""
         self._edit(self.movie, -30, score=2)
         entries = self._ratings((1, 5), (2, 7))
-        self.assertEqual(entries[0]["changes"][0]["label"], "2 → 7")
+        self.assertEqual(entries[0]["changes"][0]["label"], "Rating 2 → 7")
 
         self._edit(self.movie, 3, score=None)
         entries = history_processor.collapse_entries(self._entries(), self.user)

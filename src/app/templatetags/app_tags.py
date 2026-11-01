@@ -1,6 +1,6 @@
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
@@ -10,6 +10,7 @@ from django.urls import reverse
 from django.utils import formats, timezone
 from django.utils.dateparse import parse_date
 from django.utils.html import format_html
+from django.utils.timesince import timesince
 from unidecode import unidecode
 
 from app import config, helpers
@@ -253,6 +254,14 @@ def get_sidebar_media_types(user):
 def media_color(media_type):
     """Return the color associated with the media type."""
     return config.get_text_color(media_type)
+
+
+@register.filter
+def ago(moment):
+    """Return how long ago a datetime was in its largest unit, e.g. "5 days ago"."""
+    if timezone.now() - moment < timedelta(minutes=1):
+        return "just now"
+    return f"{timesince(moment, depth=1)} ago"
 
 
 @register.filter

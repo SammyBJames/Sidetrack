@@ -140,6 +140,31 @@ class JournalViewTests(TestCase):
             folded["changes"][0]["description"], "Changed rating from 8 to 5"
         )
 
+    def test_journal_folded_row_expands_to_deletable_records(self):
+        """A folded row lists its records, each with its own delete."""
+        for score in (3, 4, 5):
+            self.movie.score = score
+            self.movie.save()
+
+        response = self.client.get(reverse("journal"))
+
+        folded = response.context["entries"][0]
+        self.assertContains(response, "3 edits")
+        for member in folded["members"]:
+            url = reverse(
+                "delete_history_record",
+                args=[MediaTypes.MOVIE.value, member["id"]],
+            )
+            self.assertContains(response, f'hx-delete="{url}"', count=1)
+            self.assertContains(
+                response,
+                f'hx-target="#activity-member-movie-{member["id"]}"',
+            )
+            self.assertContains(
+                response,
+                f'id="activity-member-movie-{member["id"]}"',
+            )
+
     def test_journal_entries_expose_history_id(self):
         """Each entry carries its history record id for deletion."""
         response = self.client.get(reverse("journal"))

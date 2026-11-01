@@ -1,29 +1,21 @@
 {% load app_tags %}
 
-{# The activity history dialog's sheet for an entry, to go in a dialog-box, with a button to delete each record #}
+{# The activity history dialog's sheet for a media, to go in a dialog-box: a summary, then its activity by day, loading more as it scrolls #}
 <div class="dialog-sheet">
   {% include "app/components/dialog_header.html" with title="Activity History" %}
-  <ul class="dialog-body space-y-3">
-    {% for entry in timeline %}
-      <li id="history-{{ entry.id }}"
-          class="space-y-1 rounded-xl bg-white/5 p-3 ring-1 ring-white/10">
-        <div class="flex items-center justify-between gap-2">
-          {% if total_medias > 1 %}
-            <span class="rounded-md bg-white/10 px-2 py-0.5 text-xs text-gray-300">Instance #{{ entry.media_entry_number }}</span>
-          {% endif %}
-          <span class="text-sm text-gray-400">{{ entry.date|datetime_format:user }}</span>
-          <button type="button"
-                  aria-label="Delete record"
-                  class="ml-auto flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-red-600/20 hover:text-red-300"
-                  hx-delete="{% url 'delete_history_record' media_type entry.id %}"
-                  hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-                  hx-target="#history-{{ entry.id }}"
-                  hx-swap="outerHTML">{% include "app/icons/trashcan.svg" with classes="size-4" %}</button>
-        </div>
-        {% for change in entry.changes %}<p class="text-sm text-white">{{ change.description }}</p>{% endfor %}
-      </li>
-    {% empty %}
-      <li class="rounded-xl bg-white/5 p-4 text-center text-sm text-gray-400 ring-1 ring-white/10">You haven't started tracking it yet.</li>
-    {% endfor %}
-  </ul>
+  {% if summary.first %}
+    <p class="shrink-0 px-5 pb-2 text-xs text-gray-400">
+      Added {{ summary.first|date:user.date_format }}
+      {% if summary.finished %}
+        · Finished {{ summary.finished }} time{{ summary.finished|pluralize }}
+      {% endif %}
+      · Last activity {{ summary.last|ago }}
+    </p>
+  {% endif %}
+  <div class="dialog-body">
+    <ul>
+      {% include "app/components/history_items.html" %}
+      {% if not journal_days %}<li class="py-6 text-center text-sm text-gray-400">No activity yet.</li>{% endif %}
+    </ul>
+  </div>
 </div>

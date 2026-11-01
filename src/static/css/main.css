@@ -1610,6 +1610,9 @@
     margin-block-start: calc(calc(var(--spacing) * 10) * var(--tw-space-y-reverse));
     margin-block-end: calc(calc(var(--spacing) * 10) * calc(1 - var(--tw-space-y-reverse)));
   }
+  .gap-x-1\.5 {
+    column-gap: calc(var(--spacing) * 1.5);
+  }
   .gap-x-2 {
     column-gap: calc(var(--spacing) * 2);
   }
@@ -2349,6 +2352,9 @@
   .py-3 {
     padding-block: calc(var(--spacing) * 3);
   }
+  .py-6 {
+    padding-block: calc(var(--spacing) * 6);
+  }
   .py-8 {
     padding-block: calc(var(--spacing) * 8);
   }
@@ -2423,6 +2429,9 @@
   }
   .pb-6 {
     padding-bottom: calc(var(--spacing) * 6);
+  }
+  .pl-2 {
+    padding-left: calc(var(--spacing) * 2);
   }
   .pl-2\.5 {
     padding-left: calc(var(--spacing) * 2.5);
@@ -3006,6 +3015,9 @@
     .group-hover\:opacity-100:is(:where(.group):hover *) {
       opacity: 100%;
     }
+    .group-hover\/member\:opacity-100:is(:where(.group\/member):hover *) {
+      opacity: 100%;
+    }
     .group-hover\/qa\:block:is(:where(.group\/qa):hover *) {
       display: block;
     }
@@ -3019,6 +3031,9 @@
       padding-left: calc(var(--spacing) * 2.5);
     }
     .group-hover\/qa\:opacity-100:is(:where(.group\/qa):hover *) {
+      opacity: 100%;
+    }
+    .group-hover\/row\:opacity-100:is(:where(.group\/row):hover *) {
       opacity: 100%;
     }
     .group-hover\/track\:-translate-y-3:is(:where(.group\/track):hover *) {
@@ -3471,6 +3486,9 @@
   }
   .focus\:ring-inset:focus {
     --tw-ring-inset: inset;
+  }
+  .focus-visible\:opacity-100:focus-visible {
+    opacity: 100%;
   }
   .focus-visible\:ring-2:focus-visible {
     --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color, currentcolor);
@@ -3937,6 +3955,9 @@
   @media (pointer: coarse) {
     .pointer-coarse\:pointer-events-none {
       pointer-events: none;
+    }
+    .pointer-coarse\:opacity-100 {
+      opacity: 100%;
     }
   }
   .hover-tap:hover .parent-hover-tap\:scale-105 {

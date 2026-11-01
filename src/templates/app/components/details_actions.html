@@ -28,7 +28,6 @@
           data-tooltip="Activity history"
           aria-label="Activity history"
           hx-get="{% media_view_url 'history_modal' media %}"
-          hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}"}'
           hx-target="#{% component_id 'history' media %}"
           hx-trigger="click once"
           @click="historyOpen = true">{% include "app/icons/history.svg" with classes="size-4" %}</button>

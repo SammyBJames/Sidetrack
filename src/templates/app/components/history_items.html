@@ -1,0 +1,18 @@
+{% comment %}A page of a media's activity timeline: day headings and rows, then a sentinel that loads the next page when scrolled to.{% endcomment %}
+{% for day in journal_days %}
+  {% if not forloop.first or day.day_iso != prev_day %}
+    <li class="flex items-center gap-3 pt-3 pb-1 first:pt-0">
+      <h3 class="shrink-0 text-sm font-semibold text-gray-300">{{ day.label }}</h3>
+      <div class="h-px flex-1 bg-white/10"></div>
+    </li>
+  {% endif %}
+  {% for entry in day.entries %}
+    {% include "app/components/activity_row.html" %}
+  {% endfor %}
+{% endfor %}
+{% if has_next %}
+  <li hx-get="{{ request.path }}?{{ next_query }}&last_day={{ last_day }}"
+      hx-trigger="intersect once"
+      hx-swap="outerHTML"
+      class="h-px"></li>
+{% endif %}

@@ -392,7 +392,7 @@ def _score_label(old, new):
         return "Removed rating"
     if not old:
         return f"Rated {_score_text(new)}/10"
-    return f"{_score_text(old)} → {_score_text(new)}"
+    return f"Rating {_score_text(old)} → {_score_text(new)}"
 
 
 def _entry_accent(changes):
@@ -539,21 +539,6 @@ def _episode_changes(record, prev_record, info):
             },
         )
     return changes
-
-
-def process_history_entries(history_records, media_type, media_entry_number, user):
-    """Process all history records into timeline entries."""
-    timeline_entries = []
-    last = history_records.first()
-
-    for _ in range(history_records.count()):
-        entry = process_history_entry((last, last.prev_record), media_type, user)
-        if entry["changes"]:
-            entry["media_entry_number"] = media_entry_number
-            timeline_entries.append(entry)
-        last = last.prev_record
-
-    return timeline_entries
 
 
 def process_history_entry(entry, media_type, user):
