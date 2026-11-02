@@ -449,6 +449,7 @@ class ActivityFeedTests(TestCase):
         season = self._scope(MediaTypes.SEASON.value, "9", season_number=2)
 
         def labels(scope, scope_type):
+            """Return the sorted (media type, context) pairs of a scope's entries."""
             return sorted(
                 (e["media_type"], e["context"])
                 for e in self._entries(scope, scope_type)
@@ -591,6 +592,7 @@ class ActivityFeedTests(TestCase):
             self._stamp(record, 1000)
 
         def summary(entries, scope):
+            """Return the activity summary of a scope for the given entries."""
             return history_processor.activity_summary(
                 self.user,
                 scope,
@@ -649,6 +651,7 @@ class ActivityFeedTests(TestCase):
             episode.save_base()
 
         def run(limit):
+            """Return how many folded entries a page of ``limit`` rows yields."""
             rows, _ = history_processor.get_journal_page(
                 self.user,
                 limit=limit,
