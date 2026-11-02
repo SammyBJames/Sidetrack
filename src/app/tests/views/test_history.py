@@ -127,7 +127,12 @@ class HistoryModalViewTests(TestCase):
 
         self.assertContains(response, "3 edits")
         # The title row: the net change, with the new status uncoloured
-        self.assertContains(response, 'text-gray-200">Dropped</span>', count=1)
+        plain = re.findall(
+            r'text-gray-200">\s*(?:<svg.*?</svg>\s*)?Dropped\s*</span>',
+            response.content.decode(),
+            flags=re.DOTALL,
+        )
+        self.assertEqual(len(plain), 1)
         # Each member: its new status as a chip in its colour
         for status in (Status.PAUSED, Status.IN_PROGRESS, Status.DROPPED):
             colour = f"font-medium {config.get_status_text_color(status.value)}"

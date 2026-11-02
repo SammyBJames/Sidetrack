@@ -632,7 +632,7 @@ def process_changed_entry(new_record, old_record, media_type, processed_entry, u
     """Process an entry representing a change to existing media."""
     delta = new_record.diff_against(old_record)
     changes = organize_changes(delta.changes, media_type, user)
-    apply_date_status_integration(changes)
+    apply_date_status_integration(changes, media_type)
     build_changes_list(changes, processed_entry)
     return processed_entry
 
@@ -645,7 +645,7 @@ def process_creation_entry(new_record, media_type, processed_entry, user):
     )
 
     changes = collect_creation_changes(new_record, history_model, media_type, user)
-    apply_date_status_integration(changes)
+    apply_date_status_integration(changes, media_type)
     build_changes_list(changes, processed_entry)
     return processed_entry
 
@@ -738,16 +738,20 @@ def collect_creation_changes(new_record, history_model, media_type, user):
     return organized
 
 
-def apply_date_status_integration(changes):
+def apply_date_status_integration(changes, media_type):
     """Drop the changes that ride along with a status change.
 
     The status shows on its own; dates have no place in activity text, and the
-    progress that completing fills in is implied by Completed.
+    progress that completing fills in is implied by Completed, except a game's,
+    which completing never fills in (it is playtime the user entered).
     """
     status = changes["status_change"]
     if status:
         changes["date_changes"] = {"start_date": None, "end_date": None}
-        if status["new"] == Status.COMPLETED.value:
+        if (
+            status["new"] == Status.COMPLETED.value
+            and media_type != MediaTypes.GAME.value
+        ):
             changes["other_changes"] = [
                 c for c in changes["other_changes"] if c["field"] != "progress"
             ]

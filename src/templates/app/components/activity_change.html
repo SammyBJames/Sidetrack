@@ -1,25 +1,16 @@
 {% load app_tags %}
-{# One change of an activity entry, for the popup and the Journal. Expects `change` and `media_type`, and `chips` for a row with no badge of its own (a fold's member): a status change between two statuses shows the old one quietly and the new one as a coloured chip, a first status (other than Planning, which reads as its description) the chip alone, unless the change is `named` (its wording is its description); a row with a badge draws the same as plain text, no icon or colour, a score change an arrow, anything else its description, with a date change's new date as its tooltip #}
+{# One change of an activity entry, for the popup and the Journal. Expects `change` and `media_type`, and `chips` for a row with no badge of its own (a fold's member): a status change (unless `named`: its wording is its description) shows the old status quietly and the new one as a coloured chip with icon, or as plain text on a row with a badge; a first status shows alone, except Planning, which reads as its description; a score change an arrow, anything else its description, with a date change's new date as its tooltip #}
 {% if change.field == "status" and not change.named and not change.old and change.new == "Planning" %}
   <span class="text-sm text-gray-200">{{ change.description }}</span>
-{% elif change.field == "status" and not chips and not change.named and change.old != change.new %}
-  {% if change.old %}
-    <span class="text-sm text-gray-400">{{ change.old|media_status_readable:media_type }}</span>
-    {% include "app/icons/right-arrow.svg" with classes="size-3.5 shrink-0 text-gray-500" %}
-  {% endif %}
-  <span class="text-sm text-gray-200">{{ change.new|media_status_readable:media_type }}</span>
-  <span class="sr-only">{{ change.description }}</span>
-{% elif change.field == "status" and change.old and change.old != change.new %}
-  <span class="text-sm text-gray-400">{{ change.old|media_status_readable:media_type }}</span>
-  <span class="inline-flex items-center gap-1 text-sm font-medium {{ change.new|status_color }}">
-    {% include "app/icons/right-arrow.svg" with classes="size-3.5 shrink-0 text-gray-500" %}
-    {% include change.new|status_icon with classes="size-3.5 shrink-0" %}
-    {{ change.new|media_status_readable:media_type }}
-  </span>
-  <span class="sr-only">{{ change.description }}</span>
-{% elif change.field == "status" and not change.named and not change.old %}
-  <span class="inline-flex items-center gap-1 text-sm font-medium {{ change.new|status_color }}">
-    {% include change.new|status_icon with classes="size-3.5 shrink-0" %}
+{% elif change.field == "status" and not change.named and change.old != change.new %}
+  {% if change.old %}<span class="text-sm text-gray-400">{{ change.old|media_status_readable:media_type }}</span>{% endif %}
+  <span class="inline-flex items-center gap-1 text-sm {% if chips %}font-medium {{ change.new|status_color }}{% else %}text-gray-200{% endif %}">
+    {% if change.old %}
+      {% include "app/icons/right-arrow.svg" with classes="size-3.5 shrink-0 text-gray-500" %}
+    {% endif %}
+    {% if chips %}
+      {% include change.new|status_icon with classes="size-3.5 shrink-0" %}
+    {% endif %}
     {{ change.new|media_status_readable:media_type }}
   </span>
   <span class="sr-only">{{ change.description }}</span>

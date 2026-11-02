@@ -811,7 +811,10 @@ class ActivityFeedTests(TestCase):
     # Items have a length, which completing fills in as progress
     @patch(
         "app.providers.services.get_media_metadata",
-        return_value={"max_progress": 12},
+        side_effect=lambda media_type, *_: {
+            # A game has no length, so completing doesn't fill its playtime
+            "max_progress": None if media_type == MediaTypes.GAME.value else 12,
+        },
     )
     def test_repeat_action_reads_as_a_named_sequence(self, _metadata):
         """A click's records fold into "Marked as re..." in the type's words."""
@@ -864,6 +867,30 @@ class ActivityFeedTests(TestCase):
         changes = self._changes()
 
         self.assertEqual([c["field"] for c in changes], ["status", "progress"])
+
+    def test_game_playtime_entered_with_completion_is_kept(self):
+        """A game's completion never fills its playtime, so a typed one still shows."""
+        item = Item.objects.create(
+            media_id="played",
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.GAME.value,
+            title="Played",
+        )
+        game = Game(
+            item=item,
+            user=self.user,
+            status=Status.IN_PROGRESS.value,
+            progress=600,
+        )
+        game._history_user = self.user
+        game.save()
+        self._stamp(game.history.first(), 1)
+        self._edit(game, 30, status=Status.COMPLETED.value, progress=2700)
+
+        changes = self._changes()
+
+        self.assertEqual([c["field"] for c in changes], ["status", "progress"])
+        self.assertEqual(changes[1]["description"], "Added 35h 00min of playtime")
 
     def test_first_time_plan_then_finish_is_not_named(self):
         """A new entry planned, then finished soon after, isn't a repeat."""
