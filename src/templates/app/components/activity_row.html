@@ -1,10 +1,11 @@
 {% load app_tags %}
-{# One activity as a compact row of a list: its changes, the time and a delete that asks inline first. Expects `entry`; `member` marks one record of a folded entry (no badge). A folded entry shows its net change and its records to expand #}
+{# One activity as a compact row of a list: its changes, the time and a delete that asks inline first, over the row so nothing moves. Expects `entry`; `member` marks one record of a folded entry (no badge). A folded entry shows its net change and its records to expand #}
 <li id="activity-{% if member %}member-{% endif %}{{ entry.media_type }}-{{ entry.id }}"
     x-data="{ confirming: false, open: false, count: {{ entry.count|default:0 }} }"
     @member-deleted="count--"
-    class="{% if member %}group/member{% else %}group/row{% endif %}">
-  <div x-show="!confirming" class="flex items-start gap-3 py-2">
+    class="relative {% if member %}group/member{% else %}group/row{% endif %}">
+  <div :class="confirming && 'invisible'"
+       class="flex items-start gap-3 py-2">
     {% if not member %}
       {% with badge=entry.accent|journal_accent %}
         <span class="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full shadow-md {{ badge.background }}">
@@ -18,7 +19,7 @@
           {% if forloop.first and entry.context %}
             <span class="rounded-md bg-white/10 px-1.5 py-0.5 text-xs text-gray-400">{{ entry.context }}</span>
           {% endif %}
-          {% include "app/components/activity_change.html" with change=change media_type=entry.media_type %}
+          {% include "app/components/activity_change.html" with change=change media_type=entry.media_type chips=member %}
         </p>
       {% endfor %}
       {% if entry.members and not member %}
@@ -26,7 +27,7 @@
       {% endif %}
     </div>
     <time class="mt-0.5 shrink-0 text-xs text-gray-500"
-          title="{{ entry.date|datetime_format:user }}">{{ entry.date|time_format:user }}</time>
+          title="{{ entry.date|date_format:user }} {{ entry.date|time_format:user }}">{{ entry.date|time_format:user }}</time>
     {% if not entry.members or member %}
       <button type="button"
               @click="confirming = true"
@@ -39,12 +40,12 @@
     {% endif %}
   </div>
   {% if entry.members and not member %}
-    <div x-show="!confirming">{% include "app/components/activity_fold_list.html" %}</div>
+    {% include "app/components/activity_fold_list.html" %}
   {% endif %}
   <div x-cloak
        x-show="confirming"
-       class="flex items-center justify-between gap-3 py-2">
-    <p class="text-sm text-gray-300">Delete this activity?</p>
+       class="absolute inset-0 flex items-center justify-between gap-3">
+    <p class="truncate text-sm text-gray-300">Delete this activity?</p>
     <div class="flex shrink-0 items-center gap-2">
       <button type="button"
               @click="confirming = false"

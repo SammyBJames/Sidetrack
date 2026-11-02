@@ -150,7 +150,7 @@ class JournalViewTests(TestCase):
 
         response = self.client.get(reverse("journal"))
 
-        self.assertContains(response, 'text-gray-200">Started episode 1</span>')
+        self.assertContains(response, ">Started episode 1</span>")
 
     def test_journal_folded_row_expands_to_deletable_records(self):
         """A folded row lists its records, each with its own delete."""
@@ -411,6 +411,29 @@ class JournalViewTests(TestCase):
         self.assertEqual(
             response.context["filter_query"],
             "start-date=all&end-date=all",
+        )
+
+    def test_journal_next_page_link_keeps_the_date_range(self):
+        """The load-more link on a full page names the range, then the cursor."""
+        for i in range(25):
+            item = Item.objects.create(
+                media_id=f"range-{i}",
+                source=Sources.TMDB.value,
+                media_type=MediaTypes.MOVIE.value,
+                title=f"Movie {i}",
+            )
+            movie = Movie(item=item, user=self.user, status=Status.COMPLETED.value)
+            movie._history_user = self.user
+            Movie.save_base(movie)
+
+        response = self.client.get(
+            reverse("journal") + "?start-date=all&end-date=all",
+        )
+
+        self.assertTrue(response.context["has_next"])
+        self.assertContains(
+            response,
+            "start-date=all&amp;end-date=all&amp;cursor_date=",
         )
 
     def test_journal_groups_entries_by_day(self):

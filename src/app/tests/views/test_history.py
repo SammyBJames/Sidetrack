@@ -7,6 +7,7 @@ from django.template.loader import render_to_string
 from django.test import TestCase
 from django.urls import reverse
 
+from app import config
 from app.models import (
     TV,
     Episode,
@@ -105,6 +106,32 @@ class HistoryModalViewTests(TestCase):
 
         self.assertContains(response, "3 edits")
         self.assertContains(response, 'id="activity-member-movie-')
+
+    def test_history_modal_fold_is_plain_text_and_members_are_chips(self):
+        """A status fold's row reads as plain text, its members as coloured chips."""
+        for status in (Status.PAUSED, Status.IN_PROGRESS, Status.DROPPED):
+            self.movie.status = status.value
+            self.movie.save()
+        self.movie.history.update(history_user=self.user)
+
+        response = self.client.get(
+            reverse(
+                "history_modal",
+                kwargs={
+                    "source": Sources.TMDB.value,
+                    "media_type": MediaTypes.MOVIE.value,
+                    "media_id": "238",
+                },
+            ),
+        )
+
+        self.assertContains(response, "3 edits")
+        # The title row: the net change, with the new status uncoloured
+        self.assertContains(response, 'text-gray-200">Dropped</span>', count=1)
+        # Each member: its new status as a chip in its colour
+        for status in (Status.PAUSED, Status.IN_PROGRESS, Status.DROPPED):
+            colour = f"font-medium {config.get_status_text_color(status.value)}"
+            self.assertContains(response, colour, count=1)
 
     def test_history_modal_empty(self):
         """A media with no activity says so, with no summary."""
@@ -216,6 +243,23 @@ class HistoryTimelineTests(TestCase):
         )
         self.assertContains(later, "Marked as currently watching")
         self.assertContains(later, "S2<")
+
+    def test_popup_follows_the_users_date_and_time_formats(self):
+        """Day headings, the summary and the time with its tooltip use the settings."""
+        response = self.client.get(self._url(MediaTypes.SEASON.value, 2))
+
+        self.assertContains(response, "October 2, 2026")
+        self.assertContains(response, "Added October 1, 2026")
+        self.assertContains(response, 'title="October 2, 2026 11:59 AM">11:59 AM<')
+
+        self.user.date_format = "Y-m-d"
+        self.user.time_format = "H:i"
+        self.user.save()
+        response = self.client.get(self._url(MediaTypes.SEASON.value, 2))
+
+        self.assertContains(response, "2026-10-02")
+        self.assertContains(response, "Added 2026-10-01")
+        self.assertContains(response, 'title="2026-10-02 11:59">11:59<')
 
     def test_cursor_request_returns_next_page_only(self):
         """A cursor request returns the items after it, without the sheet."""
@@ -337,11 +381,14 @@ class DeleteHistoryRecordViewTests(TestCase):
 class ActivityChangeTemplateTests(TestCase):
     """Test how one change is drawn."""
 
-    def _render(self, change, media_type=MediaTypes.MOVIE.value):
-        """Return the activity_change template rendered for one change dict."""
+    def _render(self, change, media_type=MediaTypes.MOVIE.value, *, chips=True):
+        """Return the activity_change template rendered for one change dict.
+
+        ``chips`` is for a row with no badge (a fold's member).
+        """
         return render_to_string(
             "app/components/activity_change.html",
-            {"change": change, "media_type": media_type},
+            {"change": change, "media_type": media_type, "chips": chips},
         )
 
     def test_status_change_with_no_net_change_reads_as_text(self):
@@ -357,6 +404,155 @@ class ActivityChangeTemplateTests(TestCase):
 
         self.assertIn("Changed status 4 times, back to Planning Rewatch", html)
         self.assertNotIn("<svg", html)
+
+    def test_badged_row_draws_its_status_as_plain_text(self):
+        """A badged row shows old, an arrow and new, with no icon or colour."""
+        html = self._render(
+            {
+                "field": "status",
+                "old": Status.PLANNING.value,
+                "new": Status.COMPLETED.value,
+                "description": "x",
+            },
+            chips=False,
+        )
+        first = self._render(
+            {
+                "field": "status",
+                "old": None,
+                "new": Status.COMPLETED.value,
+                "description": "x",
+            },
+            chips=False,
+        )
+
+        colour = config.get_status_text_color(Status.COMPLETED.value)
+        self.assertIn("Planning", html)
+        self.assertIn("Completed", html)
+        self.assertIn("M5 12h14", html)
+        self.assertEqual(html.count("<svg"), 1)
+        self.assertNotIn(colour, html)
+        self.assertIn("Completed", first)
+        self.assertNotIn("<svg", first)
+        self.assertNotIn(colour, first)
+
+    def test_member_row_keeps_the_coloured_chip(self):
+        """A fold's member, with no badge, draws the new status as an icon chip."""
+        html = self._render(
+            {
+                "field": "status",
+                "old": Status.PLANNING.value,
+                "new": Status.COMPLETED.value,
+                "description": "x",
+            },
+            chips=True,
+        )
+
+        self.assertEqual(html.count("<svg"), 2)
+        self.assertIn(config.get_status_text_color(Status.COMPLETED.value), html)
+
+    def test_first_status_is_its_chip_alone(self):
+        """A first status shows as the status, with no arrow and no old status."""
+        html = self._render(
+            {
+                "field": "status",
+                "old": None,
+                "new": Status.COMPLETED.value,
+                "description": "Marked as finished watching",
+            },
+        )
+
+        self.assertIn("Completed", html)
+        self.assertIn("<svg", html)
+        self.assertNotIn("M5 12h14", html)
+
+    def test_first_planning_reads_as_its_description(self):
+        """A first Planning is "Added to watchlist", not a chip."""
+        html = self._render(
+            {
+                "field": "status",
+                "old": None,
+                "new": Status.PLANNING.value,
+                "description": "Added to watchlist",
+            },
+        )
+
+        self.assertIn("Added to watchlist", html)
+        self.assertNotIn("<svg", html)
+
+    def test_named_change_reads_as_its_description(self):
+        """A named change (a repeat's sequence, an episode's) shows its words."""
+        html = self._render(
+            {
+                "field": "status",
+                "old": None,
+                "new": Status.COMPLETED.value,
+                "description": "Marked as rewatched",
+                "named": True,
+            },
+        )
+
+        self.assertIn("Marked as rewatched", html)
+        self.assertNotIn("<svg", html)
+
+        # On a row with a badge the words must show, not only a screen reader's
+        plain = self._render(
+            {
+                "field": "status",
+                "old": None,
+                "new": Status.COMPLETED.value,
+                "description": "Marked as rewatched",
+                "named": True,
+            },
+            chips=False,
+        )
+
+        self.assertNotIn("sr-only", plain)
+        self.assertIn(">Marked as rewatched<", plain)
+
+    def test_cleared_rating_reads_removed(self):
+        """A rating taken away reads "Removed rating", with no arrow."""
+        html = self._render(
+            {
+                "field": "score",
+                "old": 4.0,
+                "new": None,
+                "description": "Removed rating",
+            },
+        )
+
+        self.assertIn("Removed rating", html)
+        self.assertNotIn("M5 12h14", html)
+
+    def test_rating_that_ends_where_it_began_has_no_arrow(self):
+        """A fold's rating back to its start reads as text, not "Rating 4 → 4"."""
+        html = self._render(
+            {
+                "field": "score",
+                "old": 4.0,
+                "new": 4.0,
+                "description": "Changed rating 2 times, back to 4/10",
+            },
+        )
+
+        self.assertIn("Changed rating 2 times, back to 4/10", html)
+        self.assertNotIn("M5 12h14", html)
+        self.assertNotIn("Rating 4", html)
+
+    def test_date_change_has_its_date_as_a_tooltip(self):
+        """A date change reads without the date, which is its tooltip."""
+        html = self._render(
+            {
+                "field": "end_date",
+                "old": None,
+                "new": None,
+                "description": "Changed end date",
+                "title": "September 1, 2026 8:00 AM",
+            },
+        )
+
+        self.assertIn("Changed end date", html)
+        self.assertIn('title="September 1, 2026 8:00 AM"', html)
 
     def test_status_and_score_changes_share_the_arrow(self):
         """Both draw the same arrow icon between old and new."""

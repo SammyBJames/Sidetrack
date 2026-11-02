@@ -373,7 +373,7 @@ class IntegrationTest(StaticLiveServerTestCase):
         # Episode 1 air date is 2008-01-20
         fixed_date = date(2008, 1, 20)
         expect(self.page.get_by_role("main")).to_contain_text(
-            fixed_date.strftime("%Y-%m-%d"),
+            f"{fixed_date:%B} {fixed_date.day}, {fixed_date.year}",
         )
         self.page.get_by_label("Breadcrumb").get_by_role(
             "link", name="Season 1"

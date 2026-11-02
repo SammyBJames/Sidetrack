@@ -256,11 +256,11 @@ def preferences(request):
     request.user.hide_zero_rating = "hide_zero_rating" in request.POST
     request.user.date_format = request.POST.get(
         "date_format",
-        DateFormatChoices.ISO,
+        DateFormatChoices.LONG_MONTH,
     )
     request.user.time_format = request.POST.get(
         "time_format",
-        TimeFormatChoices.HOUR_24,
+        TimeFormatChoices.HOUR_12,
     )
     week_start_day = request.POST.get("week_start_day")
     if week_start_day in WeekStartDayChoices.values:

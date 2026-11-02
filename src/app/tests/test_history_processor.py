@@ -1,18 +1,25 @@
 import datetime
 from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from django.apps import apps
 from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
+from simple_history.models import HistoricalRecords
 
-from app import config, history_processor
+from app import config, history_processor, quick_actions
 from app.history_processor import format_description
 from app.models import (
     TV,
+    Anime,
+    Book,
     Episode,
+    Game,
     Item,
+    Manga,
     MediaTypes,
     Movie,
     Season,
@@ -63,7 +70,25 @@ class HistoryProcessorTests(TestCase):
                 Status.PLANNING.value,
                 MediaTypes.GAME.value,
             ),
-            "Added to playing list",
+            "Added to play list",
+        )
+        self.assertEqual(
+            format_description(
+                "status",
+                None,
+                Status.PLANNING.value,
+                MediaTypes.MOVIE.value,
+            ),
+            "Added to watchlist",
+        )
+        self.assertEqual(
+            format_description(
+                "status",
+                None,
+                Status.PLANNING.value,
+                MediaTypes.BOOK.value,
+            ),
+            "Added to reading list",
         )
         self.assertEqual(
             format_description(
@@ -677,17 +702,177 @@ class ActivityFeedTests(TestCase):
 
         self.assertEqual(entry["accent"], Status.COMPLETED.value)
 
-    def test_fold_back_to_a_date_uses_the_users_format(self):
-        """A "back to" names a date as the rest of the feed does."""
-        d1 = datetime.datetime(2026, 9, 1, 8, 0, tzinfo=datetime.UTC)
-        d2 = datetime.datetime(2026, 9, 2, 8, 0, tzinfo=datetime.UTC)
+    def test_fold_of_a_date_names_no_date(self):
+        """A date edited back and forth reads without a date, which is its tooltip."""
+        d1 = datetime.datetime(2026, 9, 1, 12, 0, tzinfo=datetime.UTC)
+        d2 = datetime.datetime(2026, 9, 2, 12, 0, tzinfo=datetime.UTC)
         self._edit(self.movie, -30, end_date=d1)
         self._edit(self.movie, 1, end_date=d2)
         self._edit(self.movie, 2, end_date=d1)
+
+        change = history_processor.collapse_entries(self._entries(), self.user)[0][
+            "changes"
+        ][0]
+
+        self.assertEqual(change["description"], "Changed end date 2 times")
+        self.assertIn("September 1, 2026", change["title"])
+
+    def _changes(self, entry_index=0):
+        """Return the changes of the newest uncollapsed entry (or the nth)."""
+        return self._entries()[entry_index]["changes"]
+
+    def test_dates_riding_along_with_a_status_are_dropped(self):
+        """A status that comes with its dates shows on its own."""
+        self._edit(
+            self.movie,
+            1,
+            status=Status.COMPLETED.value,
+            start_date=T0,
+            end_date=T0,
+        )
+
+        changes = self._changes()
+
+        self.assertEqual([c["field"] for c in changes], ["status"])
+        self.assertNotIn("2026", changes[0]["description"])
+
+    def test_creation_with_dates_shows_the_status_alone(self):
+        """A finished entry made with its dates reads as its status."""
+        item = Item.objects.create(
+            media_id="dated",
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.MOVIE.value,
+            title="Dated",
+        )
+        movie = Movie(
+            item=item,
+            user=self.user,
+            status=Status.COMPLETED.value,
+            start_date=T0,
+            end_date=T0,
+        )
+        movie._history_user = self.user
+        Movie.save_base(movie)
+        self._stamp(movie.history.first(), 5)
+
+        changes = self._changes()
+
+        self.assertEqual(
+            [(c["field"], c["new"]) for c in changes],
+            [("status", Status.COMPLETED.value)],
+        )
+
+    def test_date_only_edits_read_without_the_date(self):
+        """Changing or removing a date reads "Changed/Removed ... date"."""
+        self._edit(self.movie, 1, start_date=T0)
+        self._edit(self.movie, 20, end_date=T0)
+        self._edit(self.movie, 40, end_date=None)
+
+        removed, ended, started = (self._changes(i)[0] for i in range(3))
+
+        self.assertEqual(removed["description"], "Removed end date")
+        self.assertIsNone(removed["title"])
+        self.assertEqual(ended["description"], "Changed end date")
+        self.assertIn("October 1, 2026", ended["title"])
+        self.assertEqual(started["description"], "Changed start date")
+        self.assertIn("October 1, 2026", started["title"])
+
+    def _repeat(self, model, media_type, finish_key):
+        """Repeat a finished entry with the card's actions, as a click would.
+
+        Returns the feed's collapsed entries for that item.
+        """
+        item = Item.objects.create(
+            media_id=f"repeat-{media_type}",
+            source=Sources.MANUAL.value,
+            media_type=media_type,
+            title=media_type,
+        )
+        media = model(item=item, user=self.user, status=Status.COMPLETED.value)
+        media._history_user = self.user
+        media.save()
+        action = quick_actions.get_quick_action(media_type, media)
+        self.assertEqual(action.key, quick_actions.PLAN_REPEAT)
+        media = quick_actions.apply_quick_action(action, media)
+        action = quick_actions.get_quick_action(media_type, media)
+        if action.key == quick_actions.START_REPEAT:
+            media = quick_actions.apply_quick_action(action, media)
+            action = quick_actions.get_finish_action(media_type, media)
+        self.assertEqual(action.key, finish_key)
+        media = quick_actions.apply_quick_action(action, media)
+        self.assertEqual(media.status, Status.COMPLETED.value)
+
+        return [
+            e
+            for e in history_processor.collapse_entries(self._entries(), self.user)
+            if e["object_id"] == media.id and e["media_type"] == media_type
+        ]
+
+    # Items have a length, which completing fills in as progress
+    @patch(
+        "app.providers.services.get_media_metadata",
+        return_value={"max_progress": 12},
+    )
+    def test_repeat_action_reads_as_a_named_sequence(self, _metadata):
+        """A click's records fold into "Marked as re..." in the type's words."""
+        # As the middleware attributes a request's records to its user.
+        HistoricalRecords.context.request = SimpleNamespace(user=self.user)
+        self.addCleanup(delattr, HistoricalRecords.context, "request")
+        for model, media_type, key, label in (
+            (Movie, MediaTypes.MOVIE.value, quick_actions.REPEAT, "rewatched"),
+            (Anime, MediaTypes.ANIME.value, quick_actions.REPEAT, "rewatched"),
+            (Manga, MediaTypes.MANGA.value, quick_actions.REPEAT, "reread"),
+            (Book, MediaTypes.BOOK.value, quick_actions.REPEAT, "reread"),
+            (Game, MediaTypes.GAME.value, quick_actions.REPEAT, "replayed"),
+        ):
+            with self.subTest(media_type):
+                entries = self._repeat(model, media_type, key)
+
+                self.assertEqual(len(entries), 1)
+                self.assertEqual(
+                    entries[0]["changes"][0]["description"],
+                    f"Marked as {label}",
+                )
+                self.assertTrue(entries[0]["changes"][0]["named"])
+                self.assertEqual(entries[0]["accent"], Status.COMPLETED.value)
+
+    def test_status_edits_that_are_not_a_repeat_are_not_named(self):
+        """Planning, starting and finishing a first time isn't a repeat."""
+        self._edit(self.movie, 1, status=Status.IN_PROGRESS.value)
+        self._edit(self.movie, 2, status=Status.COMPLETED.value)
 
         description = history_processor.collapse_entries(self._entries(), self.user)[0][
             "changes"
         ][0]["description"]
 
-        self.assertTrue(description.startswith("Changed end date 2 times, back to "))
-        self.assertNotIn("+00:00", description)
+        self.assertEqual(description, "Changed status from Planning to Completed")
+
+    def test_progress_with_a_status_other_than_completed_is_kept(self):
+        """Only completing implies its progress: starting at episode 3 shows both."""
+        item = Item.objects.create(
+            media_id="started",
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.ANIME.value,
+            title="Started",
+        )
+        anime = Anime(item=item, user=self.user, status=Status.PLANNING.value)
+        anime._history_user = self.user
+        anime.save()
+        self._stamp(anime.history.first(), 1)
+        self._edit(anime, 30, status=Status.IN_PROGRESS.value, progress=3)
+
+        changes = self._changes()
+
+        self.assertEqual([c["field"] for c in changes], ["status", "progress"])
+
+    def test_first_time_plan_then_finish_is_not_named(self):
+        """A new entry planned, then finished soon after, isn't a repeat."""
+        self._stamp(self.movie.history.last(), 0)
+        self._edit(self.movie, 2, status=Status.COMPLETED.value)
+
+        entry = history_processor.collapse_entries(self._entries(), self.user)[0]
+        change = entry["changes"][0]
+
+        self.assertEqual(entry["count"], 2)
+        self.assertEqual(change["description"], "Marked as finished watching")
+        self.assertFalse(change["named"])

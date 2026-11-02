@@ -8,11 +8,24 @@ from django_celery_beat.models import CrontabSchedule, PeriodicTask
 from django_celery_results.models import TaskResult
 
 from users.models import (
+    DateFormatChoices,
     HomeSortChoices,
     MediaTypes,
     QuickWatchDateChoices,
     WeekStartDayChoices,
 )
+
+
+class UserDefaultFormatTests(TestCase):
+    """Tests for the date and time formats a new user starts with."""
+
+    def test_new_user_gets_the_friendly_formats(self):
+        """A new user reads "January 18, 2026" and 2:30 PM."""
+        user = get_user_model().objects.create_user(username="new")
+
+        self.assertEqual(user.date_format, "F j, Y")
+        self.assertEqual(user.time_format, "g:i A")
+        self.assertIn(user.date_format, DateFormatChoices.values)
 
 
 class UserUpdatePreferenceTests(TestCase):

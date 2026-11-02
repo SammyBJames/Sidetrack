@@ -154,6 +154,7 @@ class QuickWatchDateChoices(models.TextChoices):
 class DateFormatChoices(models.TextChoices):
     """Choices for date format display."""
 
+    LONG_MONTH = "F j, Y", "January 18, 2026"
     ISO = "Y-m-d", "2026-01-18 (ISO)"
     EUROPEAN = "d/m/Y", "18/01/2026 (EU)"
     US = "m/d/Y", "01/18/2026 (US)"
@@ -428,13 +429,13 @@ class User(AbstractUser):
 
     date_format = models.CharField(
         max_length=20,
-        default=DateFormatChoices.ISO,
+        default=DateFormatChoices.LONG_MONTH,
         choices=DateFormatChoices,
         help_text="Preferred date display format",
     )
     time_format = models.CharField(
         max_length=20,
-        default=TimeFormatChoices.HOUR_24,
+        default=TimeFormatChoices.HOUR_12,
         choices=TimeFormatChoices,
         help_text="Preferred time display format",
     )

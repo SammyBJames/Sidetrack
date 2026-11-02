@@ -23,6 +23,8 @@ from app.templatetags import app_tags
 # Rapid edits of one field fold into one entry when each is this close to the last.
 COLLAPSE_WINDOW = timedelta(minutes=10)
 
+DATE_FIELDS = ("start_date", "end_date")
+
 
 def _journal_queryset(model, user, start_date, end_date, object_ids=None):
     """Build the base non-deletion history queryset for a media type.
@@ -198,23 +200,34 @@ def parse_journal_cursor(request):
     return (cursor_date, cursor_type, cursor_id)
 
 
-def build_feed_page(request, user, limit, extra_params=None, **feed):
+def build_feed_page(  # noqa: PLR0913
+    request,
+    user,
+    limit,
+    extra_params=None,
+    *,
+    start_date=None,
+    end_date=None,
+    scope=None,
+    scope_type=None,
+):
     """Read, build and group one page of a feed for a view's context.
 
-    ``feed`` goes to :func:`get_journal_page` (dates, ``scope``) and
-    ``scope_type`` to :func:`build_journal_entries`. The result has the
+    ``start_date``, ``end_date`` and ``scope`` go to :func:`get_journal_page`
+    and ``scope_type`` to :func:`build_journal_entries`. The result has the
     context keys the feed templates read: ``journal_days``, ``has_next``,
     ``next_query`` (the cursor of the page's last row, after ``extra_params``)
     and the day bookkeeping, ``prev_day`` (the last page's final day, so a day
     split across pages isn't relabelled) and ``last_day`` (this page's, falling
     back to ``prev_day`` when it rendered no days, so a day isn't shown twice).
     """
-    scope_type = feed.pop("scope_type", None)
     page_rows, has_next = get_journal_page(
         user,
+        start_date=start_date,
+        end_date=end_date,
         limit=limit,
         cursor=parse_journal_cursor(request),
-        **feed,
+        scope=scope,
     )
     entries = collapse_entries(
         build_journal_entries(page_rows, user, scope_type=scope_type),
@@ -381,14 +394,24 @@ def _fold_run(run, user):
     new = run[0]["changes"][0].get("new")
     media_type = run[0]["media_type"]
 
-    if old == new:
-        description = (
-            f"Changed {_field_label(field)} {len(run)} times, "
-            f"back to {_value_text(field, new, media_type, user)}"
-        )
+    sequence = field == "status" and _is_repeat_sequence(run)
+    if sequence:
+        past = config.get_verb(media_type, past_tense=True)
+        description = f"Marked as re{past}"
+    elif old == new:
+        description = f"Changed {_field_label(field)} {len(run)} times"
+        if field not in DATE_FIELDS:
+            description += f", back to {_value_text(field, new, media_type)}"
     else:
-        description = format_description(field, old, new, media_type, user)
-    change = {"description": description, "field": field, "old": old, "new": new}
+        description = format_description(field, old, new, media_type)
+    change = {
+        "description": description,
+        "field": field,
+        "old": old,
+        "new": new,
+        "title": _date_title(field, new, user),
+        "named": sequence,
+    }
 
     return {
         **run[0],
@@ -399,19 +422,37 @@ def _fold_run(run, user):
     }
 
 
+def _is_repeat_sequence(run):
+    """Say whether a run of status changes (newest first) is a repeat finished.
+
+    That is what the one-click repeat action records: a repeat status, then
+    Completed, on a new entry (no ``old`` before the repeat) or on the finished
+    one (back to Completed).
+    """
+    first, last = run[-1]["changes"][0], run[0]["changes"][0]
+    return (
+        first["new"] in REPEAT_STATUSES
+        and first["old"] in (None, Status.COMPLETED.value)
+        and last["new"] == Status.COMPLETED.value
+    )
+
+
+def _date_title(field, value, user):
+    """Return a date change's new date in the user's format, for a tooltip."""
+    return app_tags.datetime_format(value, user) if field in DATE_FIELDS else None
+
+
 def _field_label(field):
     """Return a field's name as words."""
     return "rating" if field == "score" else field.replace("_", " ")
 
 
-def _value_text(field, value, media_type, user):
+def _value_text(field, value, media_type):
     """Return a field value as words, for "back to ..."."""
     if field == "score":
         return "no rating" if value is None else f"{_score_text(value)}/10"
     if field == "status":
         return _status_label(value, media_type)
-    if field in ("start_date", "end_date"):
-        return app_tags.datetime_format(value, user)
     return str(value)
 
 
@@ -525,7 +566,8 @@ def _episode_changes(record, prev_record, info):
     "Watched episode 4" or "Planned episode 4". A watch, created as one or
     turned into one from a plan that has no history of its own, is a completion
     of that episode, so it is tagged ``end_date`` to earn the completed accent;
-    the others carry their status's. Other changes are treated as progress.
+    the others carry their status's, and are ``named``: their wording is the
+    description, which a chip couldn't replace. Other changes are treated as progress.
     Notes added with a new entry follow as their own change, like they do for
     other media.
     """
@@ -553,6 +595,7 @@ def _episode_changes(record, prev_record, info):
                 "description": f"{wording[record.status]} {episode_number}",
                 "field": "status",
                 "new": record.status,
+                "named": True,
             },
         ]
     if prev_record is None and record.notes:
@@ -589,7 +632,7 @@ def process_changed_entry(new_record, old_record, media_type, processed_entry, u
     """Process an entry representing a change to existing media."""
     delta = new_record.diff_against(old_record)
     changes = organize_changes(delta.changes, media_type, user)
-    apply_date_status_integration(changes, user)
+    apply_date_status_integration(changes)
     build_changes_list(changes, processed_entry)
     return processed_entry
 
@@ -602,7 +645,7 @@ def process_creation_entry(new_record, media_type, processed_entry, user):
     )
 
     changes = collect_creation_changes(new_record, history_model, media_type, user)
-    apply_date_status_integration(changes, user)
+    apply_date_status_integration(changes)
     build_changes_list(changes, processed_entry)
     return processed_entry
 
@@ -627,11 +670,11 @@ def organize_changes(changes, media_type, user):
                 change.old,
                 change.new,
                 media_type,
-                user,
             ),
             "field": change.field,
             "old": change.old,
             "new": change.new,
+            "title": _date_title(change.field, change.new, user),
         }
 
         if change.field == "status":
@@ -676,12 +719,12 @@ def collect_creation_changes(new_record, history_model, media_type, user):
             "field": field.name,
             "old": None,
             "new": value,
+            "title": _date_title(field.name, value, user),
             "description": format_description(
                 field.name,
                 None,
                 value,
                 media_type,
-                user,
             ),
         }
 
@@ -695,34 +738,19 @@ def collect_creation_changes(new_record, history_model, media_type, user):
     return organized
 
 
-def apply_date_status_integration(changes, user):
-    """Integrate status changes with date changes where appropriate."""
-    date_changes = changes["date_changes"]
-    status_change = changes["status_change"]
+def apply_date_status_integration(changes):
+    """Drop the changes that ride along with a status change.
 
-    # Process start date with status
-    if (
-        date_changes["start_date"]
-        and status_change
-        and status_change["new"] == Status.IN_PROGRESS.value
-    ):
-        date_changes["start_date"]["description"] = (
-            f"Started on "
-            f"{app_tags.datetime_format(date_changes['start_date']['new'], user)}"
-        )
-        changes["status_change"] = None
-
-    # Process end date with status
-    if (
-        date_changes["end_date"]
-        and status_change
-        and status_change["new"] == Status.COMPLETED.value
-    ):
-        date_changes["end_date"]["description"] = (
-            f"Finished on "
-            f"{app_tags.datetime_format(date_changes['end_date']['new'], user)}"
-        )
-        changes["status_change"] = None
+    The status shows on its own; dates have no place in activity text, and the
+    progress that completing fills in is implied by Completed.
+    """
+    status = changes["status_change"]
+    if status:
+        changes["date_changes"] = {"start_date": None, "end_date": None}
+        if status["new"] == Status.COMPLETED.value:
+            changes["other_changes"] = [
+                c for c in changes["other_changes"] if c["field"] != "progress"
+            ]
 
 
 def build_changes_list(changes, processed_entry):
@@ -741,15 +769,15 @@ def build_changes_list(changes, processed_entry):
     processed_entry["changes"].extend(changes["other_changes"])
 
 
-def format_description(field_name, old_value, new_value, media_type=None, user=None):  # noqa: C901, PLR0911, PLR0912
+def format_description(field_name, old_value, new_value, media_type=None):  # noqa: C901, PLR0911, PLR0912
     """Format change description in a human-readable way.
 
     Provides natural language descriptions for various types of changes,
     taking into account the media type and status transitions.
     """
-    if field_name in {"start_date", "end_date"}:
-        new_value = app_tags.datetime_format(new_value, user)
-        old_value = app_tags.datetime_format(old_value, user)
+    if field_name in DATE_FIELDS:
+        label = _field_label(field_name)
+        return f"Changed {label}" if new_value else f"Removed {label}"
 
     # If old_value is None, treat it as an initial setting
     if old_value is None:
@@ -761,7 +789,7 @@ def format_description(field_name, old_value, new_value, media_type=None, user=N
             if new_value == Status.COMPLETED.value:
                 return f"{action} finished {verb}ing"
             if new_value == Status.PLANNING.value:
-                return f"Added to {verb}ing list"
+                return f"Added to {_list_name(verb)}"
             if new_value == Status.DROPPED.value:
                 return f"{action} dropped"
             if new_value == Status.PAUSED.value:
@@ -778,12 +806,6 @@ def format_description(field_name, old_value, new_value, media_type=None, user=N
                 return f"{verb} for {helpers.minutes_to_hhmm(new_value)}"
             unit = config.get_unit(media_type, short=False).lower()
             return f"{verb} up to {unit} {new_value}"
-
-        if field_name in ["start_date", "end_date"]:
-            field_display = "Started" if field_name == "start_date" else "Finished"
-            if new_value:
-                return f"{field_display} on {new_value}"
-            return f"{field_display} without date"
 
         if field_name == "notes":
             return "Added notes"
@@ -846,14 +868,6 @@ def format_description(field_name, old_value, new_value, media_type=None, user=N
 
         return f"Progress set to {new_value} {unit}"
 
-    if field_name in ["start_date", "end_date"]:
-        field_display = "Start" if field_name == "start_date" else "End"
-        if not new_value:
-            return f"Removed {field_display.lower()} date"
-        if not old_value:
-            return f"{field_display}ed on {new_value}"
-        return f"{field_display} date changed to {new_value}"
-
     if field_name == "notes":
         if not old_value:
             return "Added notes"
@@ -863,6 +877,11 @@ def format_description(field_name, old_value, new_value, media_type=None, user=N
 
     field_label = field_name.replace("_", " ").lower()
     return f"Updated {field_label} from {old_value} to {new_value}"
+
+
+def _list_name(verb):
+    """Return what a planning list is called for a media type's verb."""
+    return {"watch": "watchlist", "play": "play list", "read": "reading list"}[verb]
 
 
 def _status_label(status, media_type):
