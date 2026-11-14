@@ -1,6 +1,6 @@
 import logging
+import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, wait
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -317,13 +317,27 @@ def search(media_type, query, page, source=None):
     return search_handlers[media_type]()
 
 
-def _search_first_page(media_type, query, source):
-    """Search one type's first page for `search_all`, in the thread it runs in.
+def _search_into(outcome, media_type, query, source):
+    """Search one type for `search_all` in its own thread, filling in `outcome`.
 
     The rate limit cap is set here, as context variables don't cross into threads.
+    A provider or request error leaves the outcome failed, logging only the error's
+    type, as its message can hold the request URL and its key.
     """
-    with cap_rate_limit_waits(SEARCH_ALL_TIMEOUT):
-        return search(media_type, query, 1, source)
+    try:
+        with cap_rate_limit_waits(SEARCH_ALL_TIMEOUT):
+            data = search(media_type, query, 1, source)
+    except (ProviderAPIError, requests.RequestException) as error:
+        logger.warning(
+            "Failed to search %s for All: %s",
+            media_type,
+            type(error).__name__,
+        )
+    else:
+        outcome["error"] = None
+        outcome["results"] = data["results"]
+        outcome["total_results"] = data["total_results"]
+        outcome["total_estimated"] = data.get("total_estimated", False)
 
 
 def search_all(media_types, query):
@@ -331,13 +345,11 @@ def search_all(media_types, query):
 
     Returns a row per type, in order: `{media_type, source, results, total_results,
     total_estimated, error}`. `error` is `None`, `"failed"` for a provider or request
-    error, or `"slow"` for a search not done after `SEARCH_ALL_TIMEOUT`, which is
-    left to finish in the background and fill the cache. The searches run in
-    threads that never touch the database.
+    error, or `"slow"` for a search still running after `SEARCH_ALL_TIMEOUT`. The
+    searches run in daemon threads that never touch the database, so a slow one is
+    left to finish in the background and fill the cache without holding up the
+    page or the process's exit.
     """
-    if not media_types:
-        return []
-
     rows = [
         {
             "media_type": media_type,
@@ -349,30 +361,32 @@ def search_all(media_types, query):
         }
         for media_type in media_types
     ]
-    pool = ThreadPoolExecutor(max_workers=len(rows))
-    futures = {
-        pool.submit(_search_first_page, row["media_type"], query, row["source"]): row
-        for row in rows
-    }
-    done, pending = wait(futures, timeout=SEARCH_ALL_TIMEOUT)
-    pool.shutdown(wait=False, cancel_futures=True)
+    # Each thread fills its own outcome, so one finishing late can't change a row
+    # the page is already drawing. An outcome is failed until its search succeeds,
+    # so an unexpected error shows as a failure rather than as no matches
+    outcomes = [{"error": "failed"} for _ in rows]
+    threads = [
+        threading.Thread(
+            target=_search_into,
+            args=(outcome, row["media_type"], query, row["source"]),
+            name=f"search-all-{row['media_type']}",
+            daemon=True,
+        )
+        for row, outcome in zip(rows, outcomes, strict=True)
+    ]
+    for thread in threads:
+        thread.start()
 
-    for future in pending:
-        futures[future]["error"] = "slow"
-    for future in done:
-        row = futures[future]
-        try:
-            data = future.result()
-        except (ProviderAPIError, requests.RequestException) as error:
-            # Only the type, as the message can hold the request URL and its key
-            logger.warning(
-                "Failed to search %s for All: %s",
-                row["media_type"],
-                type(error).__name__,
-            )
-            row["error"] = "failed"
+    deadline = time.monotonic() + SEARCH_ALL_TIMEOUT
+    for row, outcome, thread in zip(rows, outcomes, threads, strict=True):
+        thread.join(max(deadline - time.monotonic(), 0))
+        if not thread.is_alive():
+            row.update(outcome)
         else:
-            row["results"] = data["results"]
-            row["total_results"] = data["total_results"]
-            row["total_estimated"] = data.get("total_estimated", False)
+            logger.warning(
+                "Search of %s for All took over %s s",
+                row["media_type"],
+                SEARCH_ALL_TIMEOUT,
+            )
+            row["error"] = "slow"
     return rows

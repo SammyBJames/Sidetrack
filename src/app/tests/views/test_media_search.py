@@ -1,6 +1,8 @@
 import threading
+import time
 from unittest.mock import patch
 
+import requests
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
@@ -16,8 +18,27 @@ from app.models import (
 from app.providers import services
 
 
+def _page(page, total_pages, count=2, media_type=MediaTypes.MOVIE.value):
+    """Return a search response for one page of `count` results."""
+    return {
+        "page": page,
+        "total_results": total_pages * count,
+        "total_pages": total_pages,
+        "results": [
+            {
+                "media_id": str(page * 100 + n),
+                "title": f"Result {page}-{n}",
+                "media_type": media_type,
+                "source": Sources.TMDB.value,
+                "image": "http://example.com/image.jpg",
+            }
+            for n in range(count)
+        ],
+    }
+
+
 class MediaSearchViewTests(TestCase):
-    """Test the media search view."""
+    """Test the media search view: header, scrolling pages and empty state."""
 
     def setUp(self):
         """Create a user and log in."""
@@ -158,35 +179,6 @@ class MediaSearchViewTests(TestCase):
         self.assertIn("123", row)
         self.assertIn("&nbsp;Pages", row)
 
-
-def _page(page, total_pages, count=2, media_type=MediaTypes.MOVIE.value):
-    """Return a search response for one page of `count` results."""
-    return {
-        "page": page,
-        "total_results": total_pages * count,
-        "total_pages": total_pages,
-        "results": [
-            {
-                "media_id": str(page * 100 + n),
-                "title": f"Result {page}-{n}",
-                "media_type": media_type,
-                "source": Sources.TMDB.value,
-                "image": "http://example.com/image.jpg",
-            }
-            for n in range(count)
-        ],
-    }
-
-
-class MediaSearchPageTests(TestCase):
-    """Test the results page's header, scrolling pages and empty state."""
-
-    def setUp(self):
-        """Create a user and log in."""
-        self.credentials = {"username": "test", "password": "12345"}
-        self.user = get_user_model().objects.create_user(**self.credentials)
-        self.client.login(**self.credentials)
-
     @patch("app.providers.services.search")
     def test_header_shows_query_and_count(self, mock_search):
         """The title names the query and the count of results sits beside it."""
@@ -270,7 +262,7 @@ class MediaSearchPageTests(TestCase):
 
     @patch("app.providers.services.search")
     def test_no_results_shows_the_empty_state(self, mock_search):
-        """An empty search shows the dashed box naming the query."""
+        """An empty search shows the dashed box naming the query and a link to All."""
         mock_search.return_value = _page(1, 0, count=0)
 
         html = self.client.get(
@@ -281,6 +273,11 @@ class MediaSearchPageTests(TestCase):
         self.assertIn("border-dashed", html)
         self.assertIn("No matches for “zzzz”", html)
         self.assertNotIn("media-grid", html)
+        # No count beside the title, and a way to widen the search to All
+        self.assertNotIn('text-gray-400">0</span>', html)
+        empty_box = html.split("border-dashed")[1]
+        self.assertIn("Search all media", empty_box)
+        self.assertIn('href="?q=zzzz"', empty_box)
 
     @patch("app.providers.services.search")
     def test_query_is_urlencoded_in_links_and_escaped_in_text(self, mock_search):
@@ -327,18 +324,6 @@ class MediaSearchPageTests(TestCase):
         )
 
         self.assertTemplateUsed(response, "app/search.html")
-
-    @patch("app.providers.services.search")
-    def test_no_results_hides_the_count(self, mock_search):
-        """With nothing found there is no count beside the title."""
-        mock_search.return_value = _page(1, 0, count=0)
-
-        html = self.client.get(
-            reverse("search"),
-            {"media_type": "movie", "q": "zzzz"},
-        ).content.decode()
-
-        self.assertNotIn('text-gray-400">0</span>', html)
 
 
 def _rows(html):
@@ -443,35 +428,6 @@ class MediaSearchAllTests(TestCase):
             self.search(media_type="anime").content.decode(),
         )
 
-    @patch("app.providers.mal.cache")
-    @patch("app.providers.services.api_request")
-    def test_mal_search_flags_a_made_up_total_unless_the_page_is_short(
-        self,
-        mock_request,
-        _cache,
-    ):
-        """A full MAL page has a made-up total; a short one is exact."""
-        from app.providers import mal  # noqa: PLC0415
-
-        _cache.get.return_value = None
-
-        def respond(count):
-            """Return a MAL response of `count` entries."""
-            return {
-                "data": [{"node": {"id": n, "title": f"T{n}"}} for n in range(count)],
-            }
-
-        with patch("app.providers.mal.settings.PER_PAGE", 3):
-            mock_request.return_value = respond(3)
-            full = mal.search("anime", "dune", 1)
-            mock_request.return_value = respond(2)
-            short = mal.search("anime", "dune", 2)
-
-        self.assertTrue(full["total_estimated"])
-        self.assertFalse(short["total_estimated"])
-        self.assertEqual(short["total_results"], 5)
-        self.assertEqual(short["total_pages"], 2)
-
     @patch("app.providers.services.search")
     def test_empty_rows_are_left_out_and_all_empty_shows_the_empty_state(
         self,
@@ -490,19 +446,27 @@ class MediaSearchAllTests(TestCase):
 
     @patch("app.providers.services.search")
     def test_failing_source_shows_its_note_while_other_rows_render(self, mock_search):
-        """A provider error is a note in its row, whose header still links."""
+        """Any error is a note in its row, whose header still links."""
         mock_search.side_effect = _by_type(
             {
                 "tv": services.ProviderAPIError(Sources.TMDB.value, Exception("x")),
                 "movie": _page(1, 1),
+                "anime": requests.ConnectionError(),
+                "game": KeyError("unexpected"),
             },
         )
+        self.user.game_enabled = True
+        self.user.save()
 
-        html = self.search().content.decode()
+        # The unexpected error's thread would print its traceback
+        with patch("threading.excepthook"):
+            html = self.search().content.decode()
 
         rows = dict(_rows(html))
         self.assertIn("reach The Movie Database", rows["TV Shows"])
         self.assertIn("media_type=tv", rows["TV Shows"])
+        self.assertIn("reach MyAnimeList", rows["Anime"])
+        self.assertIn("reach", rows["Games"])
         self.assertIn("Result 1-0", rows["Movies"])
 
     @patch("app.providers.services.SEARCH_ALL_TIMEOUT", 0.2)
@@ -530,6 +494,67 @@ class MediaSearchAllTests(TestCase):
         self.assertIn("Result 1-0", rows["Movies"])
         # The response came back while the slow search was still blocked
         self.assertFalse(finished.is_set())
+
+    @patch("app.providers.services.SEARCH_ALL_TIMEOUT", 0.3)
+    @patch("app.providers.services.search")
+    def test_slow_sources_share_one_deadline(self, mock_search):
+        """Three slow sources hold the search for one timeout, not three."""
+        release = threading.Event()
+        self.addCleanup(release.set)
+
+        def fake(*_):
+            """Block until released."""
+            release.wait(10)
+
+        mock_search.side_effect = fake
+
+        start = time.monotonic()
+        with self.assertLogs("app.providers.services", "WARNING"):
+            rows = services.search_all(["tv", "movie", "anime"], "dune")
+
+        self.assertLess(time.monotonic() - start, 0.6)
+        self.assertEqual([row["error"] for row in rows], ["slow"] * 3)
+
+    @patch("app.providers.services.SEARCH_ALL_TIMEOUT", 0.2)
+    @patch("app.providers.services.search")
+    def test_slow_source_is_logged_and_runs_in_a_daemon_thread(self, mock_search):
+        """A slow search is logged, can't hold up exit, and can't change its row."""
+        release = threading.Event()
+        self.addCleanup(release.set)
+        threads = []
+
+        def fake(*_):
+            threads.append(threading.current_thread())
+            release.wait(10)
+            return _page(1, 1)
+
+        mock_search.side_effect = fake
+
+        with self.assertLogs("app.providers.services", "WARNING") as logs:
+            rows = services.search_all(["tv"], "dune")
+
+        self.assertEqual(rows[0]["error"], "slow")
+        self.assertIn("Search of tv for All took over", logs.output[0])
+        self.assertTrue(threads[0].daemon)
+
+        release.set()
+        threads[0].join(5)
+        self.assertEqual(rows[0]["error"], "slow")
+        self.assertEqual(rows[0]["results"], [])
+
+    @patch("app.providers.services.search")
+    def test_user_with_every_type_disabled_gets_the_empty_state(self, mock_search):
+        """With no enabled type nothing is searched and the empty state shows."""
+        for media_type in MediaTypes.values:
+            if hasattr(self.user, f"{media_type}_enabled"):
+                setattr(self.user, f"{media_type}_enabled", False)
+        self.user.save()
+
+        response = self.search()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("No matches for “dune”", response.content.decode())
+        mock_search.assert_not_called()
 
     @patch("app.providers.services.search")
     def test_searches_run_in_parallel(self, mock_search):

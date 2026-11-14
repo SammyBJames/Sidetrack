@@ -67,6 +67,7 @@ def search(media_type, query, page):
         except requests.exceptions.HTTPError as error:
             response = handle_error(error)
 
+        has_next_page = bool(response.get("paging", {}).get("next"))
         response = response["data"]
         results = [
             {
@@ -79,13 +80,13 @@ def search(media_type, query, page):
             for media in response
         ]
 
-        # MAL reports no total. A short page is the last, so its count is exact;
-        # otherwise we assume 3 pages and flag the total as made up
-        is_last_page = len(results) < settings.PER_PAGE
+        # MAL reports no total. Without a next page this is the last, so its
+        # count is exact (even when short, as adult titles are filtered after
+        # paging); otherwise we assume 3 pages and flag the total as made up
         total_results = (
-            (page - 1) * settings.PER_PAGE + len(results)
-            if is_last_page
-            else settings.PER_PAGE * 3
+            settings.PER_PAGE * 3
+            if has_next_page
+            else (page - 1) * settings.PER_PAGE + len(results)
         )
         data = helpers.format_search_response(
             page,
@@ -93,7 +94,7 @@ def search(media_type, query, page):
             total_results,
             results,
         )
-        data["total_estimated"] = not is_last_page
+        data["total_estimated"] = has_next_page
 
         cache.set(cache_key, data)
 

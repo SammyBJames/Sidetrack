@@ -41,6 +41,45 @@ class Search(TestCase):
 
         self.assertEqual(response["results"], [])
 
+    @patch("app.providers.mal.cache")
+    @patch("app.providers.services.api_request")
+    def test_mal_total_is_made_up_unless_there_is_no_next_page(
+        self,
+        mock_request,
+        mock_cache,
+    ):
+        """A MAL page with a next page has a made-up total that still pages.
+
+        One without is the last, even when short, and its total is exact.
+        """
+        mock_cache.get.return_value = None
+
+        def respond(count, *, next_page):
+            """Return a MAL response of `count` entries."""
+            return {
+                "data": [{"node": {"id": n, "title": f"T{n}"}} for n in range(count)],
+                "paging": {"next": "https://api.myanimelist.net/next"}
+                if next_page
+                else {"previous": "https://api.myanimelist.net/previous"},
+            }
+
+        with patch("app.providers.mal.settings.PER_PAGE", 3):
+            mock_request.return_value = respond(3, next_page=True)
+            full = mal.search(MediaTypes.ANIME.value, "dune", 1)
+            # Adult titles filtered after paging leave a short page with more after
+            mock_request.return_value = respond(2, next_page=True)
+            short_with_next = mal.search(MediaTypes.ANIME.value, "dune", 1)
+            mock_request.return_value = respond(2, next_page=False)
+            last = mal.search(MediaTypes.ANIME.value, "dune", 2)
+
+        self.assertTrue(full["total_estimated"])
+        self.assertGreater(full["total_pages"], 1)
+        self.assertTrue(short_with_next["total_estimated"])
+        self.assertGreater(short_with_next["total_pages"], 1)
+        self.assertFalse(last["total_estimated"])
+        self.assertEqual(last["total_results"], 5)
+        self.assertEqual(last["total_pages"], 2)
+
     def test_mangaupdates(self):
         """Test the search method for manga.
 
