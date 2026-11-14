@@ -524,6 +524,7 @@ class MediaSearchAllTests(TestCase):
         threads = []
 
         def fake(*_):
+            """Record the searching thread, then block until released."""
             threads.append(threading.current_thread())
             release.wait(10)
             return _page(1, 1)
