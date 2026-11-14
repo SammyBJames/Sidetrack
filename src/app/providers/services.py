@@ -1,5 +1,6 @@
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor, wait
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from redis import Redis
 from requests.adapters import HTTPAdapter
 from requests_ratelimiter import LimiterAdapter, LimiterSession
 
+from app import config
 from app.models import MediaTypes, Sources
 from app.providers import (
     bgg,
@@ -30,6 +32,10 @@ logger = logging.getLogger(__name__)
 # How many times a rate limited request is retried before it fails, so a page
 # doesn't hang while a provider keeps refusing
 RATE_LIMIT_RETRIES = 3
+
+# How long, in seconds, an All search waits for its sources, and the longest a
+# source waits out a rate limit meanwhile
+SEARCH_ALL_TIMEOUT = 10
 
 
 @dataclass
@@ -309,3 +315,64 @@ def search(media_type, query, page, source=None):
         MediaTypes.BOARDGAME.value: lambda: bgg.search(query, page),
     }
     return search_handlers[media_type]()
+
+
+def _search_first_page(media_type, query, source):
+    """Search one type's first page for `search_all`, in the thread it runs in.
+
+    The rate limit cap is set here, as context variables don't cross into threads.
+    """
+    with cap_rate_limit_waits(SEARCH_ALL_TIMEOUT):
+        return search(media_type, query, 1, source)
+
+
+def search_all(media_types, query):
+    """Search the first page of each of `media_types` at once, in default sources.
+
+    Returns a row per type, in order: `{media_type, source, results, total_results,
+    total_estimated, error}`. `error` is `None`, `"failed"` for a provider or request
+    error, or `"slow"` for a search not done after `SEARCH_ALL_TIMEOUT`, which is
+    left to finish in the background and fill the cache. The searches run in
+    threads that never touch the database.
+    """
+    if not media_types:
+        return []
+
+    rows = [
+        {
+            "media_type": media_type,
+            "source": config.get_default_source_name(media_type).value,
+            "results": [],
+            "total_results": 0,
+            "total_estimated": False,
+            "error": None,
+        }
+        for media_type in media_types
+    ]
+    pool = ThreadPoolExecutor(max_workers=len(rows))
+    futures = {
+        pool.submit(_search_first_page, row["media_type"], query, row["source"]): row
+        for row in rows
+    }
+    done, pending = wait(futures, timeout=SEARCH_ALL_TIMEOUT)
+    pool.shutdown(wait=False, cancel_futures=True)
+
+    for future in pending:
+        futures[future]["error"] = "slow"
+    for future in done:
+        row = futures[future]
+        try:
+            data = future.result()
+        except (ProviderAPIError, requests.RequestException) as error:
+            # Only the type, as the message can hold the request URL and its key
+            logger.warning(
+                "Failed to search %s for All: %s",
+                row["media_type"],
+                type(error).__name__,
+            )
+            row["error"] = "failed"
+        else:
+            row["results"] = data["results"]
+            row["total_results"] = data["total_results"]
+            row["total_estimated"] = data.get("total_estimated", False)
+    return rows

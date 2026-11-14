@@ -1,0 +1,19 @@
+{# The empty state of a search: a prompt without a query, else no matches, with a way to widen a narrowed search to All #}
+<div class="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-700 bg-surface-800 px-6 py-16 text-center">
+  <div class="mb-4 flex size-16 items-center justify-center rounded-full bg-surface-600 text-indigo-300">
+    {% include "app/icons/magnifying-glass.svg" with classes="size-8" %}
+  </div>
+  {% if query %}
+    <h2 class="text-xl font-semibold text-white">No matches for “{{ query }}”</h2>
+    <p class="mt-2 max-w-md text-sm text-gray-400">Try checking your spelling or using different keywords.</p>
+    {% if media_type %}
+      <a href="{% querystring media_type=None source=None page=None %}"
+         class="mt-5 inline-flex h-9 items-center rounded-xl bg-surface-700 px-4 text-sm font-medium text-gray-200 ring-1 ring-white/10 transition-colors hover:bg-surface-600 hover:text-white">
+        Search all media
+      </a>
+    {% endif %}
+  {% else %}
+    <h2 class="text-xl font-semibold text-white">Search your media</h2>
+    <p class="mt-2 max-w-md text-sm text-gray-400">Type a title in the search bar to look across every type, or pick one to narrow it.</p>
+  {% endif %}
+</div>

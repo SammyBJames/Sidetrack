@@ -79,12 +79,21 @@ def search(media_type, query, page):
             for media in response
         ]
 
+        # MAL reports no total. A short page is the last, so its count is exact;
+        # otherwise we assume 3 pages and flag the total as made up
+        is_last_page = len(results) < settings.PER_PAGE
+        total_results = (
+            (page - 1) * settings.PER_PAGE + len(results)
+            if is_last_page
+            else settings.PER_PAGE * 3
+        )
         data = helpers.format_search_response(
             page,
             settings.PER_PAGE,
-            settings.PER_PAGE * 3,  # MAL has no limit, we set max of 3 pages
+            total_results,
             results,
         )
+        data["total_estimated"] = not is_last_page
 
         cache.set(cache_key, data)
 

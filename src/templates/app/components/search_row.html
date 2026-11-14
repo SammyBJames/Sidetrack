@@ -1,0 +1,34 @@
+{% load app_tags %}
+
+{# A row of an All search: the type's name, linking to the search narrowed to it, with its count where real, then its first page of results scrolling sideways, or a note when its source failed or was too slow #}
+<section class="space-y-3"
+         {% if row.results %}x-data="scrollRow" @resize.window.debounce.100ms="update()"{% endif %}>
+  <div class="flex items-center justify-between gap-3">
+    <a href="{% querystring media_type=row.media_type source=None page=None %}"
+       class="group flex min-w-0 items-center gap-2 text-lg font-semibold text-white"
+       title="Search only {{ row.media_type|media_type_readable_plural }}">
+      <span class="shrink-0 {{ row.media_type|media_color }}">{% icon row.media_type is_active=False extra_classes="size-5" %}</span>
+      <span class="truncate">{{ row.media_type|media_type_readable_plural }}</span>
+      {# MyAnimeList's total is made up unless its page is the last #}
+      {% if row.results and not row.total_estimated %}
+        <span class="shrink-0 text-sm font-medium text-gray-500">{{ row.total_results }}</span>
+      {% endif %}
+      {% include "app/icons/chevron-right.svg" with classes="size-4 shrink-0 text-gray-400 transition group-hover:translate-x-0.5 group-hover:text-white" %}
+    </a>
+    {% if row.results %}
+      {% include "app/components/scroll_buttons.html" %}
+    {% endif %}
+  </div>
+
+  {% if row.results %}
+    {% include "app/components/scroll_track.html" with track_id="search-row-"|add:row.media_type cards="app/components/search_row_cards.html" %}
+  {% else %}
+    <p class="rounded-xl border border-dashed border-gray-700 bg-surface-800 px-4 py-3 text-sm text-gray-400">
+      {% if row.error == "slow" %}
+        {{ row.source|source_readable }} is taking too long.
+      {% else %}
+        Couldn't reach {{ row.source|source_readable }}.
+      {% endif %}
+    </p>
+  {% endif %}
+</section>

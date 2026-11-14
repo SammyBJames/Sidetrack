@@ -361,39 +361,51 @@ def _library_context(user, media_type, status_filter, search, filters):
 def media_search(request):
     """Return the media search page, or on an HTMX request just a page's items.
 
-    The items end in a sentinel that loads the next page when scrolled to.
+    A `media_type` that is a searchable type narrows the search to it, with its
+    items ending in a sentinel that loads the next page when scrolled to. Any
+    other searches all the user's enabled types, a row each. A blank `q` searches
+    nothing.
     """
-    media_type = request.user.update_preference(
-        "last_search_type",
-        request.GET["media_type"],
-    )
-    query = request.GET["q"]
+    query = request.GET.get("q", "").strip()
+    media_type = request.GET.get("media_type")
+    if media_type not in MediaTypes.values or media_type in (
+        MediaTypes.SEASON.value,
+        MediaTypes.EPISODE.value,
+    ):
+        media_type = None
     try:
         page = max(int(request.GET.get("page", 1)), 1)
     except ValueError:
         page = 1
     layout = "list" if request.GET.get("layout") == "list" else "grid"
 
+    context = {
+        "query": query,
+        "media_type": media_type,
+        "search_type": media_type,
+        "layout": layout,
+        "search_types": request.user.get_enabled_media_types(),
+    }
+
+    if media_type is None:
+        context["rows"] = _search_all_rows(request, query, context["search_types"])
+        return render(request, "app/search.html", context)
+
     # only receives source when searching with secondary source
     source = request.GET.get(
         "source",
         config.get_default_source_name(media_type).value,
     )
+    data = {"results": []}
+    if query:
+        data = services.search(media_type, query, page, source)
 
-    data = services.search(media_type, query, page, source)
-
-    # Enrich search results with user tracking data
     if data.get("results"):
         data["results"] = helpers.enrich_items_with_user_data(
             request, data["results"], "search"
         )
 
-    context = {
-        "data": data,
-        "source": source,
-        "media_type": media_type,
-        "layout": layout,
-    }
+    context.update({"data": data, "source": source})
 
     if data.get("results") and page < data.get("total_pages", 0):
         context["next_query"] = urlencode(
@@ -412,6 +424,22 @@ def media_search(request):
         return render(request, "app/components/search_items.html", context)
 
     return render(request, "app/search.html", context)
+
+
+def _search_all_rows(request, query, media_types):
+    """Return the rows of an All search, without the empty ones, enriched.
+
+    Nothing is searched for a blank query. Rows that failed or timed out stay,
+    for their notes.
+    """
+    if not query:
+        return []
+    rows = services.search_all(media_types, query)
+    for row in rows:
+        row["results"] = helpers.enrich_items_with_user_data(
+            request, row["results"], "search"
+        )
+    return [row for row in rows if row["results"] or row["error"]]
 
 
 def _newest_first(entries):

@@ -8,12 +8,6 @@ from django_celery_results.models import TaskResult
 from app.models import Item, MediaTypes, Status
 from users import helpers
 
-EXCLUDED_SEARCH_TYPES = [MediaTypes.SEASON.value, MediaTypes.EPISODE.value]
-
-VALID_SEARCH_TYPES = [
-    value for value in MediaTypes.values if value not in EXCLUDED_SEARCH_TYPES
-]
-
 # Sentinel for an unconfigured watch provider region.
 WATCH_PROVIDER_REGION_UNSET = "UNSET"
 
@@ -183,12 +177,6 @@ class User(AbstractUser):
 
     profile_private = models.BooleanField(
         default=True, help_text="Toggle profile visibility to anonymous users"
-    )
-
-    last_search_type = models.CharField(
-        max_length=10,
-        default=MediaTypes.TV.value,
-        choices=MediaTypes.choices,
     )
 
     home_sort = models.CharField(
@@ -542,10 +530,6 @@ class User(AbstractUser):
         ordering = ["username"]
         constraints = [
             models.CheckConstraint(
-                name="last_search_type_valid",
-                condition=models.Q(last_search_type__in=VALID_SEARCH_TYPES),
-            ),
-            models.CheckConstraint(
                 name="home_sort_valid",
                 condition=models.Q(home_sort__in=HomeSortChoices.values),
             ),
@@ -752,10 +736,6 @@ class User(AbstractUser):
         """
         # If no new value provided, return current value
         if new_value is None:
-            return getattr(self, field_name)
-
-        # Special case for last_search_type
-        if field_name == "last_search_type" and new_value not in VALID_SEARCH_TYPES:
             return getattr(self, field_name)
 
         field = self._meta.get_field(field_name)

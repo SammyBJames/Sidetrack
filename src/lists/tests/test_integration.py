@@ -41,7 +41,7 @@ class IntegrationTest(StaticLiveServerTestCase):
 
     def test_blank_modal(self):
         """Test the blank modal for creating a list."""
-        self.page.get_by_role("button", name="TV Shows").click()
+        self.page.get_by_role("button", name="All", exact=True).click()
         self.page.locator("li").filter(has_text=re.compile(r"^Anime$")).click()
         self.page.get_by_placeholder("Search anime...").fill("perfect blue")
         self.page.get_by_placeholder("Search anime...").press("Enter")
@@ -65,7 +65,7 @@ class IntegrationTest(StaticLiveServerTestCase):
         ).to_be_visible()
 
         # Add item to list
-        self.page.get_by_role("button", name="TV Shows").click()
+        self.page.get_by_role("button", name="All", exact=True).click()
         self.page.locator("li").filter(has_text=re.compile(r"^Anime$")).click()
         self.page.get_by_placeholder("Search anime...").click()
         self.page.get_by_placeholder("Search anime...").fill("perfect blue")

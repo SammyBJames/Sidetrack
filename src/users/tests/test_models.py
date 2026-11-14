@@ -10,7 +10,6 @@ from django_celery_results.models import TaskResult
 from users.models import (
     DateFormatChoices,
     HomeSortChoices,
-    MediaTypes,
     QuickWatchDateChoices,
     WeekStartDayChoices,
 )
@@ -110,39 +109,6 @@ class UserUpdatePreferenceTests(TestCase):
         # Should change the value
         self.user.refresh_from_db()
         self.assertEqual(self.user.tv_enabled, False)
-
-    def test_update_preference_last_search_type_valid(self):
-        """Test update_preference with last_search_type and valid value."""
-        # Set initial value
-        self.user.last_search_type = MediaTypes.TV.value
-        self.user.save()
-
-        # Call update_preference with new valid value
-        result = self.user.update_preference("last_search_type", MediaTypes.MOVIE.value)
-
-        # Should return new value
-        self.assertEqual(result, MediaTypes.MOVIE.value)
-        # Should change the value
-        self.user.refresh_from_db()
-        self.assertEqual(self.user.last_search_type, MediaTypes.MOVIE.value)
-
-    def test_update_preference_last_search_type_invalid(self):
-        """Test update_preference with last_search_type and invalid value."""
-        # Set initial value
-        self.user.last_search_type = MediaTypes.TV.value
-        self.user.save()
-
-        # Call update_preference with invalid value (SEASON is in EXCLUDED_SEARCH_TYPES)
-        result = self.user.update_preference(
-            "last_search_type",
-            MediaTypes.SEASON.value,
-        )
-
-        # Should return current value
-        self.assertEqual(result, MediaTypes.TV.value)
-        # Should not change the value
-        self.user.refresh_from_db()
-        self.assertEqual(self.user.last_search_type, MediaTypes.TV.value)
 
     def test_update_preference_daily_digest_enabled(self):
         """Test update_preference with daily_digest_enabled field."""

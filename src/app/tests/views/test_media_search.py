@@ -1,3 +1,4 @@
+import threading
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -12,6 +13,7 @@ from app.models import (
     Sources,
     Status,
 )
+from app.providers import services
 
 
 class MediaSearchViewTests(TestCase):
@@ -47,9 +49,6 @@ class MediaSearchViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, "app/search.html")
-
-        self.user.refresh_from_db()
-        self.assertEqual(self.user.last_search_type, MediaTypes.MOVIE.value)
 
         mock_search.assert_called_once_with(
             MediaTypes.MOVIE.value,
@@ -297,7 +296,9 @@ class MediaSearchPageTests(TestCase):
         encoded = "a%26b+%22c%22+%3Ci%3E"
         self.assertIn("Results for “a&amp;b &quot;c&quot; &lt;i&gt;”", html)
         self.assertNotIn("<i>”", html)
-        self.assertEqual(html.count(f"q={encoded}"), 5)
+        # The source and layout links, the sentinel and each pill all carry it
+        self.assertGreaterEqual(html.count(f"q={encoded}"), 5)
+        self.assertEqual(html.count("q=a"), html.count(f"q={encoded}"))
         self.assertNotIn("q=a&b", html)
         self.assertNotIn("q=a&amp;b", html)
 
@@ -338,3 +339,297 @@ class MediaSearchPageTests(TestCase):
         ).content.decode()
 
         self.assertNotIn('text-gray-400">0</span>', html)
+
+
+def _rows(html):
+    """Return the All page's rows' markup, in order, as `(type, section)`."""
+    return [
+        (section.split('title="Search only ')[1].split('"')[0], section)
+        for section in html.split("<section")[1:]
+    ]
+
+
+def _by_type(responses):
+    """Return a `services.search` fake answering with `responses[media_type]`.
+
+    A value that is an exception is raised.
+    """
+
+    def fake(media_type, query, page, source=None):  # noqa: ARG001
+        """Return or raise what `responses` holds for the type."""
+        response = responses.get(media_type, _page(1, 0, count=0))
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    return fake
+
+
+class MediaSearchAllTests(TestCase):
+    """Test the All search: a row for each enabled type."""
+
+    def setUp(self):
+        """Create a user with a few types enabled and log in."""
+        self.credentials = {"username": "test", "password": "12345"}
+        self.user = get_user_model().objects.create_user(**self.credentials)
+        for media_type in MediaTypes.values:
+            if hasattr(self.user, f"{media_type}_enabled"):
+                setattr(self.user, f"{media_type}_enabled", False)
+        self.user.tv_enabled = True
+        self.user.movie_enabled = True
+        self.user.anime_enabled = True
+        self.user.save()
+        self.client.login(**self.credentials)
+
+    def search(self, **params):
+        """Return the page for a search of `dune` with `params`."""
+        return self.client.get(reverse("search"), {"q": "dune", **params})
+
+    @patch("app.providers.services.search")
+    def test_missing_all_or_unknown_type_searches_every_enabled_type(self, mock_search):
+        """No, `all` or an unknown type is All, over enabled types only."""
+        mock_search.side_effect = lambda media_type, *_: _page(
+            1, 1, media_type=media_type
+        )
+        for params in ({}, {"media_type": "all"}, {"media_type": "bogus"}):
+            mock_search.reset_mock()
+            response = self.search(**params)
+
+            self.assertEqual(response.status_code, 200)
+            searched = sorted(call.args[0] for call in mock_search.call_args_list)
+            self.assertEqual(searched, ["anime", "movie", "tv"])
+            for call in mock_search.call_args_list:
+                self.assertEqual(call.args[1:3], ("dune", 1))
+            self.assertEqual(
+                [name for name, _ in _rows(response.content.decode())],
+                ["TV Shows", "Movies", "Anime"],
+            )
+
+    @patch("app.providers.services.search")
+    def test_row_header_links_to_the_narrowed_search_with_its_count(self, mock_search):
+        """A row's header names the type, links to its search and shows the count."""
+        mock_search.side_effect = _by_type(
+            {"movie": {**_page(1, 3), "total_results": 57}},
+        )
+
+        html = self.search(layout="list").content.decode()
+
+        ((name, row),) = _rows(html)
+        self.assertEqual(name, "Movies")
+        self.assertIn("q=dune&amp;layout=list&amp;media_type=movie", row)
+        self.assertNotIn("source=", row)
+        self.assertIn('text-gray-500">57</span>', row)
+        self.assertIn("Result 1-0", row)
+        self.assertIn("scrollRow", row)
+
+    @patch("app.providers.services.search")
+    def test_made_up_total_shows_no_count_but_a_short_page_does(self, mock_search):
+        """MAL's made-up total is hidden in a row and title; a short page is exact."""
+        made_up = {**_page(1, 3, media_type="anime"), "total_estimated": True}
+        mock_search.side_effect = _by_type({"anime": made_up})
+        html = self.search().content.decode()
+        self.assertNotIn('text-gray-500">6</span>', html)
+        self.assertIn("Result 1-0", html)
+
+        narrowed = self.search(media_type="anime").content.decode()
+        self.assertNotIn('text-gray-400">6</span>', narrowed)
+        self.assertIn("Results for “dune”", narrowed)
+
+        exact = {**_page(1, 1, media_type="anime"), "total_estimated": False}
+        mock_search.side_effect = _by_type({"anime": exact})
+        self.assertIn('text-gray-500">2</span>', self.search().content.decode())
+        self.assertIn(
+            'text-gray-400">2</span>',
+            self.search(media_type="anime").content.decode(),
+        )
+
+    @patch("app.providers.mal.cache")
+    @patch("app.providers.services.api_request")
+    def test_mal_search_flags_a_made_up_total_unless_the_page_is_short(
+        self,
+        mock_request,
+        _cache,
+    ):
+        """A full MAL page has a made-up total; a short one is exact."""
+        from app.providers import mal  # noqa: PLC0415
+
+        _cache.get.return_value = None
+
+        def respond(count):
+            """Return a MAL response of `count` entries."""
+            return {
+                "data": [{"node": {"id": n, "title": f"T{n}"}} for n in range(count)],
+            }
+
+        with patch("app.providers.mal.settings.PER_PAGE", 3):
+            mock_request.return_value = respond(3)
+            full = mal.search("anime", "dune", 1)
+            mock_request.return_value = respond(2)
+            short = mal.search("anime", "dune", 2)
+
+        self.assertTrue(full["total_estimated"])
+        self.assertFalse(short["total_estimated"])
+        self.assertEqual(short["total_results"], 5)
+        self.assertEqual(short["total_pages"], 2)
+
+    @patch("app.providers.services.search")
+    def test_empty_rows_are_left_out_and_all_empty_shows_the_empty_state(
+        self,
+        mock_search,
+    ):
+        """Rows without results are hidden; with none left the dashed box shows."""
+        mock_search.side_effect = _by_type({"tv": _page(1, 1, media_type="tv")})
+        html = self.search().content.decode()
+        self.assertEqual([name for name, _ in _rows(html)], ["TV Shows"])
+        self.assertNotIn("border-dashed", html)
+
+        mock_search.side_effect = _by_type({})
+        html = self.search().content.decode()
+        self.assertEqual(_rows(html), [])
+        self.assertIn("No matches for “dune”", html)
+
+    @patch("app.providers.services.search")
+    def test_failing_source_shows_its_note_while_other_rows_render(self, mock_search):
+        """A provider error is a note in its row, whose header still links."""
+        mock_search.side_effect = _by_type(
+            {
+                "tv": services.ProviderAPIError(Sources.TMDB.value, Exception("x")),
+                "movie": _page(1, 1),
+            },
+        )
+
+        html = self.search().content.decode()
+
+        rows = dict(_rows(html))
+        self.assertIn("reach The Movie Database", rows["TV Shows"])
+        self.assertIn("media_type=tv", rows["TV Shows"])
+        self.assertIn("Result 1-0", rows["Movies"])
+
+    @patch("app.providers.services.SEARCH_ALL_TIMEOUT", 0.2)
+    @patch("app.providers.services.search")
+    def test_slow_source_shows_the_slow_note_and_the_page_returns(self, mock_search):
+        """A source past the deadline is a note; the page doesn't wait for it."""
+        release = threading.Event()
+        finished = threading.Event()
+        self.addCleanup(release.set)
+        fast = _by_type({"movie": _page(1, 1)})
+
+        def fake(media_type, *args):
+            """Block the TV search until released and answer the others at once."""
+            if media_type == "tv":
+                release.wait(10)
+                finished.set()
+            return fast(media_type, *args)
+
+        mock_search.side_effect = fake
+
+        html = self.search().content.decode()
+
+        rows = dict(_rows(html))
+        self.assertIn("The Movie Database is taking too long", rows["TV Shows"])
+        self.assertIn("Result 1-0", rows["Movies"])
+        # The response came back while the slow search was still blocked
+        self.assertFalse(finished.is_set())
+
+    @patch("app.providers.services.search")
+    def test_searches_run_in_parallel(self, mock_search):
+        """Every type's search waits on a barrier only they all reach."""
+        barrier = threading.Barrier(3, timeout=5)
+
+        def fake(media_type, *_):
+            """Wait for every type's search to start, then return one result."""
+            barrier.wait()
+            return _page(1, 1, media_type=media_type)
+
+        mock_search.side_effect = fake
+
+        rows = services.search_all(["tv", "movie", "anime"], "dune")
+
+        self.assertEqual([row["error"] for row in rows], [None] * 3)
+        self.assertEqual([row["media_type"] for row in rows], ["tv", "movie", "anime"])
+
+    @patch("app.providers.services.search")
+    def test_each_search_caps_its_rate_limit_wait(self, mock_search):
+        """The cap is set inside the thread, as context variables don't cross."""
+        caps = []
+
+        def fake(*_):
+            """Record the rate limit cap seen in the searching thread."""
+            caps.append(services._rate_limit_cap.get())
+            return _page(1, 0, count=0)
+
+        mock_search.side_effect = fake
+
+        services.search_all(["tv", "movie"], "dune")
+
+        self.assertEqual(
+            [cap.seconds for cap in caps], [services.SEARCH_ALL_TIMEOUT] * 2
+        )
+
+    @patch("app.providers.services.search")
+    def test_blank_query_calls_no_source(self, mock_search):
+        """A blank or missing `q` shows a prompt, narrowed or not."""
+        for params in ({"q": "  "}, {}, {"q": " ", "media_type": "movie"}):
+            response = self.client.get(reverse("search"), params)
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("Search your media", response.content.decode())
+
+        mock_search.assert_not_called()
+
+    @patch("app.providers.services.search")
+    def test_pills_start_with_all_highlight_the_current_and_keep_q_and_layout(
+        self,
+        mock_search,
+    ):
+        """The pills link to All and each enabled type, keeping q and layout."""
+        mock_search.side_effect = lambda *_: _page(1, 2, media_type="manga")
+        self.user.manga_enabled = True
+        self.user.save()
+
+        html = self.search(
+            media_type="manga",
+            layout="list",
+            source="mangaupdates",
+            page=1,
+        ).content.decode()
+
+        pills = html.split('aria-label="Media type"')[1].split("</div>")[0]
+        links = pills.split("<a ")[1:]
+        self.assertEqual(len(links), 5)
+        self.assertIn(">All</a>", links[0])
+        self.assertIn('aria-current="false"', links[0])
+        self.assertNotIn("media_type", links[0])
+        for link in links:
+            self.assertIn("q=dune", link)
+            self.assertIn("layout=list", link)
+            self.assertNotIn("source", link)
+            self.assertNotIn("page=", link)
+        current = [link for link in links if 'aria-current="true"' in link]
+        self.assertEqual(len(current), 1)
+        self.assertIn(">Manga</a>", current[0])
+
+        html = self.search().content.decode()
+        pills = html.split('aria-label="Media type"')[1].split("</div>")[0]
+        self.assertIn('aria-current="true"', pills.split("<a ")[1])
+
+    @patch("app.providers.services.search")
+    def test_navbar_starts_on_all_and_on_the_narrowed_type_on_its_page(
+        self,
+        mock_search,
+    ):
+        """The dropdown lists All first; it starts on All except on a narrowed page."""
+        mock_search.side_effect = lambda *_: _page(1, 1)
+
+        narrowed = self.search(media_type="movie").content.decode()
+        self.assertIn("display: 'Movies', value: 'movie'", narrowed)
+
+        all_page = self.search().content.decode()
+        self.assertIn("display: 'All', value: 'all'", all_page)
+
+        home = self.client.get(reverse("home")).content.decode()
+        self.assertIn("display: 'All', value: 'all'", home)
+        self.assertIn(
+            "[{&#x27;display&#x27;: &#x27;All&#x27;, &#x27;value&#x27;:"
+            " &#x27;all&#x27;}, {&#x27;display&#x27;: &#x27;TV",
+            home,
+        )

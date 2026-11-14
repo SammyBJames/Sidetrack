@@ -1,0 +1,7 @@
+{# The sideways track of a scrollRow, filling it with the cards of the template `cards`. Cards are direct children, sized here, so removing one leaves no gap. Padded for their shadows, which a scrolling track clips, with margins that keep them in place #}
+<div id="{{ track_id }}"
+     x-ref="track"
+     @scroll.debounce.50ms="update()"
+     class="scrollbar-hide -mx-3 -mt-2 -mb-6 flex snap-x scroll-px-3 gap-4 overflow-x-auto px-3 pt-2 pb-6 *:w-36 *:shrink-0 *:snap-start sm:*:w-44 xl:*:w-48">
+  {% include cards %}
+</div>

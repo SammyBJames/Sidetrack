@@ -1,0 +1,4 @@
+{# The cards of an All search's row #}
+{% for result in row.results %}
+  {% include "app/components/media_card.html" with item=result.item title=result.item.title media=result.media %}
+{% endfor %}
