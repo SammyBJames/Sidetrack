@@ -6,110 +6,75 @@
 {% endblock title %}
 
 {% block content %}
-  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-y-4">
-    <h2 class="text-2xl font-bold">Search Results</h2>
-    <div class="flex items-center flex-wrap gap-x-4 gap-y-2">
-      <span class="text-sm text-gray-400">Source:</span>
-      <div class="flex gap-x-2">
-        {% with source_options=media_type|sources %}
-          {% for source_option in source_options %}
-            <a href="{% url 'search' %}?q={{ request.GET.q|urlencode }}&media_type={{ media_type }}&source={{ source_option.value }}&layout={{ layout }}"
-               class="px-3 py-1.5 text-sm rounded-md transition-colors duration-200 cursor-pointer flex items-center {% if source == source_option.value %}bg-indigo-600 text-white{% else %}bg-gray-700 text-gray-300 hover:bg-gray-600{% endif %}">
-              {{ source_option.label }}
+  {% with source_options=media_type|sources %}
+    <div class="space-y-5">
+      {# The title with the count beside it and the controls, which wrap under it on narrower screens #}
+      <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div class="flex min-w-0 items-baseline gap-3">
+          <h1 class="min-w-0 truncate text-3xl font-bold tracking-tight text-white">Results for “{{ request.GET.q }}”</h1>
+          {% if data.results %}<span class="shrink-0 text-sm text-gray-400">{{ data.total_results }}</span>{% endif %}
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          {% if source_options|length > 1 %}
+            <div class="flex h-9 shrink-0 items-center gap-0.5 rounded-xl bg-surface-800 p-0.5 shadow-lg ring-1 shadow-black/20 ring-white/10"
+                 role="group"
+                 aria-label="Source">
+              {% for source_option in source_options %}
+                <a href="{% querystring source=source_option.value page=None %}"
+                   aria-current="{% if source == source_option.value %}true{% else %}false{% endif %}"
+                   class="flex h-8 items-center rounded-[0.625rem] px-3 text-sm font-medium transition-colors {% if source == source_option.value %}bg-white/10 text-white{% else %}text-gray-400 hover:text-white{% endif %}">
+                  {{ source_option.label }}
+                </a>
+              {% endfor %}
+            </div>
+          {% endif %}
+
+          <div class="flex h-9 shrink-0 items-center gap-0.5 rounded-xl bg-surface-800 p-0.5 shadow-lg ring-1 shadow-black/20 ring-white/10"
+               role="group"
+               aria-label="Layout">
+            <a href="{% querystring layout='grid' page=None %}"
+               aria-label="Grid"
+               aria-current="{% if layout == 'grid' %}true{% else %}false{% endif %}"
+               data-tooltip="Grid"
+               class="tooltip tooltip-end flex size-8 items-center justify-center rounded-[0.625rem] transition-colors {% if layout == 'grid' %}bg-white/10 text-white{% else %}text-gray-400 hover:text-white{% endif %}">
+              {% include "app/icons/four-square.svg" with classes="size-4" %}
             </a>
-          {% endfor %}
-        {% endwith %}
-        <div class="flex rounded-md overflow-hidden border border-gray-700">
-          <a href="?q={{ request.GET.q|urlencode }}&media_type={{ media_type }}{% if source %}&source={{ source }}{% endif %}&layout=grid"
-             {% if layout == 'grid' %} class="p-2 cursor-pointer bg-indigo-600 text-white flex items-center" {% else %} class="p-2 cursor-pointer bg-surface-600 hover:bg-surface-500 flex items-center" {% endif %}
-             title="Grid View">{% include "app/icons/four-square.svg" with classes="w-5 h-5" %}</a>
-          <a href="?q={{ request.GET.q|urlencode }}&media_type={{ media_type }}{% if source %}&source={{ source }}{% endif %}&layout=list"
-             {% if layout == 'list' %} class="p-2 cursor-pointer bg-indigo-600 text-white flex items-center" {% else %} class="p-2 cursor-pointer bg-surface-600 hover:bg-surface-500 flex items-center" {% endif %}
-             title="List View">{% include "app/icons/list.svg" with classes="w-5 h-5" %}</a>
+            <a href="{% querystring layout='list' page=None %}"
+               aria-label="List"
+               aria-current="{% if layout == 'list' %}true{% else %}false{% endif %}"
+               data-tooltip="List"
+               class="tooltip tooltip-end flex size-8 items-center justify-center rounded-[0.625rem] transition-colors {% if layout == 'list' %}bg-white/10 text-white{% else %}text-gray-400 hover:text-white{% endif %}">
+              {% include "app/icons/list.svg" with classes="size-4" %}
+            </a>
+          </div>
         </div>
       </div>
-    </div>
-  </div>
 
-  {% if data.results %}
-    {% if layout == 'grid' %}
-      <div class="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-4">
-        {% for result in data.results %}
-          {% include "app/components/media_card.html" with item=result.item title=result.item.title media=result.media %}
-        {% endfor %}
-      </div>
-    {% else %}
-      <div class="panel overflow-hidden">
-        <div class="hidden items-center gap-x-4 border-b border-white/5 px-4 py-2.5 text-[0.6875rem] font-semibold tracking-wide text-gray-400 uppercase xl:grid xl:grid-cols-[3rem_minmax(0,1fr)_9rem_4.5rem_11rem]">
-          <span></span>
-          <span>Title</span>
-          <span>Status</span>
-          <span>Rating</span>
-          <span class="sr-only">Actions</span>
-        </div>
-        <div class="divide-y divide-white/5">
-          {% for result in data.results %}
-            {% include "app/components/media_row.html" with item=result.item title=result.item.title media=result.media %}
-          {% endfor %}
-        </div>
-      </div>
-    {% endif %}
-
-  {% if data.total_pages > 1 %}
-    <div class="flex flex-wrap justify-center items-center mt-8 gap-x-2 gap-y-3">
-      {# Previous button #}
-      {% if data.page > 1 %}
-        <a href="?q={{ request.GET.q|urlencode }}&media_type={{ media_type }}{% if source %}&source={{ source }}{% endif %}&page={{ data.page|add:'-1' }}&layout={{ layout }}"
-           class="p-2 rounded-md bg-surface-800 text-white hover:bg-surface-600">
-          {% include "app/icons/chevron-left.svg" with classes="w-5 h-5" %}
-        </a>
-      {% else %}
-        <button class="p-2 rounded-md bg-gray-700 text-gray-500 cursor-not-allowed"
-                disabled>{% include "app/icons/chevron-left.svg" with classes="w-5 h-5" %}</button>
-      {% endif %}
-
-      {# Page numbers with ellipses #}
-      {% get_pagination_range data.page data.total_pages 2 as pages %}
-      {% for page_num in pages %}
-        {% if page_num %}
-          <a href="?q={{ request.GET.q|urlencode }}&media_type={{ media_type }}{% if source %}&source={{ source }}{% endif %}&page={{ page_num }}&layout={{ layout }}"
-             class="w-10 h-10 rounded-md {% if data.page == page_num %}bg-indigo-600{% else %}bg-surface-800 hover:bg-surface-600{% endif %} text-white flex items-center justify-center">
-            {{ page_num }}
-          </a>
+      {% if data.results %}
+        {% if layout == "list" %}
+          <div class="panel overflow-hidden">
+            <div class="hidden items-center gap-x-4 border-b border-white/5 px-4 py-2.5 text-[0.6875rem] font-semibold tracking-wide text-gray-400 uppercase xl:grid xl:grid-cols-[3rem_minmax(0,1fr)_9rem_4.5rem_11rem]">
+              <span></span>
+              <span>Title</span>
+              <span>Status</span>
+              <span>Rating</span>
+              <span class="sr-only">Actions</span>
+            </div>
+            <div class="divide-y divide-white/5">{% include "app/components/search_items.html" %}</div>
+          </div>
         {% else %}
-          {# Ellipsis #}
-          <span class="flex items-center justify-center w-10 h-10 text-gray-400">
-            {% include "app/icons/ellipsis.svg" with classes="w-5 h-5" %}
-          </span>
+          <div class="media-grid">{% include "app/components/search_items.html" %}</div>
         {% endif %}
-      {% endfor %}
-
-      {# Next button #}
-      {% if data.page < data.total_pages %}
-        <a href="?q={{ request.GET.q|urlencode }}&media_type={{ media_type }}{% if source %}&source={{ source }}{% endif %}&page={{ data.page|add:'1' }}&layout={{ layout }}"
-           class="p-2 rounded-md bg-surface-800 text-white hover:bg-surface-600">
-          {% include "app/icons/chevron-right.svg" with classes="w-5 h-5" %}
-        </a>
       {% else %}
-        <button class="p-2 rounded-md bg-gray-700 text-gray-500 cursor-not-allowed"
-                disabled>{% include "app/icons/chevron-right.svg" with classes="w-5 h-5" %}</button>
+        <div class="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-700 bg-surface-800 px-6 py-16 text-center">
+          <div class="mb-4 flex size-16 items-center justify-center rounded-full bg-surface-600 text-indigo-300">
+            {% include "app/icons/magnifying-glass.svg" with classes="size-8" %}
+          </div>
+          <h2 class="text-xl font-semibold text-white">No matches for “{{ request.GET.q }}”</h2>
+          <p class="mt-2 max-w-md text-sm text-gray-400">Try checking your spelling or using different keywords.</p>
+        </div>
       {% endif %}
     </div>
-
-    {# Page info text #}
-    <div class="text-center text-sm text-gray-400 mt-3">
-      Page {{ data.page }} of {{ data.total_pages }} ({{ data.total_results }} results)
-    </div>
-  {% endif %}
-{% else %}
-  <div class="flex flex-col items-center justify-center py-32 px-4 bg-surface-800 rounded-lg">
-    <div class="bg-surface-600 rounded-full p-4 w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-      {% include "app/icons/magnifying-glass.svg" with classes="w-8 h-8 text-gray-400" %}
-    </div>
-    <h3 class="text-xl font-semibold mb-2">No results found</h3>
-    <p class="text-gray-400 text-center max-w-md mb-8">
-      We couldn't find any matches for "{{ request.GET.q }}". Try checking your spelling or using different keywords.
-    </p>
-  </div>
-{% endif %}
+  {% endwith %}
 {% endblock content %}

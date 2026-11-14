@@ -653,9 +653,6 @@
   .mt-2 {
     margin-top: calc(var(--spacing) * 2);
   }
-  .mt-3 {
-    margin-top: calc(var(--spacing) * 3);
-  }
   .mt-4 {
     margin-top: calc(var(--spacing) * 4);
   }
@@ -1505,9 +1502,6 @@
   .grid-cols-\[3rem_minmax\(0\,1fr\)_auto\] {
     grid-template-columns: 3rem minmax(0,1fr) auto;
   }
-  .grid-cols-\[repeat\(auto-fill\,minmax\(150px\,1fr\)\)\] {
-    grid-template-columns: repeat(auto-fill,minmax(150px,1fr));
-  }
   .flex-col {
     flex-direction: column;
   }
@@ -1519,6 +1513,9 @@
   }
   .place-items-center {
     place-items: center;
+  }
+  .items-baseline {
+    align-items: baseline;
   }
   .items-center {
     align-items: center;
@@ -1613,9 +1610,6 @@
   .gap-x-1\.5 {
     column-gap: calc(var(--spacing) * 1.5);
   }
-  .gap-x-2 {
-    column-gap: calc(var(--spacing) * 2);
-  }
   .gap-x-3 {
     column-gap: calc(var(--spacing) * 3);
   }
@@ -1639,9 +1633,6 @@
   }
   .gap-y-1 {
     row-gap: var(--spacing);
-  }
-  .gap-y-2 {
-    row-gap: calc(var(--spacing) * 2);
   }
   .gap-y-3 {
     row-gap: calc(var(--spacing) * 3);
@@ -2360,9 +2351,6 @@
   }
   .py-16 {
     padding-block: calc(var(--spacing) * 16);
-  }
-  .py-32 {
-    padding-block: calc(var(--spacing) * 32);
   }
   .py-px {
     padding-block: 1px;

@@ -359,14 +359,20 @@ def _library_context(user, media_type, status_filter, search, filters):
 
 @require_GET
 def media_search(request):
-    """Return the media search page."""
+    """Return the media search page, or on an HTMX request just a page's items.
+
+    The items end in a sentinel that loads the next page when scrolled to.
+    """
     media_type = request.user.update_preference(
         "last_search_type",
         request.GET["media_type"],
     )
     query = request.GET["q"]
-    page = int(request.GET.get("page", 1))
-    layout = request.GET.get("layout", "grid")
+    try:
+        page = max(int(request.GET.get("page", 1)), 1)
+    except ValueError:
+        page = 1
+    layout = "list" if request.GET.get("layout") == "list" else "grid"
 
     # only receives source when searching with secondary source
     source = request.GET.get(
@@ -388,6 +394,22 @@ def media_search(request):
         "media_type": media_type,
         "layout": layout,
     }
+
+    if data.get("results") and page < data.get("total_pages", 0):
+        context["next_query"] = urlencode(
+            {
+                "q": query,
+                "media_type": media_type,
+                "source": source,
+                "layout": layout,
+                "page": page + 1,
+            },
+        )
+
+    if request.headers.get("HX-Request") and not request.headers.get(
+        "X-Soft-Navigation",
+    ):
+        return render(request, "app/components/search_items.html", context)
 
     return render(request, "app/search.html", context)
 

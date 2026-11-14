@@ -355,7 +355,7 @@ class IntegrationTest(StaticLiveServerTestCase):
         """Test the progress edit of a season."""
         self.page.get_by_placeholder("Search tv shows...").fill("breaking bad")
         self.page.get_by_placeholder("Search tv shows...").press("Enter")
-        expect(self.page.locator("h2")).to_contain_text("Search Results")
+        expect(self.page.locator("h1")).to_contain_text("Results for")
         self.page.get_by_title("Breaking Bad", exact=True).click()
         expect(self.page.get_by_role("main")).to_contain_text("Breaking Bad")
         self.page.get_by_title("Season 1").click()
@@ -456,7 +456,7 @@ class IntegrationTest(StaticLiveServerTestCase):
         self.page.get_by_placeholder("Search tv shows...").click()
         self.page.get_by_placeholder("Search tv shows...").fill("breaking bad")
         self.page.get_by_placeholder("Search tv shows...").press("Enter")
-        expect(self.page.locator("h2")).to_contain_text("Search Results")
+        expect(self.page.locator("h1")).to_contain_text("Results for")
         self.page.get_by_title("Breaking Bad", exact=True).click()
         expect(self.page.get_by_role("main")).to_contain_text("Breaking Bad")
         self.page.get_by_role("button", name="Add to tracker").click()
@@ -489,7 +489,7 @@ class IntegrationTest(StaticLiveServerTestCase):
         """Test the completed status of a season."""
         self.page.get_by_placeholder("Search tv shows...").fill("breaking bad")
         self.page.get_by_placeholder("Search tv shows...").press("Enter")
-        expect(self.page.locator("h2")).to_contain_text("Search Results")
+        expect(self.page.locator("h1")).to_contain_text("Results for")
         self.page.get_by_title("Breaking Bad", exact=True).click()
         expect(self.page.get_by_role("main")).to_contain_text("Breaking Bad")
         self.page.get_by_title("Season 1").click()
