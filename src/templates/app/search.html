@@ -72,13 +72,7 @@
     {% elif data.results %}
       {% if layout == "list" %}
         <div class="panel overflow-hidden">
-          <div class="hidden items-center gap-x-4 border-b border-white/5 px-4 py-2.5 text-[0.6875rem] font-semibold tracking-wide text-gray-400 uppercase xl:grid xl:grid-cols-[3rem_minmax(0,1fr)_9rem_4.5rem_11rem]">
-            <span></span>
-            <span>Title</span>
-            <span>Status</span>
-            <span>Rating</span>
-            <span class="sr-only">Actions</span>
-          </div>
+          {% include "app/components/search_list_head.html" %}
           <div class="divide-y divide-white/5">{% include "app/components/search_items.html" %}</div>
         </div>
       {% else %}

@@ -13,6 +13,11 @@ urlpatterns = [
     path("search", views.media_search, name="search"),
     path("search/row", views.search_row, name="search_row"),
     path(
+        "person/tmdb/<int:person_id>/<str:name>",
+        views.person_details,
+        name="person_details",
+    ),
+    path(
         "details/<source:source>/<media_type:media_type>/<str:media_id>/<str:title>",
         views.media_details,
         name="media_details",

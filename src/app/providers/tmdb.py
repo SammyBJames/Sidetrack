@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import timedelta
 
 import requests
@@ -42,6 +43,17 @@ CREW_JOBS = (
     "Director of Photography",
     "Editor",
 )
+
+# The lowest billing a movie role can have and still count towards what an actor
+# is known for, so cameos in popular movies don't
+KNOWN_FOR_BILLING = 10
+
+# The fewest episodes of a show a role or job needs to count towards it, so guest
+# spots don't
+KNOWN_FOR_EPISODES = 3
+
+# A role that is the person appearing as themself, as on a talk show
+SELF_ROLE = re.compile(r"\b(self|himself|herself|themself|themselves)\b", re.IGNORECASE)
 
 # The kinds of videos shown, trailers first
 VIDEO_TYPES = (
@@ -725,6 +737,126 @@ def get_crew(crew, created_by):
         }
         for person in sorted(people.values(), key=rank)
     ]
+
+
+def person(person_id):
+    """Return a person's details and the movies and shows they worked on."""
+    cache_key = f"{Sources.TMDB.value}_person_{person_id}"
+    data = cache.get(cache_key)
+
+    if data is None:
+        try:
+            response = services.api_request(
+                Sources.TMDB.value,
+                "GET",
+                f"{base_url}/person/{person_id}",
+                params={
+                    **base_params,
+                    "append_to_response": "combined_credits,external_ids",
+                },
+            )
+        except requests.exceptions.HTTPError as error:
+            handle_error(error)
+
+        external_ids = response.get("external_ids", {})
+        links = {}
+        if external_ids.get("imdb_id"):
+            links["IMDb"] = f"https://www.imdb.com/name/{external_ids['imdb_id']}/"
+        if external_ids.get("wikidata_id"):
+            links["Wikidata"] = (
+                f"https://www.wikidata.org/wiki/{external_ids['wikidata_id']}"
+            )
+
+        data = {
+            "person_id": person_id,
+            "source": Sources.TMDB.value,
+            "source_url": f"https://www.themoviedb.org/person/{person_id}",
+            "name": response["name"],
+            "image": get_image_url(response.get("profile_path")),
+            "biography": response.get("biography"),
+            "details": {
+                "known_for": response.get("known_for_department"),
+                "born": response.get("birthday"),
+                "died": response.get("deathday"),
+                "birthplace": response.get("place_of_birth"),
+            },
+            "external_links": links,
+            "credits": get_person_credits(response.get("combined_credits")),
+        }
+
+        cache.set(cache_key, data)
+
+    return data
+
+
+def get_person_credits(credit_list):
+    """Return the movies and shows a person worked on, newest first, undated last.
+
+    `credit_list` is a person's combined credits. Each credit is a movie or show
+    as a search gives it, once for each `department` the person worked on it in
+    ("Acting" for the cast), with its release `date`, the `role` there (the
+    characters or jobs, and how many episodes of a show) and its `votes`. The
+    votes say how well known the credit is, and are 0 for a role that doesn't
+    count towards what the person is known for: an appearance as themself, a
+    minor movie role or under `KNOWN_FOR_EPISODES` episodes of a show. Adult
+    titles are left out unless TMDB_NSFW is set.
+    """
+    credit_list = credit_list or {}
+    merged = {}
+    for kind in ("cast", "crew"):
+        for media in credit_list.get(kind, []):
+            media_type = media.get("media_type")
+            if media_type not in (MediaTypes.MOVIE.value, MediaTypes.TV.value) or (
+                media.get("adult") and not settings.TMDB_NSFW
+            ):
+                continue
+
+            if kind == "cast":
+                department = "Acting"
+                role = media.get("character")
+                billed = media.get("order", 0) < KNOWN_FOR_BILLING
+                counts = billed and not SELF_ROLE.search(role or "")
+            else:
+                department = media.get("department") or "Crew"
+                role = media.get("job")
+                counts = True
+            if media_type == MediaTypes.TV.value:
+                counts = counts and media.get("episode_count", 0) >= KNOWN_FOR_EPISODES
+
+            credit = merged.setdefault(
+                (department, media_type, media["id"]),
+                {
+                    "media_id": media["id"],
+                    "source": Sources.TMDB.value,
+                    "media_type": media_type,
+                    "title": get_title(media),
+                    "image": get_image_url(media.get("poster_path")),
+                    "release_year": get_release_year(media),
+                    "date": media.get("release_date")
+                    or media.get("first_air_date")
+                    or "",
+                    "department": department,
+                    "roles": [],
+                    "episodes": 0,
+                    "votes": 0,
+                },
+            )
+            if role and role not in credit["roles"]:
+                credit["roles"].append(role)
+            credit["episodes"] = max(
+                credit["episodes"], media.get("episode_count") or 0
+            )
+            if counts:
+                credit["votes"] = max(credit["votes"], media.get("vote_count") or 0)
+
+    for credit in merged.values():
+        parts = [", ".join(credit.pop("roles"))]
+        episodes = credit.pop("episodes")
+        if episodes:
+            parts.append(f"{episodes} episode{'' if episodes == 1 else 's'}")
+        credit["role"] = " · ".join(part for part in parts if part)
+
+    return sorted(merged.values(), key=lambda credit: credit["date"], reverse=True)
 
 
 def get_videos(videos):

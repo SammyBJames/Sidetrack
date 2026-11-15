@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% load app_tags %}
+
+{% block title %}
+  {{ person.name }} - Sidetrack
+{% endblock title %}
+
+{% block content %}
+  {# Header #}
+  <div class="flex flex-col items-center gap-6 md:flex-row md:items-end md:gap-8">
+    <img alt="{{ person.name }}"
+         class="aspect-2/3 w-40 shrink-0 rounded-xl bg-surface-800 shadow-2xl ring-1 shadow-black/50 ring-white/10 md:w-48 lg:w-56 {% if person.image != IMG_NONE %}object-cover{% else %}object-contain p-[30%] opacity-30{% endif %}"
+         src="{{ person.image }}">
+    <div class="min-w-0 space-y-3 text-center md:text-start">
+      <h1 class="text-3xl font-bold text-white md:text-4xl">{{ person.name }}</h1>
+      {% if person.details.known_for %}
+        <p class="text-[0.9375rem] text-gray-300">{{ person.details.known_for }}</p>
+      {% endif %}
+    </div>
+  </div>
+
+  {# The biography, with the details beside it on wide screens #}
+  <div class="mt-10 grid gap-10 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
+    <div class="min-w-0"
+         x-data="{ isExpanded: false, isClamped: false, checkClamp() { const element = this.$refs.biography; this.isClamped = element.scrollHeight > element.clientHeight; } }"
+         x-init="$nextTick(() => checkClamp())">
+      <h2 class="mb-3 text-xl font-bold text-white">Biography</h2>
+      {% if person.biography %}
+        <p x-ref="biography"
+           :class="isExpanded ? '' : 'line-clamp-6'"
+           class="max-w-4xl text-pretty text-gray-300">{{ person.biography|linebreaksbr }}</p>
+        <button x-cloak
+                x-show="isClamped"
+                @click="isExpanded = !isExpanded"
+                class="mt-2 cursor-pointer text-sm text-indigo-400 transition-colors hover:text-indigo-300 focus:outline-none">
+          <span x-text="isExpanded ? 'Show less' : 'Read more'"></span>
+        </button>
+      {% else %}
+        <p x-ref="biography" class="text-gray-400">No biography available.</p>
+      {% endif %}
+    </div>
+
+    <aside>
+      {% include "app/components/details_info.html" with media=person label_classes="text-[0.6875rem] font-semibold tracking-wide text-gray-400 uppercase" value_classes="mt-0.5 text-sm font-medium break-words text-white" %}
+    </aside>
+  </div>
+
+  {# Their credits: the best known, then all of them by department. An action on one reloads the page, as a title can be here more than once #}
+  <div class="mt-10 space-y-8">
+    {% if credit_types|length > 1 %}
+      <div class="chip-row" aria-label="Media type" role="group">
+        <a href="{% querystring media_type=None %}"
+           aria-current="{% if not credit_type %}true{% else %}false{% endif %}"
+           class="chip {% if not credit_type %}chip-on{% else %}chip-off{% endif %}">All</a>
+        {% for chip_type in credit_types %}
+          <a href="{% querystring media_type=chip_type %}"
+             aria-current="{% if chip_type == credit_type %}true{% else %}false{% endif %}"
+             class="chip {% if chip_type == credit_type %}chip-on{% else %}chip-off{% endif %}">
+            <span class="{{ chip_type|media_color }}">{% icon chip_type is_active=False extra_classes="size-3.5" %}</span>
+            {{ chip_type|media_type_readable_plural }}
+          </a>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if known_for %}
+      <div class="*:mb-0">
+        {% include "app/components/card_row.html" with title="Known For" entries=known_for card="app/components/related_card.html" widths="*:w-36 sm:*:w-44 xl:*:w-48" %}
+      </div>
+    {% endif %}
+
+    {% for department, credits in departments %}
+      <section>
+        {% include "app/components/section_heading.html" with title=department count=credits|length %}
+        <div class="panel overflow-hidden">
+          {% include "app/components/search_list_head.html" %}
+          <div class="divide-y divide-white/5">
+            {% for credit in credits %}
+              {% include "app/components/media_row.html" with item=credit.item title=credit.item.title media=credit.media note=credit.item.role action_card="details" %}
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+    {% empty %}
+      <p class="rounded-xl border border-dashed border-gray-700 bg-surface-800 px-4 py-3 text-sm text-gray-400">
+        No movies or TV shows to show for {{ person.name }}.
+      </p>
+    {% endfor %}
+  </div>
+{% endblock content %}

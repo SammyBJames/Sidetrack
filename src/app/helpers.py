@@ -277,18 +277,19 @@ def _build_user_media_lookup(user, items, media_type):
     """Fetch the user's media for ``items`` and return a {key: media} lookup."""
     source = items[0]["source"]
 
-    q_objects = Q()
-    for item in items:
-        filter_params = {
-            "item__media_id": item["media_id"],
-            "item__media_type": media_type,
-            "item__source": source,
-        }
-        if media_type == MediaTypes.SEASON.value:
-            filter_params["item__season_number"] = item.get("season_number")
-        q_objects |= Q(**filter_params)
-
-    q_objects &= Q(user=user)
+    q_objects = Q(user=user, item__media_type=media_type, item__source=source)
+    if media_type == MediaTypes.SEASON.value:
+        seasons = Q()
+        for item in items:
+            seasons |= Q(
+                item__media_id=item["media_id"],
+                item__season_number=item.get("season_number"),
+            )
+        q_objects &= seasons
+    else:
+        # One condition however many items, as a person's credits can be over the
+        # thousand that SQLite lets an expression nest
+        q_objects &= Q(item__media_id__in=[item["media_id"] for item in items])
 
     model = apps.get_model(app_label="app", model_name=media_type)
     media_queryset = model.objects.filter(q_objects).select_related("item")

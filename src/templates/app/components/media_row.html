@@ -1,6 +1,6 @@
 {% load app_tags %}
 
-{# A media's row in a list, in the library or a search's results (a search sets no `sorted_field`, and its `media` is empty for a result not tracked): its poster and title, status, progress, rating and the value the list sorts by or its last activity. On narrower screens all but the title fold under it. The title's link covers the row, so a click anywhere opens the media; the owner gets the cards' status chip with its quick action above it #}
+{# A media's row in a list, in the library or a search's results (a search sets no `sorted_field`, and its `media` is empty for a result not tracked): its poster and title, status, progress, rating and the value the list sorts by or its last activity. On narrower screens all but the title fold under it. The title's link covers the row, so a click anywhere opens the media; the owner gets the cards' status chip with its quick action above it, which updates the row unless `action_card` says otherwise. A `note` goes under the details #}
 {% card_title item title|default:item as heading %}
 {# Library rows show progress in a column of their own, search rows have none #}
 {% if sorted_field %}
@@ -24,6 +24,7 @@
         {% if heading.subtitle %}<span class="shrink-0 font-medium text-gray-300">{{ heading.subtitle }}</span>{% endif %}
         {% include "app/components/card_details.html" with bullet=heading.subtitle %}
       </div>
+      {% if note %}<div class="mt-0.5 line-clamp-1 text-xs text-gray-500">{{ note }}</div>{% endif %}
 
       {# The columns, under the title where there's no room for them #}
       {% if media %}
@@ -90,7 +91,7 @@
     {# Its own width, so the chip's label opens over none of the other columns #}
     <div class="@container pointer-events-none relative z-1 flex w-7 justify-end sm:w-44 xl:w-auto">
       {% if request.user == user %}
-        {% include "app/components/action_button.html" with size="chip" card="row" ref=item entry=media filtered=sorted_field %}
+        {% include "app/components/action_button.html" with size="chip" card=action_card|default:"row" ref=item entry=media filtered=sorted_field %}
       {% endif %}
     </div>
   </div>

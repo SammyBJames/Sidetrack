@@ -68,6 +68,9 @@ MAX_SCORE = 10
 # Entries per page of a media type's list
 LIST_PAGE_SIZE = 32
 
+# The most credits shown as what a person is known for
+PERSON_KNOWN_FOR = 12
+
 # Media gone through all at once, whose list rows have no progress to show
 UNPROGRESSED_MEDIA_TYPES = (MediaTypes.MOVIE.value, MediaTypes.BOARDGAME.value)
 
@@ -572,6 +575,59 @@ def media_details(request, source, media_type, media_id, title):  # noqa: ARG001
         ),
     }
     return render(request, "app/media_details.html", context)
+
+
+@require_GET
+def person_details(request, person_id, name):  # noqa: ARG001 name for URL
+    """Return the page of a person on TMDB, with the media they worked on.
+
+    Their credits are of the movies and shows the user has enabled, narrowed to
+    one by `media_type`, as sections by department with the one the person is
+    known for first, then the largest. Their best known credits in that
+    department also lead the page.
+    """
+    person = tmdb.person(person_id)
+    types = [
+        media_type
+        for media_type in (MediaTypes.MOVIE.value, MediaTypes.TV.value)
+        if media_type in request.user.get_enabled_media_types()
+        and any(credit["media_type"] == media_type for credit in person["credits"])
+    ]
+    media_type = request.GET.get("media_type")
+    if media_type not in types:
+        media_type = None
+
+    # Each type on its own, as its items are matched to the user's together
+    shown = []
+    for credit_type in [media_type] if media_type else types:
+        shown += helpers.enrich_items_with_user_data(
+            request,
+            [c for c in person["credits"] if c["media_type"] == credit_type],
+            "person",
+        )
+    shown.sort(key=lambda credit: credit["item"]["date"], reverse=True)
+
+    departments = {}
+    for credit in shown:
+        departments.setdefault(credit["item"]["department"], []).append(credit)
+    known_department = person["details"]["known_for"]
+    known_for = sorted(
+        (c for c in departments.get(known_department, []) if c["item"]["votes"]),
+        key=lambda credit: credit["item"]["votes"],
+        reverse=True,
+    )[:PERSON_KNOWN_FOR]
+
+    context = {
+        "person": person,
+        "credit_type": media_type,
+        "credit_types": types,
+        "known_for": known_for,
+        "departments": sorted(
+            departments.items(),
+            key=lambda section: (section[0] != known_department, -len(section[1])),
+        ),
+    }
+    return render(request, "app/person_details.html", context)
 
 
 @require_GET

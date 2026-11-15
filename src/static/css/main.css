@@ -976,6 +976,12 @@
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 5;
   }
+  .line-clamp-6 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 6;
+  }
   .block {
     display: block;
   }
@@ -3071,6 +3077,9 @@
   }
   .ring-inset {
     --tw-ring-inset: inset;
+  }
+  :is(.\*\:mb-0 > *) {
+    margin-bottom: 0px;
   }
   :is(.\*\:w-32 > *) {
     width: calc(var(--spacing) * 32);
