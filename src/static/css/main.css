@@ -109,6 +109,7 @@
     --ease-out: cubic-bezier(0, 0, 0.2, 1);
     --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
     --animate-spin: spin 1s linear infinite;
+    --animate-pulse: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
     --blur-sm: 8px;
     --aspect-video: 16 / 9;
     --default-transition-duration: 150ms;
@@ -1449,6 +1450,9 @@
   }
   .transform-none {
     transform: none;
+  }
+  .animate-pulse {
+    animation: var(--animate-pulse);
   }
   .animate-spin {
     animation: var(--animate-spin);
@@ -3052,6 +3056,15 @@
   }
   .group-focus-visible\/track\:opacity-100:is(:where(.group\/track):focus-visible *) {
     opacity: 100%;
+  }
+  .group-has-\[\[data-search-row\]\]\/rows\:hidden:is(:where(.group\/rows):has(:is([data-search-row])) *) {
+    display: none;
+  }
+  .group-data-failed\/row\:block:is(:where(.group\/row)[data-failed] *) {
+    display: block;
+  }
+  .group-data-failed\/row\:hidden:is(:where(.group\/row)[data-failed] *) {
+    display: none;
   }
   .peer-checked\:bg-indigo-600:is(:where(.peer):checked ~ *) {
     background-color: var(--color-indigo-600);
@@ -4718,6 +4731,11 @@
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.5;
   }
 }
 @layer properties {

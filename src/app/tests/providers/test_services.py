@@ -1,3 +1,5 @@
+import socket
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -148,6 +150,50 @@ class ServicesTests(TestCase):
             services.api_request("TEST", "POST", "https://example.com/api")
         self.assertFalse(cap.exceeded)
         self.assertEqual(mock_sleep.call_count, services.RATE_LIMIT_RETRIES)
+
+    @patch("app.providers.services.session.get")
+    def test_cap_bounds_the_request_timeout(self, mock_get):
+        """A request times out at the cap inside it, and at the setting outside."""
+        mock_get.return_value.json.return_value = {}
+
+        with services.cap_rate_limit_waits(services.SEARCH_ROW_TIMEOUT):
+            services.api_request("TEST", "GET", "https://example.com/api")
+        self.assertEqual(mock_get.call_args.kwargs["timeout"], 30)
+
+        services.api_request("TEST", "GET", "https://example.com/api")
+        self.assertEqual(mock_get.call_args.kwargs["timeout"], 120)
+
+        # A cap longer than the setting doesn't lengthen it
+        with services.cap_rate_limit_waits(600):
+            services.api_request("TEST", "GET", "https://example.com/api")
+        self.assertEqual(mock_get.call_args.kwargs["timeout"], 120)
+
+    def test_read_timeout_is_not_retried(self):
+        """A source that never answers fails with one Timeout, not retried reads."""
+        server = socket.create_server(("127.0.0.1", 0))
+        self.addCleanup(server.close)
+        connections = []
+
+        def accept():
+            """Accept connections and never answer them."""
+            while True:
+                try:
+                    connections.append(server.accept()[0])
+                except OSError:
+                    return
+
+        threading.Thread(target=accept, daemon=True).start()
+        url = f"http://127.0.0.1:{server.getsockname()[1]}/search"
+
+        with (
+            services.cap_rate_limit_waits(0.3),
+            self.assertRaises(requests.exceptions.Timeout),
+        ):
+            services.api_request("TEST", "GET", url)
+
+        self.assertEqual(len(connections), 1)
+        for connection in connections:
+            connection.close()
 
     @patch("app.providers.igdb.cache.delete")
     def test_handle_error_igdb_unauthorized(

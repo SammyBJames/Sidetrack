@@ -1,5 +1,4 @@
 import logging
-import threading
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -12,8 +11,8 @@ from pyrate_limiter import RedisBucket
 from redis import Redis
 from requests.adapters import HTTPAdapter
 from requests_ratelimiter import LimiterAdapter, LimiterSession
+from urllib3.util import Retry
 
-from app import config
 from app.models import MediaTypes, Sources
 from app.providers import (
     bgg,
@@ -33,9 +32,9 @@ logger = logging.getLogger(__name__)
 # doesn't hang while a provider keeps refusing
 RATE_LIMIT_RETRIES = 3
 
-# How long, in seconds, an All search waits for its sources, and the longest a
-# source waits out a rate limit meanwhile
-SEARCH_ALL_TIMEOUT = 10
+# How long, in seconds, a row of an All search gives its source, for each
+# request and for waiting out a rate limit
+SEARCH_ROW_TIMEOUT = 30
 
 
 @dataclass
@@ -53,8 +52,9 @@ _rate_limit_cap = ContextVar("rate_limit_cap", default=None)
 def cap_rate_limit_waits(seconds):
     """Make rate limited requests in the block fail instead of waiting over `seconds`.
 
-    Other code keeps waiting as asked. Yields a `RateLimitCap` whose `exceeded`
-    says whether a request failed for being asked to wait longer.
+    The cap also bounds each request's own timeout, so a slow source fails with
+    `requests.Timeout`. Other code keeps waiting as asked. Yields a `RateLimitCap`
+    whose `exceeded` says whether a request failed for being asked to wait longer.
     """
     cap = RateLimitCap(seconds)
     token = _rate_limit_cap.set(cap)
@@ -82,8 +82,11 @@ session = LimiterSession(
     bucket_kwargs={"redis": redis_db, "bucket_key": bucket_key},
 )
 
-session.mount("http://", HTTPAdapter(max_retries=3))
-session.mount("https://", HTTPAdapter(max_retries=3))
+# Connection errors are retried, but a read timeout is not: a retry would
+# multiply the wait and turn the timeout into a ConnectionError
+_retries = Retry(total=3, read=False)
+session.mount("http://", HTTPAdapter(max_retries=_retries))
+session.mount("https://", HTTPAdapter(max_retries=_retries))
 
 session.mount(
     "https://api.myanimelist.net/v2",
@@ -187,7 +190,8 @@ def api_request(
 
     A rate limited request waits as asked and is retried, at most
     `RATE_LIMIT_RETRIES` times, then fails like any other error. Inside
-    `cap_rate_limit_waits` it fails at once when asked to wait longer than the cap.
+    `cap_rate_limit_waits` it fails at once when asked to wait longer than the cap,
+    and its request timeout is the cap if that is shorter.
 
     Args:
         provider: Provider identifier for error messages
@@ -201,10 +205,13 @@ def api_request(
     Returns:
         Parsed JSON dict or ElementTree for XML
     """
+    cap = _rate_limit_cap.get()
     request_kwargs = {
         "url": url,
         "headers": headers,
-        "timeout": settings.REQUEST_TIMEOUT,
+        "timeout": min(settings.REQUEST_TIMEOUT, cap.seconds)
+        if cap
+        else settings.REQUEST_TIMEOUT,
     }
 
     if method == "GET":
@@ -226,7 +233,6 @@ def api_request(
                 raise error from None
 
             seconds_to_wait = int(error_resp.headers.get("Retry-After", 5))
-            cap = _rate_limit_cap.get()
             if cap and seconds_to_wait > cap.seconds:
                 cap.exceeded = True
                 logger.warning(
@@ -315,78 +321,3 @@ def search(media_type, query, page, source=None):
         MediaTypes.BOARDGAME.value: lambda: bgg.search(query, page),
     }
     return search_handlers[media_type]()
-
-
-def _search_into(outcome, media_type, query, source):
-    """Search one type for `search_all` in its own thread, filling in `outcome`.
-
-    The rate limit cap is set here, as context variables don't cross into threads.
-    A provider or request error leaves the outcome failed, logging only the error's
-    type, as its message can hold the request URL and its key.
-    """
-    try:
-        with cap_rate_limit_waits(SEARCH_ALL_TIMEOUT):
-            data = search(media_type, query, 1, source)
-    except (ProviderAPIError, requests.RequestException) as error:
-        logger.warning(
-            "Failed to search %s for All: %s",
-            media_type,
-            type(error).__name__,
-        )
-    else:
-        outcome["error"] = None
-        outcome["results"] = data["results"]
-        outcome["total_results"] = data["total_results"]
-        outcome["total_estimated"] = data.get("total_estimated", False)
-
-
-def search_all(media_types, query):
-    """Search the first page of each of `media_types` at once, in default sources.
-
-    Returns a row per type, in order: `{media_type, source, results, total_results,
-    total_estimated, error}`. `error` is `None`, `"failed"` for a provider or request
-    error, or `"slow"` for a search still running after `SEARCH_ALL_TIMEOUT`. The
-    searches run in daemon threads that never touch the database, so a slow one is
-    left to finish in the background and fill the cache without holding up the
-    page or the process's exit.
-    """
-    rows = [
-        {
-            "media_type": media_type,
-            "source": config.get_default_source_name(media_type).value,
-            "results": [],
-            "total_results": 0,
-            "total_estimated": False,
-            "error": None,
-        }
-        for media_type in media_types
-    ]
-    # Each thread fills its own outcome, so one finishing late can't change a row
-    # the page is already drawing. An outcome is failed until its search succeeds,
-    # so an unexpected error shows as a failure rather than as no matches
-    outcomes = [{"error": "failed"} for _ in rows]
-    threads = [
-        threading.Thread(
-            target=_search_into,
-            args=(outcome, row["media_type"], query, row["source"]),
-            name=f"search-all-{row['media_type']}",
-            daemon=True,
-        )
-        for row, outcome in zip(rows, outcomes, strict=True)
-    ]
-    for thread in threads:
-        thread.start()
-
-    deadline = time.monotonic() + SEARCH_ALL_TIMEOUT
-    for row, outcome, thread in zip(rows, outcomes, threads, strict=True):
-        thread.join(max(deadline - time.monotonic(), 0))
-        if not thread.is_alive():
-            row.update(outcome)
-        else:
-            logger.warning(
-                "Search of %s for All took over %s s",
-                row["media_type"],
-                SEARCH_ALL_TIMEOUT,
-            )
-            row["error"] = "slow"
-    return rows

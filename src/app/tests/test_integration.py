@@ -2,6 +2,7 @@ import os
 import re
 from datetime import date
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.contrib.staticfiles.testing import StaticLiveServerTestCase
@@ -19,6 +20,25 @@ from app.models import (
     Sources,
     Status,
 )
+
+
+def _search_results(count):
+    """Return a search response with `count` results."""
+    return {
+        "page": 1,
+        "total_results": count,
+        "total_pages": 1,
+        "results": [
+            {
+                "media_id": str(n),
+                "title": f"Dune {n}",
+                "media_type": MediaTypes.MOVIE.value,
+                "source": Sources.TMDB.value,
+                "image": "https://example.com/image.jpg",
+            }
+            for n in range(count)
+        ],
+    }
 
 
 class IntegrationTest(StaticLiveServerTestCase):
@@ -638,3 +658,98 @@ class IntegrationTest(StaticLiveServerTestCase):
                 'input[name="obfuscate_unseen_episodes"]'
             )
             expect(obfuscate_checkbox).not_to_be_checked()
+
+    def enable_only(self, *media_types):
+        """Enable just `media_types`, saving only those fields.
+
+        A stale password hash saved with them would sign the page's session out.
+        """
+        fields = [
+            f"{media_type}_enabled"
+            for media_type in MediaTypes.values
+            if hasattr(self.user, f"{media_type}_enabled")
+        ]
+        for field in fields:
+            setattr(self.user, field, field.removesuffix("_enabled") in media_types)
+        self.user.save(update_fields=fields)
+
+    def hold_row_requests(self):
+        """Hold every All search row's request, returning `release` to let them go.
+
+        `release(media_type, status=None)` lets a type's request through, or
+        answers it with `status`, once it is held, and returns when the browser
+        has the response. The test lets rows through one at a time, as the live
+        server's one shared test database can't take them at once.
+        """
+        held = {}
+
+        def hold(route):
+            """Keep a row's request until the test lets it through."""
+            held[re.search(r"media_type=(\w+)", route.request.url)[1]] = route
+
+        def release(media_type, status=None):
+            """Let a held row's request through, or answer it with `status`."""
+            while media_type not in held:
+                self.page.wait_for_timeout(20)
+            route = held.pop(media_type)
+            with self.page.expect_response(f"**/search/row?*media_type={media_type}"):
+                if status:
+                    route.fulfill(status=status)
+                else:
+                    route.continue_()
+
+        self.page.route("**/search/row?*", hold)
+        self.addCleanup(self.page.unroute, "**/search/row?*", hold)
+        return release
+
+    def test_all_search_rows_load_one_by_one(self):
+        """Each row fills in on its own, an empty one goes, and a failed one says so."""
+        self.enable_only("tv", "movie", "anime")
+
+        self.page.wait_for_url(f"{self.live_server_url}/")
+        release = self.hold_row_requests()
+        rows = self.page.locator("[data-search-row]")
+        no_matches = self.page.get_by_text("No matches for")
+        url = f"{self.live_server_url}/search?q=dune"
+
+        # TV comes first and fills in, Movies has nothing and goes, Anime waits
+        with patch("app.providers.services.search") as mock_search:
+            mock_search.side_effect = lambda media_type, *_: _search_results(
+                {"tv": 1, "movie": 0, "anime": 2}[media_type]
+            )
+            self.page.goto(url)
+            expect(rows).to_have_count(3)
+            expect(rows.locator(".animate-pulse").first).to_be_visible()
+            expect(no_matches).to_be_hidden()
+
+            release("tv")
+            expect(rows.nth(0)).to_contain_text("Dune 0")
+            expect(rows.nth(2).locator(".animate-pulse").first).to_be_visible()
+
+            release("movie")
+            expect(rows).to_have_count(2)
+
+            release("anime")
+            expect(rows.nth(1)).to_contain_text("Dune 1")
+            expect(rows.locator(".animate-pulse")).to_have_count(0)
+            expect(no_matches).to_be_hidden()
+
+            # Every row empty leaves only the no matches box
+            mock_search.side_effect = lambda *_: _search_results(0)
+            self.page.goto(f"{url}x")
+            for media_type in ("tv", "movie", "anime"):
+                release(media_type)
+            expect(rows).to_have_count(0)
+            expect(no_matches).to_be_visible()
+
+            # A row whose request fails shows its note and the others still load
+            mock_search.side_effect = lambda *_: _search_results(1)
+            self.page.goto(url)
+            release("tv")
+            release("movie", status=500)
+            release("anime")
+            expect(rows.nth(1)).to_contain_text("Couldn't reach The Movie Database")
+            expect(rows.nth(1).locator(".animate-pulse").first).to_be_hidden()
+            expect(rows.nth(0)).to_contain_text("Dune 0")
+            expect(rows.nth(2)).to_contain_text("Dune 0")
+            expect(no_matches).to_be_hidden()

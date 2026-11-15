@@ -62,11 +62,13 @@
     {% include "app/components/search_type_pills.html" %}
 
     {% if not media_type %}
-      {% for row in rows %}
-        {% include "app/components/search_row.html" %}
-      {% empty %}
-        {% include "app/components/search_empty.html" %}
-      {% endfor %}
+      {# The empty state waits behind the rows, and shows once none is left: each loaded row either replaces its placeholder or removes it #}
+      <div class="group/rows space-y-5">
+        {% for row in rows %}
+          {% include "app/components/search_row.html" %}
+        {% endfor %}
+        <div class="group-has-[[data-search-row]]/rows:hidden">{% include "app/components/search_empty.html" %}</div>
+      </div>
     {% elif data.results %}
       {% if layout == "list" %}
         <div class="panel overflow-hidden">

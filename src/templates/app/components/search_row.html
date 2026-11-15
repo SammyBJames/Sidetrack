@@ -1,8 +1,9 @@
 {% load app_tags %}
 
-{# A row of an All search: the type's name, linking to the search narrowed to it, with its count where real, then its first page of results scrolling sideways, or a note when its source failed or was too slow #}
-<section class="space-y-3"
-         {% if row.results %}x-data="scrollRow" @resize.window.debounce.100ms="update()"{% endif %}>
+{# A row of an All search: the type's name, linking to the search narrowed to it, with its count where real, then its first page of results scrolling sideways, or a note when its source failed or was too slow. A pending row is its placeholder: skeleton cards that load the row in its place, or turn into a note if that request fails #}
+<section data-search-row
+         class="group/row space-y-3"
+         {% if row.results or row.pending %} x-data="scrollRow" @resize.window.debounce.100ms="update()" {% endif %} {% if row.pending %} aria-busy="true" hx-get="{% url 'search_row' %}{% querystring media_type=row.media_type source=None page=None %}" hx-trigger="load" hx-swap="outerHTML" hx-on::response-error="this.dataset.failed = ''; this.removeAttribute('aria-busy')" hx-on::send-error="this.dataset.failed = ''; this.removeAttribute('aria-busy')" {% endif %}>
   <div class="flex items-center justify-between gap-3">
     <a href="{% querystring media_type=row.media_type source=None page=None %}"
        class="group flex min-w-0 items-center gap-2 text-lg font-semibold text-white"
@@ -23,7 +24,10 @@
   {% if row.results %}
     {% include "app/components/scroll_track.html" with track_id="search-row-"|add:row.media_type cards="app/components/search_row_cards.html" %}
   {% else %}
-    <p class="rounded-xl border border-dashed border-gray-700 bg-surface-800 px-4 py-3 text-sm text-gray-400">
+    {% if row.pending %}
+      {% include "app/components/scroll_track.html" with track_id="search-row-"|add:row.media_type cards="app/components/search_row_skeleton.html" %}
+    {% endif %}
+    <p class="{% if row.pending %}hidden group-data-failed/row:block {% endif %}rounded-xl border border-dashed border-gray-700 bg-surface-800 px-4 py-3 text-sm text-gray-400">
       {% if row.error == "slow" %}
         {{ row.source|source_readable }} is taking too long.
       {% else %}

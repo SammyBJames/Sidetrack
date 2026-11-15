@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 from urllib.parse import urlencode
 
+import requests
 from django.apps import apps
 from django.conf import settings
 from django.contrib import messages
@@ -363,8 +364,8 @@ def media_search(request):
 
     A `media_type` that is a searchable type narrows the search to it, with its
     items ending in a sentinel that loads the next page when scrolled to. Any
-    other searches all the user's enabled types, a row each. A blank `q` searches
-    nothing.
+    other is the All page: a placeholder row per enabled type, each loading itself
+    from `search_row`, and nothing is searched here. A blank `q` shows a prompt.
     """
     query = request.GET.get("q", "").strip()
     media_type = request.GET.get("media_type")
@@ -388,7 +389,15 @@ def media_search(request):
     }
 
     if media_type is None:
-        context["rows"] = _search_all_rows(request, query, context["search_types"])
+        context["rows"] = [
+            {
+                "media_type": row_type,
+                "source": config.get_default_source_name(row_type).value,
+                "pending": True,
+            }
+            for row_type in context["search_types"]
+            if query
+        ]
         return render(request, "app/search.html", context)
 
     # only receives source when searching with secondary source
@@ -426,20 +435,47 @@ def media_search(request):
     return render(request, "app/search.html", context)
 
 
-def _search_all_rows(request, query, media_types):
-    """Return the rows of an All search, without the empty ones, enriched.
+@require_GET
+def search_row(request):
+    """Return one row of an All search: a type's first page in its default source.
 
-    Nothing is searched for a blank query. Rows that failed or timed out stay,
-    for their notes.
+    The row loads itself into its placeholder. It is a note when the source fails
+    or takes over `SEARCH_ROW_TIMEOUT`, and empty when nothing matched, so the swap
+    removes the placeholder. A blank `q` or a type the user can't search is a 404.
     """
-    if not query:
-        return []
-    rows = services.search_all(media_types, query)
-    for row in rows:
-        row["results"] = helpers.enrich_items_with_user_data(
-            request, row["results"], "search"
+    query = request.GET.get("q", "").strip()
+    media_type = request.GET.get("media_type")
+    if not query or media_type not in request.user.get_enabled_media_types():
+        raise Http404
+    row = {
+        "media_type": media_type,
+        "source": config.get_default_source_name(media_type).value,
+        "results": [],
+        "error": None,
+    }
+    try:
+        with services.cap_rate_limit_waits(services.SEARCH_ROW_TIMEOUT):
+            data = services.search(media_type, query, 1, row["source"])
+    except requests.Timeout:
+        logger.warning("Search of %s for All took over its timeout", media_type)
+        row["error"] = "slow"
+    except (services.ProviderAPIError, requests.RequestException) as error:
+        # Only the type: the message can hold the request URL and its key
+        logger.warning(
+            "Failed to search %s for All: %s", media_type, type(error).__name__
         )
-    return [row for row in rows if row["results"] or row["error"]]
+        row["error"] = "failed"
+    else:
+        if not data["results"]:
+            return HttpResponse()
+        row.update(
+            results=helpers.enrich_items_with_user_data(
+                request, data["results"], "search"
+            ),
+            total_results=data["total_results"],
+            total_estimated=data.get("total_estimated", False),
+        )
+    return render(request, "app/components/search_row.html", {"row": row})
 
 
 def _newest_first(entries):
