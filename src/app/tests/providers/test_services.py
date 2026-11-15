@@ -168,6 +168,12 @@ class ServicesTests(TestCase):
             services.api_request("TEST", "GET", "https://example.com/api")
         self.assertEqual(mock_get.call_args.kwargs["timeout"], 120)
 
+        # A request that fails inside the cap doesn't leave it on the thread
+        with self.assertRaises(requests.Timeout), services.cap_rate_limit_waits(30):
+            raise requests.Timeout
+        services.api_request("TEST", "GET", "https://example.com/api")
+        self.assertEqual(mock_get.call_args.kwargs["timeout"], 120)
+
     def test_read_timeout_is_not_retried(self):
         """A source that never answers fails with one Timeout, not retried reads."""
         server = socket.create_server(("127.0.0.1", 0))
@@ -192,6 +198,13 @@ class ServicesTests(TestCase):
             services.api_request("TEST", "GET", url)
 
         self.assertEqual(len(connections), 1)
+        # TMDB and the other https hosts share the rule
+        self.assertIs(
+            services.session.get_adapter(
+                "https://api.themoviedb.org/3"
+            ).max_retries.read,
+            False,  # noqa: FBT003
+        )
         for connection in connections:
             connection.close()
 

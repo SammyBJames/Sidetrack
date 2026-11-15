@@ -676,10 +676,10 @@ class IntegrationTest(StaticLiveServerTestCase):
     def hold_row_requests(self):
         """Hold every All search row's request, returning `release` to let them go.
 
-        `release(media_type, status=None)` lets a type's request through, or
-        answers it with `status`, once it is held, and returns when the browser
-        has the response. The test lets rows through one at a time, as the live
-        server's one shared test database can't take them at once.
+        `release(media_type, status=None, abort=False)` lets a type's request
+        through, answers it with `status` or fails it, once it is held, and
+        returns when the browser has the response. Rows go through one at a time, as
+        the live server's one shared test database can't take them at once.
         """
         held = {}
 
@@ -687,11 +687,17 @@ class IntegrationTest(StaticLiveServerTestCase):
             """Keep a row's request until the test lets it through."""
             held[re.search(r"media_type=(\w+)", route.request.url)[1]] = route
 
-        def release(media_type, status=None):
-            """Let a held row's request through, or answer it with `status`."""
+        def release(media_type, status=None, *, abort=False):
+            """Let a held row's request through, or answer it with `status`.
+
+            With `abort` the request fails as if the network dropped.
+            """
             while media_type not in held:
                 self.page.wait_for_timeout(20)
             route = held.pop(media_type)
+            if abort:
+                route.abort()
+                return
             with self.page.expect_response(f"**/search/row?*media_type={media_type}"):
                 if status:
                     route.fulfill(status=status)
@@ -725,6 +731,7 @@ class IntegrationTest(StaticLiveServerTestCase):
             release("tv")
             expect(rows.nth(0)).to_contain_text("Dune 0")
             expect(rows.nth(2).locator(".animate-pulse").first).to_be_visible()
+            expect(rows.nth(2).get_by_text("Couldn't reach")).to_be_hidden()
 
             release("movie")
             expect(rows).to_have_count(2)
@@ -753,3 +760,12 @@ class IntegrationTest(StaticLiveServerTestCase):
             expect(rows.nth(0)).to_contain_text("Dune 0")
             expect(rows.nth(2)).to_contain_text("Dune 0")
             expect(no_matches).to_be_hidden()
+
+            # A request that never reaches the server fails the same way
+            self.page.goto(url)
+            release("tv")
+            release("movie")
+            release("anime", abort=True)
+            expect(rows.nth(2)).to_contain_text("Couldn't reach MyAnimeList")
+            expect(rows.nth(2).locator(".animate-pulse").first).to_be_hidden()
+            expect(rows.nth(2).get_by_text("Couldn't reach")).to_be_visible()
