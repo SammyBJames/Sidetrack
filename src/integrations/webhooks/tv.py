@@ -1,5 +1,6 @@
 import logging
 
+from django.db import transaction
 from django.utils import timezone
 
 import app
@@ -209,7 +210,13 @@ class TVWebhookMixin:
         payload,
         user,
     ):
-        """Handle TV episode playback event."""
+        """Record a TV episode playback event for a user.
+
+        An unplayed event deletes the episode's watch. A played event adds a
+        watch unless one was recorded within the last few seconds, which
+        covers duplicate deliveries. The duplicate check and the write run in
+        one transaction under a lock on the season row.
+        """
         if self._is_unplayed(payload):
             self._delete_tv_episode(media_id, season_number, episode_number, user)
             return
@@ -289,46 +296,53 @@ class TVWebhookMixin:
 
         if self._is_played(payload):
             now = timezone.now().replace(second=0, microsecond=0)
-            latest_episode = (
-                app.models.Episode.objects.watches()
-                .filter(
-                    item=episode_item,
-                    related_season=season_instance,
+            # Duplicate deliveries run on parallel threads: the check and the
+            # write share one transaction, and the season row lock serializes
+            # them on Postgres (SQLite takes its write lock at BEGIN)
+            with transaction.atomic():
+                app.models.Season.objects.select_for_update().get(
+                    pk=season_instance.pk,
                 )
-                .order_by("-end_date")
-                .first()
-            )
+                latest_episode = (
+                    app.models.Episode.objects.watches()
+                    .filter(
+                        item=episode_item,
+                        related_season=season_instance,
+                    )
+                    .order_by("-end_date")
+                    .first()
+                )
 
-            should_create = True
-            # check for duplicate episode records,
-            # sometimes webhooks are triggered multiple times #689
-            if latest_episode and latest_episode.end_date:
-                time_diff = abs((now - latest_episode.end_date).total_seconds())
-                threshold = 5
-                if time_diff < threshold:
-                    should_create = False
-                    logger.debug(
-                        "Skipping duplicate episode record "
-                        "(time difference: %d seconds): %s S%02dE%02d",
-                        time_diff,
+                should_create = True
+                # check for duplicate episode records,
+                # sometimes webhooks are triggered multiple times #689
+                if latest_episode and latest_episode.end_date:
+                    time_diff = abs((now - latest_episode.end_date).total_seconds())
+                    threshold = 5
+                    if time_diff < threshold:
+                        should_create = False
+                        logger.debug(
+                            "Skipping duplicate episode record "
+                            "(time difference: %d seconds): %s S%02dE%02d",
+                            time_diff,
+                            tv_metadata["title"],
+                            season_number,
+                            episode_number,
+                        )
+
+                if should_create:
+                    # A planned or started entry of the episode becomes the watch
+                    season_instance.watch(
+                        episode_number,
+                        now,
+                        season_metadata=season_metadata,
+                    )
+                    logger.info(
+                        "Marked episode as played: %s S%02dE%02d",
                         tv_metadata["title"],
                         season_number,
                         episode_number,
                     )
-
-            if should_create:
-                # A planned or started entry of the episode becomes the watch
-                season_instance.watch(
-                    episode_number,
-                    now,
-                    season_metadata=season_metadata,
-                )
-                logger.info(
-                    "Marked episode as played: %s S%02dE%02d",
-                    tv_metadata["title"],
-                    season_number,
-                    episode_number,
-                )
         else:
             logger.debug(
                 "Episode not marked as played: %s S%02dE%02d",

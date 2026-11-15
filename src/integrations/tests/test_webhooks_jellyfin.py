@@ -2,6 +2,8 @@ import json
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import connection
+from django.db.models import QuerySet
 from django.test import Client, TestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -82,6 +84,55 @@ class JellyfinWebhookTests(TestCase):
             item__episode_number=1,
         )
         self.assertIsNotNone(episode.end_date)
+
+    def test_tv_episode_duplicate_check_and_watch_are_locked_together(self):
+        """Test the duplicate check and the watch are locked together.
+
+        Duplicate deliveries run on parallel threads.
+
+        A two-thread race can't run on the in-memory test database, so this
+        checks that the season row is locked and the watch is written inside
+        the transaction that holds the lock.
+        """
+        payload = {
+            "Event": "Stop",
+            "Item": {
+                "Type": "Episode",
+                "ProviderIds": {"Tvdb": "303821", "Imdb": "tt0583459"},
+                "SeriesName": "Friends",
+                "ParentIndexNumber": 1,
+                "IndexNumber": 1,
+                "UserData": {"Played": True},
+            },
+        }
+        depth = len(connection.savepoint_ids)
+        in_atomic = []
+        real_watch = Season.watch
+
+        def watch(season, *args, **kwargs):
+            """Record whether the watch runs in a new transaction, then run it."""
+            in_atomic.append(len(connection.savepoint_ids) > depth)
+            return real_watch(season, *args, **kwargs)
+
+        with (
+            patch.object(Season, "watch", watch),
+            patch.object(
+                QuerySet,
+                "select_for_update",
+                autospec=True,
+                side_effect=QuerySet.select_for_update,
+            ) as lock,
+        ):
+            JellyfinWebhookProcessor()._handle_tv_episode(
+                "1668",
+                1,
+                1,
+                payload,
+                self.user,
+            )
+
+        self.assertEqual(in_atomic, [True])
+        lock.assert_called_once()
 
     @patch("integrations.webhooks.base.BaseWebhookProcessor._handle_tv_episode")
     @patch("integrations.webhooks.tv.tvdb_provider.series_tmdb_id")

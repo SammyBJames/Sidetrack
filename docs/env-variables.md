@@ -96,7 +96,7 @@ services:
 | `DB_USER`          | The username used to authenticate with the PostgreSQL server.                                            |
 | `DB_PASSWORD`      | The password for the specified user.                                                                     |
 | `DB_POOL_MIN_SIZE` | Default to `1`. Minimum number of connections each process keeps open in its connection pool.            |
-| `DB_POOL_MAX_SIZE` | Default to `4`. Maximum number of connections each process can open in its connection pool.              |
+| `DB_POOL_MAX_SIZE` | Default to `4`. Maximum number of connections each process can open in its connection pool. Keep it at least `4`, one per web server thread. |
 
 **Note:** Check the example `docker-compose.postgres.yml` in the root directory of the repo for a PostgreSQL configuration example.
 
