@@ -1,0 +1,13 @@
+{% load app_tags %}
+
+{# The search's media type chips, All first, each keeping the words and layout and dropping the page and source #}
+<div class="chip-row -mt-2" aria-label="Media type" role="group">
+  <a href="{% querystring media_type=None source=None page=None %}"
+     aria-current="{% if not media_type %}true{% else %}false{% endif %}"
+     class="chip {% if not media_type %}chip-on{% else %}chip-off{% endif %}">All</a>
+  {% for chip_type in search_types %}
+    <a href="{% querystring media_type=chip_type source=None page=None %}"
+       aria-current="{% if media_type == chip_type %}true{% else %}false{% endif %}"
+       class="chip {% if media_type == chip_type %}chip-on{% else %}chip-off{% endif %}"><span class="{{ chip_type|media_color }}">{% icon chip_type is_active=False extra_classes="size-3.5" %}</span>{{ chip_type|media_type_readable_plural }}</a>
+  {% endfor %}
+</div>

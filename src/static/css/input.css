@@ -96,6 +96,24 @@
   @apply rounded-full bg-black/60 shadow-md ring-1 ring-white/20 backdrop-blur-sm;
 }
 
+/* The chips picking one of a set, like a list's statuses or a search's media type: chip-on for the picked one, chip-off for the rest */
+@utility chip {
+  @apply flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-3 text-sm font-medium whitespace-nowrap ring-1 transition-colors;
+}
+
+@utility chip-on {
+  @apply bg-white/10 text-white ring-white/25;
+}
+
+@utility chip-off {
+  @apply bg-surface-800 text-gray-300 ring-white/10 hover:bg-surface-700 hover:text-white;
+}
+
+/* A line of chips that scrolls sideways on phones, padded so the scroll area doesn't clip their rings, and wraps from sm up */
+@utility chip-row {
+  @apply -mx-4 flex gap-2 overflow-x-auto px-4 py-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0;
+}
+
 /* Hidden until the card is hovered or focused, where there is a mouse */
 @utility hover-reveal {
   @apply transition-opacity duration-300 can-hover:opacity-0 can-hover:parent-hover-tap:opacity-100 can-hover:[.hover-tap:focus-within_&]:opacity-100;
