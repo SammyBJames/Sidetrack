@@ -374,8 +374,8 @@ class IntegrationTest(StaticLiveServerTestCase):
 
     def test_season_progress_edit(self):
         """Test the progress edit of a season."""
-        self.page.get_by_role("button", name="All", exact=True).click()
-        self.page.locator("li").filter(has_text=re.compile(r"^TV Shows$")).click()
+        self.page.get_by_role("button", name="Search in: All").click()
+        self.page.get_by_role("menuitemradio", name="TV Shows").click()
         self.page.get_by_placeholder("Search tv shows...").fill("breaking bad")
         self.page.get_by_placeholder("Search tv shows...").press("Enter")
         expect(self.page.locator("h1")).to_contain_text("Results for")
@@ -476,8 +476,8 @@ class IntegrationTest(StaticLiveServerTestCase):
 
     def test_tv_completed(self):
         """Test the completed status of a TV show."""
-        self.page.get_by_role("button", name="All", exact=True).click()
-        self.page.locator("li").filter(has_text=re.compile(r"^TV Shows$")).click()
+        self.page.get_by_role("button", name="Search in: All").click()
+        self.page.get_by_role("menuitemradio", name="TV Shows").click()
         self.page.get_by_placeholder("Search tv shows...").click()
         self.page.get_by_placeholder("Search tv shows...").fill("breaking bad")
         self.page.get_by_placeholder("Search tv shows...").press("Enter")
@@ -512,8 +512,8 @@ class IntegrationTest(StaticLiveServerTestCase):
 
     def test_season_completed(self):
         """Test the completed status of a season."""
-        self.page.get_by_role("button", name="All", exact=True).click()
-        self.page.locator("li").filter(has_text=re.compile(r"^TV Shows$")).click()
+        self.page.get_by_role("button", name="Search in: All").click()
+        self.page.get_by_role("menuitemradio", name="TV Shows").click()
         self.page.get_by_placeholder("Search tv shows...").fill("breaking bad")
         self.page.get_by_placeholder("Search tv shows...").press("Enter")
         expect(self.page.locator("h1")).to_contain_text("Results for")
@@ -598,7 +598,8 @@ class IntegrationTest(StaticLiveServerTestCase):
     def test_obfuscate_unseen_episodes_enabled(self):
         """Test that obfuscate_unseen_episodes setting is accessible and functional."""
         # Navigate to preferences
-        self.page.get_by_role("link", name="Settings").click()
+        self.page.get_by_role("button", name="Account menu").click()
+        self.page.get_by_role("menuitem", name="Settings").click()
         self.page.get_by_role("link", name="Preferences").click()
 
         # Verify the obfuscate setting is visible
@@ -632,7 +633,8 @@ class IntegrationTest(StaticLiveServerTestCase):
     def test_obfuscate_unseen_episodes_disabled(self):
         """Test toggling obfuscate_unseen_episodes setting off."""
         # Navigate to preferences
-        self.page.get_by_role("link", name="Settings").click()
+        self.page.get_by_role("button", name="Account menu").click()
+        self.page.get_by_role("menuitem", name="Settings").click()
         self.page.get_by_role("link", name="Preferences").click()
 
         # Find the obfuscate checkbox

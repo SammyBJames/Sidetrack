@@ -192,21 +192,17 @@
   {% if request.user.is_authenticated %}{{ block.super }}{% endif %}
 {% endblock sidebar_utilities %}
 
-{% block sidebar_logout %}
-  {% if request.user.is_authenticated %}{{ block.super }}{% endif %}
-{% endblock sidebar_logout %}
-
-{% block anonymous_login %}
-  {% if not request.user.is_authenticated %}
-    <div class="shrink-0 border-t border-white/5 p-3">
-      <a href="{% url 'account_login' %}?next={{ request.path }}"
-         class="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 text-sm font-semibold text-white shadow-lg ring-1 shadow-black/30 ring-white/10 transition-colors duration-200 hover:bg-indigo-500">
-        {% include "app/icons/login.svg" with classes="w-5 h-5" %}
-        Sign In
-      </a>
-    </div>
+{% block navbar_profile %}
+  {% if request.user.is_authenticated %}
+    {{ block.super }}
+  {% else %}
+    <a href="{% url 'account_login' %}?next={{ request.path }}"
+       class="flex h-9 items-center gap-2 rounded-xl bg-indigo-600 px-3.5 text-sm font-semibold text-white shadow-lg ring-1 shadow-black/30 ring-white/10 transition-colors hover:bg-indigo-500">
+      {% include "app/icons/login.svg" with classes="size-4" %}
+      Sign In
+    </a>
   {% endif %}
-{% endblock anonymous_login %}
+{% endblock navbar_profile %}
 
 {% block search_bar %}
   {% if request.user.is_authenticated %}{{ block.super }}{% endif %}

@@ -127,109 +127,31 @@
               </ul>
             {% endblock sidebar_utilities %}
           </nav>
-
-          {% block sidebar_logout %}
-            {# The signed in user, with their settings and a way out #}
-            <div class="shrink-0 border-t border-white/5 p-3">
-              <div class="flex items-center gap-1">
-                <a href="{% url 'account' %}"
-                   class="flex min-w-0 flex-1 items-center gap-3 rounded-xl px-2 py-1.5 transition-colors duration-200 {% if '/settings/' in request.path %}bg-white/[0.07] ring-1 ring-white/10 ring-inset{% else %}hover:bg-white/[0.04]{% endif %}">
-                  <span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-300 uppercase ring-1 ring-indigo-400/30">{{ user.username|first }}</span>
-                  <span class="min-w-0">
-                    <span class="block truncate text-sm font-medium text-gray-100">{{ user.username }}</span>
-                    <span class="block text-xs text-gray-500">Settings</span>
-                  </span>
-                </a>
-                <form method="post" action="{% url 'account_logout' %}">
-                  {% csrf_token %}
-                  <button type="submit"
-                          aria-label="Log out"
-                          data-tooltip="Log out"
-                          class="tooltip tooltip-end flex size-9 cursor-pointer items-center justify-center rounded-xl text-gray-400 transition-colors duration-200 after:top-auto after:bottom-full after:mt-0 after:mb-2 hover:bg-white/[0.04] hover:text-white">
-                    {% include "app/icons/logout.svg" with classes="w-5 h-5" %}
-                  </button>
-                </form>
-              </div>
-            </div>
-          {% endblock sidebar_logout %}
-
-          {% block anonymous_login %}
-          {% endblock anonymous_login %}
         </aside>
 
         {# Main content #}
         <div class="flex-1 min-w-0 flex flex-col min-h-screen">
-          {# Top bar #}
-          <div class="sticky top-0 z-10 bg-surface-950 border-b border-surface-775 shadow-md">
-            <div class="px-4">
-              <div class="flex items-center justify-between lg:justify-center h-16">
-                {# Mobile: sidebar toggle button #}
-                <button @click="isMobileMenuOpen = !isMobileMenuOpen"
-                        class="lg:hidden pe-3 text-gray-400 hover:text-white transition-colors duration-200 cursor-pointer">
-                  {% include "app/icons/hamburger.svg" with classes="w-6 h-6" %}
-
-                </button>
-
-                {# Search bar #}
+          {# Top bar: the menu button on phones, the search, centered from lg up, and the user's menu at the right #}
+          <header class="sticky top-0 z-10 border-b border-white/5 bg-surface-950">
+            <div class="flex h-16 items-center gap-3 px-4 sm:px-6 lg:grid lg:grid-cols-[1fr_minmax(0,42rem)_1fr] lg:px-8">
+              <button type="button"
+                      @click="isMobileMenuOpen = !isMobileMenuOpen"
+                      aria-label="Menu"
+                      class="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-white/5 hover:text-white lg:hidden">
+                {% include "app/icons/hamburger.svg" with classes="size-5" %}
+              </button>
+              <div class="min-w-0 flex-1 lg:col-start-2">
                 {% block search_bar %}
-                  {# Fills the bar next to the menu button, centered at its widest on large screens #}
-                  <div class="relative w-full min-w-0 flex-1 lg:max-w-2xl">
-                    <form method="get"
-                          action="{% url 'search' %}"
-                          x-data=" { isOpen: false, selectedType: { display: '{% if search_type %}{{ search_type|media_type_readable_plural }}{% else %}All{% endif %}', value: '{{ search_type|default:'all' }}' }, mediaTypes: {% get_search_media_types user as search_types %}{{ search_types }}, getPlaceholder() { return this.selectedType.value === 'all' ? 'Search all media...' : `Search ${this.selectedType.display.toLowerCase()}...` }, pick(type) { const changed = type.value !== this.selectedType.value; this.selectedType = type; this.isOpen = false; if (changed && this.rerun && this.$refs.query.value.trim()) this.$nextTick(() => this.$root.requestSubmit()) }, rerun: {% if request.resolver_match.url_name == 'search' and request.GET.q %}true{% else %}false{% endif %} }">
-                      <div class="flex">
-                        <div class="relative grow">
-                          {# Search input #}
-                          <input type="search"
-                                 id="global-search"
-                                 x-ref="query"
-                                 name="q"
-                                 value="{{ request.GET.q }}"
-                                 :placeholder="getPlaceholder()"
-                                 class="w-full text-ellipsis py-2 pl-11 pr-4 text-sm text-gray-300 bg-surface-825 rounded-l-full focus:outline-none focus:ring-2 focus:ring-focus focus:ring-inset placeholder-gray-500">
-                          <button type="submit"
-                                  aria-label="Search"
-                                  class="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors duration-200 focus:outline-none cursor-pointer">
-                            {% include "app/icons/magnifying-glass.svg" with classes="w-5 h-5" %}
-
-                          </button>
-                        </div>
-
-                        <input type="hidden" name="media_type" :value="selectedType.value">
-
-                        {# Media type dropdown, which reruns a search on its results page in the new type #}
-                        <button type="button"
-                                @click="isOpen = !isOpen"
-                                @click.away="isOpen = false"
-                                class="flex shrink-0 items-center gap-2 ps-3 pe-4 py-2 text-sm text-gray-300 bg-surface-825 rounded-r-full focus:outline-none focus:ring-2 focus:ring-focus focus:ring-inset hover:bg-surface-800 transition-colors duration-200 cursor-pointer">
-                          {# Sized to the selected type, so the label sits next to its chevron #}
-                          <span class="whitespace-nowrap" x-text="selectedType.display"></span>
-                          {% include "app/icons/chevron-down.svg" with classes="w-4 h-4" %}
-
-                        </button>
-                        <ul x-cloak
-                            x-show="isOpen"
-                            @keydown.escape.window="isOpen = false"
-                            x-transition:enter="transition ease-out duration-100"
-                            x-transition:enter-start="transform opacity-0 scale-95"
-                            x-transition:enter-end="transform opacity-100 scale-100"
-                            x-transition:leave="transition ease-in duration-75"
-                            x-transition:leave-start="transform opacity-100 scale-100"
-                            x-transition:leave-end="transform opacity-0 scale-95"
-                            class="absolute z-20 py-1 mt-12 overflow-auto text-sm text-gray-300 bg-surface-800 rounded-xl shadow-lg right-0 min-w-32 w-max">
-                          <template x-for="type in mediaTypes" :key="type.value">
-                            <li @click="pick(type)"
-                                class="px-4 py-2 cursor-pointer hover:bg-surface-650 transition duration-150 ease-in-out"
-                                x-text="type.display"></li>
-                          </template>
-                        </ul>
-                      </div>
-                    </form>
-                  </div>
+                  {% include "app/components/navbar_search.html" %}
                 {% endblock search_bar %}
               </div>
+              <div class="flex shrink-0 justify-end lg:col-start-3">
+                {% block navbar_profile %}
+                  {% include "app/components/navbar_profile.html" %}
+                {% endblock navbar_profile %}
+              </div>
             </div>
-          </div>
+          </header>
 
           <main class="flex-1 relative bg-surface-900">
             {# Fills smaller screens and stops growing at 1920px #}

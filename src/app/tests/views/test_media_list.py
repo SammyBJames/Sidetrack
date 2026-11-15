@@ -432,6 +432,17 @@ class MediaListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("media_list", response.context)
+        # The top bar offers a sign in instead of the search and account menu
+        html = response.content.decode()
+        self.assertIn(f"{reverse('account_login')}?next=", html)
+        self.assertNotIn("Account menu", html)
+        self.assertNotIn('id="global-search"', html)
+
+        self.client.force_login(self.user)
+        html = self.client.get(reverse("home")).content.decode()
+        self.assertIn(f"Account menu for {self.user.username}", html)
+        self.assertIn(reverse("account_logout"), html)
+        self.assertNotIn(f"{reverse('account_login')}?next=", html)
 
     def test_profile_private_defaults_to_true(self):
         """Test new users have private profiles by default."""

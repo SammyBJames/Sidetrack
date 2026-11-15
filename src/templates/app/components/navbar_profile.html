@@ -1,0 +1,46 @@
+{# The signed in user's initial at the top right, opening a menu with their settings and a way out #}
+<div class="relative"
+     x-data="{ open: false }"
+     @click.outside="open = false"
+     @keydown.escape.window="open = false">
+  <button type="button"
+          @click="open = !open"
+          :aria-expanded="open"
+          aria-haspopup="menu"
+          aria-label="Account menu for {{ user.username }}"
+          class="flex size-10 cursor-pointer items-center justify-center rounded-full transition-colors hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none">
+    <span class="flex size-8 items-center justify-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-300 uppercase ring-1 ring-indigo-400/30">{{ user.username|first }}</span>
+  </button>
+  <div x-cloak
+       x-show="open"
+       role="menu"
+       aria-label="Account"
+       x-transition:enter="transition ease-out duration-150"
+       x-transition:enter-start="opacity-0 -translate-y-1"
+       x-transition:enter-end="opacity-100 translate-y-0"
+       x-transition:leave="transition ease-in duration-100"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       class="menu absolute top-full right-0 z-30 mt-2 w-60">
+    <div class="mb-1 flex items-center gap-3 border-b border-white/5 px-2.5 pt-1.5 pb-3">
+      <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-300 uppercase ring-1 ring-indigo-400/30">{{ user.username|first }}</span>
+      <span class="min-w-0">
+        <span class="block truncate text-sm font-medium text-white">{{ user.username }}</span>
+        <span class="block text-xs text-gray-500">Signed in</span>
+      </span>
+    </div>
+    <a href="{% url 'account' %}"
+       role="menuitem"
+       class="menu-item {% if '/settings/' in request.path %}menu-item-on{% endif %}">
+      <span class="text-gray-400">{% include "app/icons/settings.svg" with classes="size-4" %}</span>
+      Settings
+    </a>
+    <form method="post" action="{% url 'account_logout' %}">
+      {% csrf_token %}
+      <button type="submit" role="menuitem" class="menu-item">
+        <span class="text-gray-400">{% include "app/icons/logout.svg" with classes="size-4" %}</span>
+        Log out
+      </button>
+    </form>
+  </div>
+</div>

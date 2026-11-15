@@ -24,7 +24,7 @@
        x-transition:leave-start="opacity-100"
        x-transition:leave-end="opacity-0"
        class="absolute top-full left-1/2 z-30 mt-2 w-72 -translate-x-1/2 text-start md:left-0 md:translate-x-0">
-    <div class="max-h-80 space-y-0.5 overflow-y-auto rounded-2xl bg-surface-800 p-1.5 shadow-2xl ring-1 shadow-black/50 ring-white/10">
+    <div class="menu max-h-80 overflow-y-auto">
       {% for tv_season in tv.related.seasons|specials_last %}
         {% with current=tv_season.season_number|str_equals:media.season_number %}
           <a href="{% url 'season_details' source=media.source media_id=media.media_id title=media.title|slug season_number=tv_season.season_number %}"

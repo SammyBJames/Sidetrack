@@ -1,5 +1,4 @@
 import os
-import re
 
 from django.contrib.auth import get_user_model
 from django.contrib.staticfiles.testing import StaticLiveServerTestCase
@@ -41,8 +40,8 @@ class IntegrationTest(StaticLiveServerTestCase):
 
     def test_blank_modal(self):
         """Test the blank modal for creating a list."""
-        self.page.get_by_role("button", name="All", exact=True).click()
-        self.page.locator("li").filter(has_text=re.compile(r"^Anime$")).click()
+        self.page.get_by_role("button", name="Search in: All").click()
+        self.page.get_by_role("menuitemradio", name="Anime").click()
         self.page.get_by_placeholder("Search anime...").fill("perfect blue")
         self.page.get_by_placeholder("Search anime...").press("Enter")
         self.page.get_by_title("Perfect Blue", exact=True).click()
@@ -65,8 +64,8 @@ class IntegrationTest(StaticLiveServerTestCase):
         ).to_be_visible()
 
         # Add item to list
-        self.page.get_by_role("button", name="All", exact=True).click()
-        self.page.locator("li").filter(has_text=re.compile(r"^Anime$")).click()
+        self.page.get_by_role("button", name="Search in: All").click()
+        self.page.get_by_role("menuitemradio", name="Anime").click()
         self.page.get_by_placeholder("Search anime...").click()
         self.page.get_by_placeholder("Search anime...").fill("perfect blue")
         self.page.get_by_placeholder("Search anime...").press("Enter")

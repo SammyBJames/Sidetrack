@@ -1,3 +1,4 @@
+import re
 from unittest.mock import patch
 
 import requests
@@ -586,15 +587,15 @@ class MediaSearchAllTests(TestCase):
         mock_search.side_effect = lambda *_: _page(1, 1)
 
         narrowed = self.search(media_type="movie").content.decode()
-        self.assertIn("display: 'Movies', value: 'movie'", narrowed)
+        self.assertIn("type: 'movie', label: 'Movies'", narrowed)
 
         all_page = self.search().content.decode()
-        self.assertIn("display: 'All', value: 'all'", all_page)
+        self.assertIn("type: 'all', label: 'All'", all_page)
 
         home = self.client.get(reverse("home")).content.decode()
-        self.assertIn("display: 'All', value: 'all'", home)
-        self.assertIn(
-            "[{&#x27;display&#x27;: &#x27;All&#x27;, &#x27;value&#x27;:"
-            " &#x27;all&#x27;}, {&#x27;display&#x27;: &#x27;Movies",
-            home,
+        self.assertIn("type: 'all', label: 'All'", home)
+        menu = home.split('aria-label="Search in"')[1].split("</form>")[0]
+        self.assertEqual(
+            re.findall(r'data-type="(\w+)"', menu),
+            ["all", "movie", "tv", "anime"],
         )

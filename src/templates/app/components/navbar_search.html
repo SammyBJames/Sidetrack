@@ -1,0 +1,69 @@
+{% load app_tags %}
+
+{# The search across the top bar, with a menu picking the type it searches, which reruns a search on its results page in the new type #}
+{% get_search_media_types user as search_types %}
+<form method="get"
+      action="{% url 'search' %}"
+      role="search"
+      x-data="{ open: false, type: '{{ search_type|default:'all'|escapejs }}', label: '{% if search_type %}{{ search_type|media_type_readable_plural|escapejs }}{% else %}All{% endif %}', rerun: {% if request.resolver_match.url_name == 'search' and request.GET.q %}true{% else %}false{% endif %}, placeholder() { return this.type === 'all' ? 'Search all media...' : `Search ${this.label.toLowerCase()}...` }, pick(type, label) { const changed = type !== this.type; this.type = type; this.label = label; this.open = false; if (changed && this.rerun && this.$refs.query.value.trim()) this.$nextTick(() => this.$root.requestSubmit()) } }"
+      @keydown.escape.window="open = false"
+      class="flex h-10 w-full items-center rounded-xl bg-surface-800 shadow-lg ring-1 shadow-black/20 ring-white/10 has-[input:focus]:ring-2 has-[input:focus]:ring-indigo-400">
+  <button type="submit"
+          aria-label="Search"
+          class="flex h-full w-10 shrink-0 cursor-pointer items-center justify-center text-gray-400 transition-colors hover:text-white">
+    {% include "app/icons/magnifying-glass.svg" with classes="size-4" %}
+  </button>
+  <input type="search"
+         id="global-search"
+         x-ref="query"
+         name="q"
+         value="{{ request.GET.q }}"
+         aria-label="Search"
+         :placeholder="placeholder()"
+         class="h-full min-w-0 flex-1 bg-transparent pr-3 text-sm text-ellipsis text-white placeholder:text-gray-500 focus:outline-none">
+  <input type="hidden" name="media_type" :value="type">
+
+  <div class="relative h-full shrink-0" @click.outside="open = false">
+    <button type="button"
+            @click="open = !open"
+            :aria-expanded="open"
+            aria-haspopup="menu"
+            :aria-label="'Search in: ' + label"
+            class="flex h-full cursor-pointer items-center gap-1.5 rounded-r-xl border-l border-white/10 pr-2.5 pl-3 text-sm font-medium text-gray-300 transition-colors hover:bg-white/5 hover:text-white">
+      <span class="whitespace-nowrap" x-text="label">{% if search_type %}{{ search_type|media_type_readable_plural }}{% else %}All{% endif %}</span>
+      <span class="text-gray-400 transition-transform duration-200"
+            :class="open && 'rotate-180'">{% include "app/icons/chevron-down.svg" with classes="size-4" %}</span>
+    </button>
+    <div x-cloak
+         x-show="open"
+         role="menu"
+         aria-label="Search in"
+         x-transition:enter="transition ease-out duration-150"
+         x-transition:enter-start="opacity-0 -translate-y-1"
+         x-transition:enter-end="opacity-100 translate-y-0"
+         x-transition:leave="transition ease-in duration-100"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="menu absolute top-full right-0 z-30 mt-2 w-52">
+      {% for search_option in search_types %}
+        <button type="button"
+                role="menuitemradio"
+                data-type="{{ search_option.value }}"
+                data-label="{{ search_option.display }}"
+                @click="pick($el.dataset.type, $el.dataset.label)"
+                :aria-checked="type === $el.dataset.type"
+                class="menu-item"
+                :class="type === $el.dataset.type && 'menu-item-on'">
+          {% if search_option.value == "all" %}
+            <span class="text-gray-400">{% include "app/icons/four-square.svg" with classes="size-4" %}</span>
+          {% else %}
+            <span class="{{ search_option.value|media_color }}">{% icon search_option.value is_active=False extra_classes="size-4" %}</span>
+          {% endif %}
+          <span class="flex-1">{{ search_option.display }}</span>
+          <span x-show="type === $el.parentElement.dataset.type"
+                class="text-indigo-300">{% include "app/icons/checkmark.svg" with classes="size-4" %}</span>
+        </button>
+      {% endfor %}
+    </div>
+  </div>
+</form>
