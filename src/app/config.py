@@ -13,7 +13,7 @@ COLORS = {
         "hex": "#10b981",
     },
     "purple": {
-        "text": "text-purple-400",
+        "text": "text-purple-500",
         "background": "bg-purple-400",
         "hex": "#a855f7",
     },
@@ -88,8 +88,8 @@ MEDIA_TYPE_CONFIG = {
         "sample_query": "Breaking Bad",
         "unicode_icon": "📺",
         "verb": ("watch", "watched"),
-        "text_color": COLORS["emerald"]["text"],
-        "stats_color": COLORS["emerald"]["hex"],
+        "text_color": COLORS["purple"]["text"],
+        "stats_color": COLORS["purple"]["hex"],
         "svg_icon": """
             <rect width="20" height="15" x="2" y="7" rx="2" ry="2"/>
             <polyline points="17 2 12 7 7 2"/>""",
@@ -123,8 +123,8 @@ MEDIA_TYPE_CONFIG = {
         "sample_query": "The Shawshank Redemption",
         "unicode_icon": "🎬",
         "verb": ("watch", "watched"),
-        "text_color": COLORS["orange"]["text"],
-        "stats_color": COLORS["orange"]["hex"],
+        "text_color": COLORS["blue"]["text"],
+        "stats_color": COLORS["blue"]["hex"],
         "svg_icon": """
             <rect width="18" height="18" x="3" y="3" rx="2"/>
             <path d="M7 3v18"/>
@@ -142,8 +142,8 @@ MEDIA_TYPE_CONFIG = {
         "sample_query": "Perfect Blue",
         "unicode_icon": "🎭",
         "verb": ("watch", "watched"),
-        "text_color": COLORS["blue"]["text"],
-        "stats_color": COLORS["blue"]["hex"],
+        "text_color": COLORS["orange"]["text"],
+        "stats_color": COLORS["orange"]["hex"],
         "svg_icon": """
             <circle cx="12" cy="12" r="10"/>
             <polygon points="10 8 16 12 10 16 10 8"/>""",
@@ -156,8 +156,8 @@ MEDIA_TYPE_CONFIG = {
         "sample_query": "Berserk",
         "unicode_icon": "📚",
         "verb": ("read", "read"),
-        "text_color": COLORS["red"]["text"],
-        "stats_color": COLORS["red"]["hex"],
+        "text_color": COLORS["yellow"]["text"],
+        "stats_color": COLORS["yellow"]["hex"],
         "svg_icon": """
             <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2
             0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
@@ -174,8 +174,8 @@ MEDIA_TYPE_CONFIG = {
         "sample_query": "Half-Life",
         "unicode_icon": "🎮",
         "verb": ("play", "played"),
-        "text_color": COLORS["yellow"]["text"],
-        "stats_color": COLORS["yellow"]["hex"],
+        "text_color": COLORS["red"]["text"],
+        "stats_color": COLORS["red"]["hex"],
         "svg_icon": """
             <line x1="6" x2="10" y1="11" y2="11"/>
             <line x1="8" x2="8" y1="9" y2="13"/>
@@ -196,8 +196,8 @@ MEDIA_TYPE_CONFIG = {
         "sample_query": "The Great Gatsby",
         "unicode_icon": "📖",
         "verb": ("read", "read"),
-        "text_color": COLORS["fuchsia"]["text"],
-        "stats_color": COLORS["fuchsia"]["hex"],
+        "text_color": COLORS["emerald"]["text"],
+        "stats_color": COLORS["emerald"]["hex"],
         "svg_icon": """
             <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5
             2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>""",
@@ -210,8 +210,8 @@ MEDIA_TYPE_CONFIG = {
         "sample_query": "Batman",
         "unicode_icon": "📕",
         "verb": ("read", "read"),
-        "text_color": COLORS["cyan"]["text"],
-        "stats_color": COLORS["cyan"]["hex"],
+        "text_color": COLORS["fuchsia"]["text"],
+        "stats_color": COLORS["fuchsia"]["hex"],
         "svg_icon": """
             <rect width="8" height="18" x="3" y="3" rx="1"/>
             <path d="M7 3v18"/>
@@ -225,8 +225,8 @@ MEDIA_TYPE_CONFIG = {
         "sample_query": "Catan",
         "unicode_icon": "🎲",
         "verb": ("play", "played"),
-        "text_color": COLORS["lime"]["text"],
-        "stats_color": COLORS["lime"]["hex"],
+        "text_color": COLORS["cyan"]["text"],
+        "stats_color": COLORS["cyan"]["hex"],
         "svg_icon": """
             <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
             <circle cx="8" cy="8" r="2"/>

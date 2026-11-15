@@ -718,22 +718,22 @@ class IntegrationTest(StaticLiveServerTestCase):
         no_matches = self.page.get_by_text("No matches for")
         url = f"{self.live_server_url}/search?q=dune"
 
-        # TV comes first and fills in, Movies has nothing and goes, Anime waits
+        # Movies comes first and fills in, TV has nothing and goes, Anime waits
         with patch("app.providers.services.search") as mock_search:
             mock_search.side_effect = lambda media_type, *_: _search_results(
-                {"tv": 1, "movie": 0, "anime": 2}[media_type]
+                {"movie": 1, "tv": 0, "anime": 2}[media_type]
             )
             self.page.goto(url)
             expect(rows).to_have_count(3)
             expect(rows.locator(".animate-pulse").first).to_be_visible()
             expect(no_matches).to_be_hidden()
 
-            release("tv")
+            release("movie")
             expect(rows.nth(0)).to_contain_text("Dune 0")
             expect(rows.nth(2).locator(".animate-pulse").first).to_be_visible()
             expect(rows.nth(2).get_by_text("Couldn't reach")).to_be_hidden()
 
-            release("movie")
+            release("tv")
             expect(rows).to_have_count(2)
 
             release("anime")
@@ -744,7 +744,7 @@ class IntegrationTest(StaticLiveServerTestCase):
             # Every row empty leaves only the no matches box
             mock_search.side_effect = lambda *_: _search_results(0)
             self.page.goto(f"{url}x")
-            for media_type in ("tv", "movie", "anime"):
+            for media_type in ("movie", "tv", "anime"):
                 release(media_type)
             expect(rows).to_have_count(0)
             expect(no_matches).to_be_visible()
@@ -752,8 +752,8 @@ class IntegrationTest(StaticLiveServerTestCase):
             # A row whose request fails shows its note and the others still load
             mock_search.side_effect = lambda *_: _search_results(1)
             self.page.goto(url)
-            release("tv")
-            release("movie", status=500)
+            release("movie")
+            release("tv", status=500)
             release("anime")
             expect(rows.nth(1)).to_contain_text("Couldn't reach The Movie Database")
             expect(rows.nth(1).locator(".animate-pulse").first).to_be_hidden()
@@ -763,8 +763,8 @@ class IntegrationTest(StaticLiveServerTestCase):
 
             # A request that never reaches the server fails the same way
             self.page.goto(url)
-            release("tv")
             release("movie")
+            release("tv")
             release("anime", abort=True)
             expect(rows.nth(2)).to_contain_text("Couldn't reach MyAnimeList")
             expect(rows.nth(2).locator(".animate-pulse").first).to_be_hidden()

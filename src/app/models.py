@@ -54,17 +54,17 @@ class Sources(models.TextChoices):
 
 
 class MediaTypes(models.TextChoices):
-    """Choices for the media type of the item."""
+    """Choices for the media type of the item, in the order the app lists them."""
 
+    MOVIE = "movie", "Movie"
     TV = "tv", "TV Show"
     SEASON = "season", "TV Season"
     EPISODE = "episode", "Episode"
-    MOVIE = "movie", "Movie"
     ANIME = "anime", "Anime"
-    MANGA = "manga", "Manga"
-    GAME = "game", "Game"
     BOOK = "book", "Book"
+    MANGA = "manga", "Manga"
     COMIC = "comic", "Comic"
+    GAME = "game", "Game"
     BOARDGAME = "boardgame", "Boardgame"
 
 

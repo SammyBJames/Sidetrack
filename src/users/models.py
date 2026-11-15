@@ -791,7 +791,8 @@ class User(AbstractUser):
 
         # Seasons come with TV, as they aren't a type of their own
         if MediaTypes.TV.value in enabled_types:
-            enabled_types.insert(0, MediaTypes.SEASON.value)
+            tv_index = enabled_types.index(MediaTypes.TV.value)
+            enabled_types.insert(tv_index + 1, MediaTypes.SEASON.value)
 
         return enabled_types
 

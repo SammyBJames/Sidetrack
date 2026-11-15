@@ -367,7 +367,7 @@ class MediaSearchAllTests(TestCase):
             self.assertEqual(len(rows), 3)
             for row, (media_type, name) in zip(
                 rows,
-                (("tv", "TV Shows"), ("movie", "Movies"), ("anime", "Anime")),
+                (("movie", "Movies"), ("tv", "TV Shows"), ("anime", "Anime")),
                 strict=True,
             ):
                 self.assertIn(
@@ -595,6 +595,6 @@ class MediaSearchAllTests(TestCase):
         self.assertIn("display: 'All', value: 'all'", home)
         self.assertIn(
             "[{&#x27;display&#x27;: &#x27;All&#x27;, &#x27;value&#x27;:"
-            " &#x27;all&#x27;}, {&#x27;display&#x27;: &#x27;TV",
+            " &#x27;all&#x27;}, {&#x27;display&#x27;: &#x27;Movies",
             home,
         )

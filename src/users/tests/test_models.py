@@ -427,3 +427,19 @@ class UserWeekStartDayTests(TestCase):
         self.assertEqual(result, WeekStartDayChoices.SUNDAY)
         user.refresh_from_db()
         self.assertEqual(user.week_start_day, WeekStartDayChoices.SUNDAY)
+
+
+class UserMediaTypesTests(TestCase):
+    """Tests for the order of a user's media types."""
+
+    def test_media_types_are_in_the_app_order_with_seasons_after_tv(self):
+        """Enabled types follow the app's order and active ones add seasons after TV."""
+        user = get_user_model().objects.create_user(username="new")
+
+        self.assertEqual(
+            user.get_enabled_media_types(),
+            ["movie", "tv", "anime", "book", "manga", "comic", "game", "boardgame"],
+        )
+        self.assertEqual(
+            user.get_active_media_types()[:4], ["movie", "tv", "season", "anime"]
+        )
